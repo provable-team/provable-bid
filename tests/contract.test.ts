@@ -9,7 +9,7 @@ import { createApiClient, readQualifiedGallery, type components } from '../packa
 
 const covered = new Set<string>();
 const brief: components['schemas']['CreateCompetition'] = { title: 'Five Minute Scenes', brief: 'Write a scene with a garden on Mars.', bid: { currency: 'USD', amount_minor: 500 },
-  submission_window_seconds: 300, decision_window_seconds: 300, requirements: [{ id: 'req_mars', description: 'A garden on Mars.' }], accepted_terms_version: 'sandbox-v1' };
+  submission_window_seconds: 300, decision_window_seconds: 300, requirements: [{ id: 'req_mars', description: 'A garden on Mars.' }], accepted_terms_version: 'sandbox-v2' };
 const grade = { status: 'qualified', failure_code: null, checks: [{ requirement_id: 'req_mars', passed: true, reason: 'Garden on Mars is explicit.' }], reason: 'Requirements satisfied.', evaluator_version: 'fixture-v1' };
 const content = 'ASTRONAUT A: A garden on Mars! ASTRONAUT B: It is beautiful. '.repeat(10);
 async function fixture(t: any, options: { authorizationAgeSeconds?: number } = {}) {
@@ -145,7 +145,7 @@ test('Idempotency survives changed JSON key order, rejects changed bodies, and p
   assert.equal((await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data.allocations.length, 1);
 });
 
-test('Reject-all captures exactly 10 percent and conserves cents across equal operator shares', async t => {
+test('Reject-all captures exactly 10 percent and conserves cents across equal agent shares', async t => {
   const f = await fixture(t); const { c, payment } = await f.open(); await f.submit(c); await f.submit(c, 'agent-guest');
   assert.equal((await f.post(`/v1/competitions/${c.id}/rejection`)).status, 409);
   await f.advance(420);
@@ -155,7 +155,7 @@ test('Reject-all captures exactly 10 percent and conserves cents across equal op
   const complete = await f.observe(payment.id, 'completed'); assert.equal(complete.data.captured_minor, 50);
   assert.equal(complete.data.authorization_state, 'captured');
   const allocations = (await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data.allocations;
-  assert.deepEqual(allocations.map((a: any) => a.amount.amount_minor), [23, 22]);
+  assert.deepEqual(allocations.map((a: any) => a.amount.amount_minor), [22, 23]);
   assert.equal(allocations.reduce((sum: number, a: any) => sum + a.amount.amount_minor, 0), 45);
   assert.ok(allocations.every((a: any) => a.kind === 'participation'));
 });
@@ -521,7 +521,7 @@ test('Merchant-favor dispute resolution restores only a retained capture with no
   assert.equal((await f.request('GET', `/v1/purchases/${purchase.id}`)).data.delivery_unlocked, false);
 });
 
-test('Personas and rotated credentials share provisioned operators and only one participation share per operator', async t => {
+test('Equal agent shares aggregate by recipient while rotated credentials add no shares', async t => {
   const f = await fixture(t); const { c, payment } = await f.open(); const alpha = await f.submit(c);
   const duplicate = await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'Rotated token', artifacts: [{ asset_id: alpha.artifacts[0].asset_id }] }, 'agent-alpha-rotated');
   assert.equal(duplicate.data.code, 'DUPLICATE_SUBMISSION');
@@ -530,7 +530,9 @@ test('Personas and rotated credentials share provisioned operators and only one 
   assert.equal(new Set(profiles.map((a: any) => a.operator_id)).size, 1);
   await f.advance(720); await f.observe(payment.id, 'completed');
   const ledger = (await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data.allocations;
-  assert.equal(ledger.length, 2); assert.deepEqual(ledger.map((a: any) => a.amount.amount_minor), [23, 22]);
+  assert.equal(ledger.length, 2); assert.deepEqual(ledger.map((a: any) => a.amount.amount_minor), [18, 27]);
+  assert.equal(ledger.flatMap((a: any) => a.agent_shares).length, 5);
+  assert.ok(ledger.flatMap((a: any) => a.agent_shares).every((share: any) => share.amount_minor === 9));
   assert.equal(new Set(ledger.map((a: any) => a.recipient_id)).size, 2);
   const own = (await f.request('GET', '/v1/agents/me/earnings', undefined, 'agent-alpha-rotated')).data.items;
   assert.equal(own.length, 1); assert.equal(own[0].operator_id, 'operator_provable');
@@ -665,6 +667,76 @@ test('Buyer/operator ownership blocks self-competition before internal generatio
   await f.post(`/v1/competitions/${created.id}/authorize`, undefined, 'buyer-platform');
   assert.equal((await f.post(`/v1/competitions/${created.id}/agent-runs`, { agent_ids: ['agent_alpha'] }, 'buyer-platform')).status, 403);
   assert.equal((await f.post('/v1/assets', { competition_id: created.id, type: 'text', mime_type: 'text/plain', content_base64: Buffer.from(content).toString('base64') }, 'agent-alpha')).status, 403);
+});
+
+test('Expired initial checkout renews on the same payment; concurrent new keys share one fresh order', async t => {
+  const f = await fixture(t); const c = (await f.post('/v1/competitions', brief)).data;
+  const path = `/v1/competitions/${c.id}/checkout`;
+  const initial = (await f.post(path, undefined, 'buyer-demo', 'initial_checkout_key')).data;
+  await f.advance(601);
+  assert.equal((await f.post(`/v1/competitions/${c.id}/authorize`)).data.code, 'DEADLINE_PASSED');
+  const replay = await f.post(path, undefined, 'buyer-demo', 'initial_checkout_key');
+  assert.deepEqual(replay.data, initial); // Uncertain retries preserve the original receipt.
+  const renewals = await Promise.all([f.post(path, undefined, 'buyer-demo', 'renew_checkout_1'), f.post(path, undefined, 'buyer-demo', 'renew_checkout_2')]);
+  assert.ok(renewals.every(r => r.status === 201)); const renewed = renewals[0].data;
+  assert.deepEqual(renewed, renewals[1].data);
+  assert.equal(renewed.payment_id, initial.payment_id); assert.notEqual(renewed.provider_order_id, initial.provider_order_id);
+  assert.notEqual(renewed.approval_url, initial.approval_url); assert.ok(Date.parse(renewed.expires_at) > Date.parse(initial.expires_at));
+  const before = (await f.request('GET', `/v1/competitions/${c.id}`)).data;
+  assert.equal(before.opens_at, null); assert.equal(before.decision_deadline, null);
+  assert.equal((await f.post(path, undefined, 'buyer-other')).status, 404);
+  const authorized = await f.post(`/v1/competitions/${c.id}/authorize`);
+  assert.equal(authorized.status, 202); assert.equal(authorized.data.provider_order_id, renewed.provider_order_id);
+  assert.equal(authorized.data.captured_minor, 0);
+  assert.equal((await f.post(path)).status, 409); // Never replace an opened/authorized competition's order.
+  assert.equal((await f.request('GET', `/v1/payments/${initial.payment_id}`)).data.provider_order_id, renewed.provider_order_id);
+});
+
+test('Evaluator text cannot leak a protected original through buyer detail or gallery before purchase', async t => {
+  const f = await fixture(t); const { c, payment } = await f.open();
+  const original = 'A complete finished scene: two astronauts discover a hidden garden.';
+  const asset = await f.upload(c, 'agent-alpha', 'text', 'text/plain', Buffer.from(original));
+  const s = (await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'Protected scene', artifacts: [{ asset_id: asset.id }] }, 'agent-alpha')).data;
+  const raw = { ...grade, reason: original, evaluator_version: original, checks: [{ requirement_id: 'req_mars', passed: true, reason: original }] };
+  const stored = await f.post(`/__mock/submissions/${s.id}/qualification`, raw, 'admin-demo');
+  assert.equal(stored.status, 200); assert.equal(stored.data.qualification.reason, original);
+  for (const token of ['agent-alpha', 'admin-demo']) {
+    const own = (await f.request('GET', `/v1/submissions/${s.id}`, undefined, token)).data;
+    assert.equal(own.qualification.reason, original); // Private evidence remains inspectable.
+  }
+  const detail = (await f.request('GET', `/v1/submissions/${s.id}`)).data;
+  const listed = (await f.request('GET', `/v1/competitions/${c.id}/submissions`)).data.items[0];
+  for (const publicView of [detail, listed]) {
+    assert.equal(JSON.stringify(publicView).includes(original), false);
+    assert.equal(publicView.qualification.reason, 'All objective requirements satisfied.');
+    assert.equal(publicView.qualification.checks[0].reason, 'Requirement satisfied.');
+    assert.equal(publicView.qualification.evaluator_version, 'public-summary-v1');
+    assert.equal(publicView.artifacts[0].preview.text_excerpt.length, Math.floor(original.length / 10));
+  }
+  assert.equal((await f.request('GET', `/v1/competitions/${c.id}`)).data.first_purchase_id, null);
+  assert.equal((await f.request('GET', `/v1/payments/${payment.id}`)).data.captured_minor, 0);
+});
+
+test('sandbox-v2 freezes original per-qualified-agent sharing and aggregates three-to-one ownership correctly', async t => {
+  const f = await fixture(t);
+  const config = (await f.request('GET', '/v1/config', undefined, null)).data;
+  assert.equal(config.terms_version, 'sandbox-v2'); assert.equal(config.policy.participation_allocation_basis, 'qualified_agent');
+  assert.equal((await f.post('/v1/competitions', { ...brief, accepted_terms_version: 'sandbox-v1' })).data.code, 'TERMS_MISMATCH');
+  const { c, payment } = await f.open();
+  for (const token of ['agent-alpha', 'agent-beta', 'agent-gamma', 'agent-guest']) await f.submit(c, token);
+  await f.advance(720); await f.observe(payment.id, 'completed');
+  const ledger = (await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data.allocations;
+  assert.equal(ledger.length, 2); // Two recipient transfers, not two equal economic shares.
+  const internal = ledger.find((a: any) => a.operator_id === 'operator_provable');
+  const guest = ledger.find((a: any) => a.operator_id === 'operator_guest');
+  assert.deepEqual(internal.agent_shares, [
+    { agent_id: 'agent_alpha', amount_minor: 12 }, { agent_id: 'agent_beta', amount_minor: 11 }, { agent_id: 'agent_gamma', amount_minor: 11 },
+  ]);
+  assert.equal(internal.amount.amount_minor, 34); assert.equal(guest.amount.amount_minor, 11);
+  assert.equal(ledger.reduce((sum: number, a: any) => sum + a.amount.amount_minor, 0), 45);
+  for (const allocation of ledger) assert.equal(allocation.agent_shares.reduce((sum: number, share: any) => sum + share.amount_minor, 0), allocation.amount.amount_minor);
+  const saved = (await f.request('GET', `/v1/competitions/${c.id}`)).data.policy;
+  assert.equal(saved.terms_version, 'sandbox-v2'); assert.equal(saved.participation_allocation_basis, 'qualified_agent');
 });
 
 after(() => {

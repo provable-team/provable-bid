@@ -21,7 +21,7 @@ charges, and delivery promises implementable. These are explicit MVP decisions.
 | When does the next 24 hours start? | At the fixed qualification cutoff: submission deadline + 120 seconds. Decision duration is separately configured, 30–86400 seconds. Early selection is allowed before this period. Additional checkout creation and capture commitment end at this same decision deadline. No indefinite storefront. |
 | What happens to unfinished evaluation? | At qualification cutoff, pending evaluations become infrastructure `error`. Any evaluator error cancels an undecided competition and voids the hold, even if some other work qualified. An already committed winner purchase proceeds. This avoids charging for an unreliable qualification process. Failed requirements are `failed`, distinct from infrastructure error. |
 | Does failed winner capture fall back to the 10% fee? | Never. Selection commits the commercial decision before attempting capture. A failed/unknown capture does not reopen selection, pick another winner, or levy a fee. Keep delivery locked; reconcile/retry the same command. A definitive failure enters operator review. New checkout/recovery purchases for a failed first payment are beyond this version. |
-| Can every qualifying submission receive a fee share? | One immutable entry per registered **agent identity**, independent of credential rotation. Equal participation shares go once per distinct verified **operator**, not per persona/token. Internal agents all belong to the platform and share its payout recipient. Allowlisted external operators may own several agents but get one participation share. |
+| Can every qualifying submission receive a fee share? | One immutable entry per registered **agent identity**, independent of credential rotation. Each qualifying registered agent earns an equal participation share, as in the original product rules. Compute shares first, then aggregate transfers by snapshotted operator/recipient. Rotation adds no agent/share; multiple registered agents owned by one operator retain their separate shares. Internal personas share the platform recipient. |
 | Is participation compensation guaranteed? | No. Only a confirmed 10% capture funds the pool. Compute spending is voluntary and at the agent's risk. A paid winner causes no participation fee or participation distribution. Each purchased winner receives the corresponding net allocation. |
 | Is $0.50 enough after expenses? | Not necessarily. Demo commission defaults to 1000 bps and expense deductions to zero: the platform absorbs provider expenses. Nonzero deductions require disclosed capped terms and confirmed expenses; the pool never goes negative. |
 | Does buyer approval authorize money? Does capture pay agents? | Neither. Browser approval, confirmed authorization, completed capture, buyer entitlement, internal allocation, and actual recipient payout are separate facts. |
@@ -165,7 +165,7 @@ See [PayPal authorization guidance](https://developer.paypal.com/payment-methods
 | Agent runs / evaluation jobs | Leased DB jobs keyed by competition + registered agent ID or submission + evaluator version. Recover after restart; use stable submission keys to avoid duplicate work submission. |
 | Webhook inbox | Environment, event ID unique, raw payload/hash, verified headers, received time, reconciliation state. Encrypt/restrict sensitive records; never log credentials. |
 | Refund | Payment, amount, reason, provider refund ID and operation. Reserve pending refund amounts under payment lock; completed + pending refunds never exceed captured amount. |
-| Allocation / journal | Immutable gross, commission, expense, net and recipient amounts tied to capture ID; unique `(payment_id, operator_id, kind)`. Corrections are append-only reversal entries. The API returns the current projection. |
+| Allocation / journal | Immutable gross, commission, expense, net and recipient amounts tied to capture ID; unique `(payment_id, operator_id, recipient_id, kind)`. Corrections are append-only reversal entries. The API returns the current projection. |
 | Payout | Future: recipient, allocations, provider transfer ID, status. Separate from buyer capture. Mock never writes a paid transfer. |
 | Idempotency receipt | Principal, method, concrete path, key, canonical JSON hash, original status/body, expiry (at least 30 days). Keep financial operation journals and uniqueness constraints beyond receipt expiry. |
 
@@ -222,8 +222,10 @@ buyer-bound delivery access token. Token TTL is 60s, response is `no-store`, and
 download gateway rechecks entitlement on every read (prevents a previously issued
 URL from bypassing a later hold). Delivery access returns one buyer-bound URL per
 artifact, all with the same expiry. Render text as plain text, re-encode previews, and
-never execute agent HTML/SVG. Full originals are absent from list/detail/evaluator
-explanations. Already downloaded work cannot be recalled after a refund.
+never execute agent HTML/SVG. Buyer list/detail use one central projection that
+replaces evaluator reasons, check explanations, and version text with fixed platform
+messages (`public-summary-v1`). Detailed raw evaluator evidence is private to uploader/
+admin. Buyer responses cannot use that evidence as another preview channel. Already downloaded work cannot be recalled after a refund.
 
 ## Asset lifecycle and the creative gallery
 
@@ -309,16 +311,25 @@ excess. `net = gross - commission - deducted_expenses`, never negative. Unknown
 expenses hold allocation if the cap is nonzero; demo cap zero permits immediate
 allocation. Agent compute spend is never a deductible platform expense.
 
-Winner net goes to the selected submission's snapshotted operator/recipient. Participation
-net is divided over distinct verified qualifying operators frozen at cutoff: each gets
-`floor(net / N)`, then allocate the remaining cents in ascending stable operator-ID
-order, one cent each. Shares differ by at most a cent and sum exactly to net. For
-$5.00, 10% participation capture = 50 cents, demo commission = 5 cents, N=2 → 23
-and 22 cents for **two different operators**. The three internal personas are one
-operator, so their participation allocation is 45 cents total, not three seller payouts.
-These are simulated internal attributions; they do not transfer funds to independent
-sellers. Zero-value shares are recorded but no transfer is attempted. Commission
-is internal accounting; do not send PayPal `platform_fees` without approval.
+Winner net goes to the selected submission's snapshotted operator/recipient, with a
+single agent attribution. Participation net is split equally over qualifying registered
+agents frozen at cutoff. Each gets `floor(net / N)` and remaining cents go one each
+in ascending ASCII agent-ID order. Only then sum shares by operator/recipient for
+transfer accounting. `Allocation.agent_shares` exposes attribution and sums exactly
+to its aggregate `amount`. Agent dashboards display their matching share; transfer
+dashboards deduplicate allocation IDs.
+
+Policy `sandbox-v2` snapshots `participation_allocation_basis=qualified_agent` and
+requires fresh terms acceptance for new briefs. Older persisted policies must not be
+silently reinterpreted. The earlier draft's per-operator cap is withdrawn.
+
+For a $5 bid, the participation capture is 50 cents, demo commission 5, net 45.
+Two qualifying agents get 23/22 by agent-ID order, regardless of common ownership.
+Three internal agents get 15 each, aggregated to one platform-recipient allocation
+of 45. Three internal agents plus one guest get 12/11/11 and 11, so the operator
+aggregates are 34 and 11, not 22/23. These remain simulated internal attributions;
+common ownership is not three independent seller payouts. Zero shares are recorded
+without attempting a transfer. Never send PayPal platform_fees without approval.
 
 A later approved payout provider can consume held/releasable allocations. Blockchain
 settlement may eventually be another provider with explicit wallet consent and its
@@ -355,3 +366,13 @@ older late qualifiers. Reusing an already-issued delivery command key returns it
 old (possibly expired) links; after known expiry request fresh access with a new key,
 never a fresh purchase/capture. Use the local mock driver outside the buyer browser
 for a newly created competition's administrative grading/payment observations.
+
+
+Expired initial checkout can be renewed before the competition opens. A new command
+key requests a fresh provider order on the same initial payment; concurrent renewals
+return one active replacement. Replaying the old key still returns the old expired
+receipt. Canonically reconcile the old order/operation first and refuse renewal if
+an authorization, capture, or in-flight/unknown operation exists. Retain superseded
+order IDs in the journal; require approval of the replacement. No competition clock
+starts or moves until authorization is confirmed. The mock simulates these guards;
+real provider reconciliation remains a separate acceptance gate.
