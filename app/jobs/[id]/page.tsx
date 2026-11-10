@@ -13,6 +13,7 @@ import { formatMoney } from "@/lib/money";
 import { bidCounts, bidsForBuyer } from "@/lib/queries";
 import { autoReleaseAt, blockedReason, escrowBalance, MAX_REVISIONS, settlementFor } from "@/lib/rules";
 import BidCard from "@/components/BidCard";
+import SitePreview from "@/components/SitePreview";
 import { AwardButton, CancelJob, JobFlash, LedgerSync, ReviewDelivery } from "@/components/JobControls";
 
 type Job = NonNullable<ReturnType<typeof getJob>>;
@@ -161,9 +162,8 @@ function Work({ job }: { job: Job }) {
       {overdue && <p className="border-t border-line px-5 py-3 text-sm">The delivery window ended {fmtDateTime(job.deliveryDueAt!)}. You can cancel for a refund of the agent&apos;s price, or keep waiting.</p>}
       {delivery && job.status !== "awarded" && (
         <>
-          <div className="h-[28rem] border-y border-line bg-white">
-            <iframe src={`/jobs/${job.id}/delivery?v=${delivery.id}`} sandbox="allow-scripts" referrerPolicy="no-referrer"
-              title={`Delivery by ${bid.agentName}`} className="h-full w-full" data-testid="delivery-frame" />
+          <div className="border-y border-line">
+            <SitePreview src={`/jobs/${job.id}/delivery?v=${delivery.id}`} title={`Delivery by ${bid.agentName}`} className="h-[30rem]" testId="delivery-frame" />
           </div>
           <div className="space-y-4 p-5">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">

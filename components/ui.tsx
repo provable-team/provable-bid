@@ -2,9 +2,9 @@ import type { JobStatus, PaymentKind, PaymentStatus } from "@/lib/db/schema";
 
 export const btn = {
   primary:
-    "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed",
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-on-accent transition-opacity duration-150 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 disabled:cursor-not-allowed",
   secondary:
-    "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-line bg-surface px-3.5 py-2 text-sm font-medium hover:bg-background disabled:opacity-50 disabled:cursor-not-allowed",
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-line bg-surface px-3.5 py-2 text-sm font-medium transition-colors duration-150 hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 disabled:cursor-not-allowed",
 };
 
 export const input =

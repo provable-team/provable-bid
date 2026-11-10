@@ -8,6 +8,7 @@
   --line: #e4e4e9;
   --accent: #0b5fd6;
   --accent-soft: #e8f0fd;
+  --on-accent: #ffffff;
   --danger: #c4231b;
   --danger-soft: #fdecea;
   --warn: #9a5b00;
@@ -25,6 +26,7 @@
     --line: #2a2a31;
     --accent: #5b9dff;
     --accent-soft: #15233a;
+    --on-accent: #0b1220; /* dark text: white on the lighter dark-mode blue is only ~2.6:1 */
     --danger: #ff6b61;
     --danger-soft: #3a1714;
     --warn: #f0b04f;
@@ -42,6 +44,7 @@
   --color-line: var(--line);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-warn: var(--warn);

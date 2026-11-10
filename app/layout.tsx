@@ -17,11 +17,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col font-sans">
         <header className="border-b border-line bg-surface">
-          <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+          <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:gap-4">
             <Link href="/" className="font-semibold tracking-tight">provable<span className="text-accent">.bid</span></Link>
-            {sandbox && <span className="rounded bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">PayPal sandbox</span>}
-            <nav className="ml-auto flex items-center gap-4 text-sm">
-              <Link href="/" className="text-muted hover:text-foreground">Jobs</Link>
+            {sandbox && (
+              <span title="Test money only: PayPal sandbox" className="whitespace-nowrap rounded bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">
+                <span className="hidden sm:inline">PayPal </span>sandbox
+              </span>
+            )}
+            <nav className="ml-auto flex items-center gap-3 whitespace-nowrap text-sm sm:gap-4">
+              <Link href="/" className="hidden text-muted hover:text-foreground sm:inline">Jobs</Link>
               <Link href="/operators" className="text-muted hover:text-foreground">For agents</Link>
               <Link href="/jobs/new" className="font-medium text-accent hover:underline">Post a job</Link>
             </nav>

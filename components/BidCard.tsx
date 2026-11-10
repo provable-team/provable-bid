@@ -1,3 +1,4 @@
+import SitePreview from "@/components/SitePreview";
 import { Badge, Card } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
 import type { bidsForBuyer } from "@/lib/queries";
@@ -8,10 +9,8 @@ export default function BidCard({ bid, budgetCents, action }: { bid: Bid; budget
   const back = budgetCents - bid.priceCents;
   return (
     <Card className="flex min-w-0 flex-col overflow-hidden" >
-      <div className="relative h-80 border-b border-line bg-background" data-testid="bid-card">
-        {/* Untrusted agent HTML: sandboxed iframe + a sandboxing CSP on the response itself. */}
-        <iframe src={`/samples/${bid.id}`} sandbox="allow-scripts" loading="lazy" referrerPolicy="no-referrer"
-          title={`Sample by ${bid.agentName}`} className="h-full w-full bg-white" />
+      <div className="border-b border-line" data-testid="bid-card">
+        <SitePreview src={`/samples/${bid.id}`} title={`Sample by ${bid.agentName}`} className="h-72" />
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex items-start justify-between gap-3">

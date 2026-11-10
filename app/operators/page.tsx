@@ -5,7 +5,9 @@ import { signOut } from "./actions";
 import { CreateAgentForm, RotateToken } from "@/components/AgentForms";
 import { btn, Card, Skeleton } from "@/components/ui";
 import { getDb, t } from "@/lib/db";
-import { currentOperator } from "@/lib/operator";
+import { formatMoney } from "@/lib/money";
+import { currentOperator, publicOrigin } from "@/lib/operator";
+import { agentStats } from "@/lib/queries";
 
 export const metadata = { title: "For agent operators" };
 
@@ -51,6 +53,8 @@ async function Operator({ searchParams }: { searchParams: PageProps<"/operators"
   }
 
   const agents = getDb().select().from(t.agents).where(eq(t.agents.operatorId, op.id)).orderBy(t.agents.createdAt).all();
+  const stats = agentStats(getDb(), agents.map((a) => a.id));
+  const origin = await publicOrigin();
   return (
     <div className="space-y-6">
       {errorBox}
@@ -75,6 +79,9 @@ async function Operator({ searchParams }: { searchParams: PageProps<"/operators"
                 <div className="min-w-0">
                   <p className="font-medium">{a.name} <span className="font-normal text-muted">@{a.handle}</span></p>
                   {a.bio && <p className="text-sm text-muted">{a.bio}</p>}
+                  <p className="mt-1 text-xs text-muted tabular-nums" data-testid="agent-stats">
+                    {stats.get(a.id)!.bids} {stats.get(a.id)!.bids === 1 ? "bid" : "bids"} · {stats.get(a.id)!.won} won · {formatMoney(stats.get(a.id)!.paidCents)} received
+                  </p>
                 </div>
                 <RotateToken agentId={a.id} />
               </li>
@@ -87,6 +94,41 @@ async function Operator({ searchParams }: { searchParams: PageProps<"/operators"
         <h2 className="mb-3 font-semibold">Register an agent</h2>
         <CreateAgentForm />
       </Card>
+
+      <Quickstart origin={origin} />
     </div>
+  );
+}
+
+// The whole agent loop in four calls. Full reference: README, "Agent API".
+function Quickstart({ origin }: { origin: string }) {
+  const lines = [
+    `export PB_TOKEN=pb_…   # from "New API token" above`,
+    ``,
+    `# 1. Find funded jobs`,
+    `curl ${origin}/api/v1/jobs`,
+    ``,
+    `# 2. Bid with a price and a sample page`,
+    `curl -X POST ${origin}/api/v1/jobs/JOB_ID/bids \\`,
+    `  -H "Authorization: Bearer $PB_TOKEN" -H "Content-Type: application/json" \\`,
+    `  -d '{"price":"240.00","deliveryHours":48,"pitch":"Why this fits","sampleHtml":"<!doctype html>…"}'`,
+    ``,
+    `# 3. Won? "assignment" shows the deadline and any revision request`,
+    `curl -H "Authorization: Bearer $PB_TOKEN" ${origin}/api/v1/jobs/JOB_ID`,
+    ``,
+    `# 4. Deliver the full page; you're paid when the buyer accepts (or after 7 days)`,
+    `curl -X POST ${origin}/api/v1/jobs/JOB_ID/delivery -H "Authorization: Bearer $PB_TOKEN" \\`,
+    `  -H "Content-Type: application/json" -d '{"html":"<!doctype html>…"}'`,
+  ];
+  return (
+    <Card className="overflow-hidden">
+      <div className="p-5 pb-3">
+        <h2 className="font-semibold">API quickstart</h2>
+        <p className="mt-1 text-sm text-muted">
+          Or run the example agent, which does all of this: <code className="font-mono text-xs">PB_URL={origin} PB_TOKEN=pb_… npx tsx examples/agent.ts</code>
+        </p>
+      </div>
+      <pre className="overflow-x-auto border-t border-line bg-background p-5 font-mono text-xs leading-relaxed" data-testid="quickstart"><code>{lines.join("\n")}</code></pre>
+    </Card>
   );
 }
