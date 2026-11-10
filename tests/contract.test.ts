@@ -1,17 +1,19 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
+import { driveMockCompetition } from '../scripts/mock-driver.js';
+import { assertPaidOriginals } from '../scripts/assert-demo.js';
 import { createMock } from '../apps/mock-api/src/app.js';
 import { contract, operations, resolve, validator, validateResponse } from '../scripts/contract.js';
-import { createApiClient, type components } from '../packages/api-client/src/index.js';
+import { createApiClient, readQualifiedGallery, type components } from '../packages/api-client/src/index.js';
 
 const covered = new Set<string>();
 const brief: components['schemas']['CreateCompetition'] = { title: 'Five Minute Scenes', brief: 'Write a scene with a garden on Mars.', bid: { currency: 'USD', amount_minor: 500 },
   submission_window_seconds: 300, decision_window_seconds: 300, requirements: [{ id: 'req_mars', description: 'A garden on Mars.' }], accepted_terms_version: 'sandbox-v1' };
 const grade = { status: 'qualified', failure_code: null, checks: [{ requirement_id: 'req_mars', passed: true, reason: 'Garden on Mars is explicit.' }], reason: 'Requirements satisfied.', evaluator_version: 'fixture-v1' };
 const content = 'ASTRONAUT A: A garden on Mars! ASTRONAUT B: It is beautiful. '.repeat(10);
-async function fixture(t: any) {
-  const { app } = await createMock({ now: () => Date.parse('2026-11-10T18:00:00.000Z') });
+async function fixture(t: any, options: { authorizationAgeSeconds?: number } = {}) {
+  const { app } = await createMock({ now: () => Date.parse('2026-11-10T18:00:00.000Z'), ...options });
   t.after(() => app.close());
   let sequence = 0;
   async function request(method: 'GET' | 'POST', path: string, body?: any, token: string | null = 'buyer-demo', key?: string | null, extraHeaders: Record<string, string> = {}) {
@@ -29,7 +31,16 @@ async function fixture(t: any) {
     if (response.statusCode < 400) covered.add(op.operationId);
     return { status: response.statusCode, data, headers: response.headers };
   }
-  const post = (path: string, body?: any, token?: string, key?: string) => request('POST', path, body, token, key);
+  // Default fixture results bind to stored originals, not model-supplied hash claims.
+  // Tests of missing bindings use request() directly to bypass this convenience.
+  const post = async (path: string, body?: any, token?: string, key?: string) => {
+    const match = /^\/__mock\/submissions\/([^/]+)\/qualification$/.exec(path);
+    if (match && body && body.artifact_hashes === undefined) {
+      const submission = (await request('GET', `/v1/submissions/${match[1]}`, undefined, 'admin-demo')).data;
+      body = { ...body, artifact_hashes: submission.artifacts.map((a: any) => ({ asset_id: a.asset_id, sha256: a.sha256 })) };
+    }
+    return request('POST', path, body, token, key);
+  };
   async function open() {
     const created = await post('/v1/competitions', brief); assert.equal(created.status, 201);
     const c = created.data;
@@ -56,6 +67,8 @@ async function fixture(t: any) {
 
 test('OpenAPI 3.1 structure, references, examples, operation IDs, and mutation keys are valid', () => {
   assert.equal(contract.openapi, '3.1.0');
+  assert.doesNotMatch(contract.info.description, /\bundefined\b/);
+  assert.ok(contract.info.description.includes('Idempotency-Key') && contract.info.description.includes('UTC'));
   assert.equal(new Set(operations.map(o => o.operationId)).size, operations.length);
   const walk = (value: any) => {
     if (!value || typeof value !== 'object') return;
@@ -132,8 +145,8 @@ test('Idempotency survives changed JSON key order, rejects changed bodies, and p
   assert.equal((await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data.allocations.length, 1);
 });
 
-test('Reject-all captures exactly 10 percent and conserves cents across equal principal shares', async t => {
-  const f = await fixture(t); const { c, payment } = await f.open(); await f.submit(c); await f.submit(c, 'agent-beta');
+test('Reject-all captures exactly 10 percent and conserves cents across equal operator shares', async t => {
+  const f = await fixture(t); const { c, payment } = await f.open(); await f.submit(c); await f.submit(c, 'agent-guest');
   assert.equal((await f.post(`/v1/competitions/${c.id}/rejection`)).status, 409);
   await f.advance(420);
   const rejection = await f.post(`/v1/competitions/${c.id}/rejection`); assert.equal(rejection.status, 202);
@@ -197,7 +210,7 @@ test('Evaluator infrastructure errors cancel an undecided competition even when 
   assert.equal((await f.post(`/__mock/submissions/${s.id}/qualification`, grade, 'admin-demo')).status, 409);
 });
 
-test('Submission deadline, duplicate principal limit, and qualification consistency are enforced', async t => {
+test('Submission deadline, duplicate agent limit, and qualification consistency are enforced', async t => {
   const f = await fixture(t); const { c } = await f.open(); const s = await f.submit(c, 'agent-alpha', false);
   assert.equal((await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'More', artifacts: [{ asset_id: s.artifacts[0].asset_id }] }, 'agent-alpha')).data.code, 'DUPLICATE_SUBMISSION');
   assert.equal((await f.post(`/__mock/submissions/${s.id}/qualification`, { ...grade, checks: [] }, 'admin-demo')).status, 400);
@@ -434,13 +447,224 @@ test('Three public creative agents run idempotently, expose distinct visual work
 
 test('BidMoney enforces 100 cents without ref siblings; five-minute submissions accept a 30-second decision period', async t => {
   const f = await fixture(t);
-  assert.equal(contract.info.version, '0.2.0');
+  assert.equal(contract.info.version, '0.3.0');
   assert.equal(contract.components.schemas.CreateCompetition.properties.bid.$ref, '#/components/schemas/BidMoney');
   const check = validator({ $ref: '#/components/schemas/CreateCompetition' });
   assert.equal(check({ ...brief, bid: { currency: 'USD', amount_minor: 99 } }), false);
   assert.equal(check({ ...brief, bid: { currency: 'USD', amount_minor: 100 }, decision_window_seconds: 30 }), true);
   assert.equal(check({ ...brief, decision_window_seconds: 29 }), false);
   assert.equal((await f.post('/v1/competitions', { ...brief, decision_window_seconds: 30 })).status, 201);
+});
+
+test('Two different first selections and rejection races keep exactly one initial financial decision', async t => {
+  for (const commands of ['two-winners', 'selection-first', 'rejection-first']) {
+    const f = await fixture(t); const { c, payment } = await f.open(); const a = await f.submit(c); const b = await f.submit(c, 'agent-beta');
+    await f.advance(420);
+    const select = () => f.post(`/v1/competitions/${c.id}/selection`, { submission_id: a.id });
+    const other = () => commands === 'two-winners' ? f.post(`/v1/competitions/${c.id}/selection`, { submission_id: b.id }) : f.post(`/v1/competitions/${c.id}/rejection`);
+    const responses = await Promise.all(commands === 'rejection-first' ? [other(), select()] : [select(), other()]);
+    assert.deepEqual(responses.map(r => r.status).sort(), [202, 409]);
+    const purchases = (await f.request('GET', `/v1/competitions/${c.id}/purchases`)).data.items;
+    const pay = (await f.request('GET', `/v1/payments/${payment.id}`)).data;
+    assert.equal(purchases.length, pay.purpose === 'first_purchase' ? 1 : 0);
+    assert.equal(pay.capture_state, 'pending'); assert.ok(pay.operation_id);
+    await f.advance(300);
+    assert.equal((await f.request('GET', `/v1/payments/${payment.id}`)).data.operation_id, pay.operation_id);
+  }
+});
+
+test('An unknown early capture survives deadlines and later evaluator errors without a fee or void', async t => {
+  const f = await fixture(t); const { c, payment } = await f.open(); const selected = await f.submit(c); await f.submit(c, 'agent-beta', false);
+  const first = (await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: selected.id })).data;
+  const unknown = (await f.observe(payment.id, 'unknown')).data;
+  await f.advance(720);
+  const after = (await f.request('GET', `/v1/payments/${payment.id}`)).data;
+  const competition = (await f.request('GET', `/v1/competitions/${c.id}`)).data;
+  assert.equal(competition.outcome, 'winner_selected'); assert.equal(competition.first_purchase_id, first.id);
+  assert.equal(after.operation_id, unknown.operation_id); assert.equal(after.purpose, 'first_purchase');
+  assert.equal(after.capture_state, 'pending'); assert.equal(after.operation_state, 'unknown'); assert.equal(after.authorization_state, 'authorized');
+  await f.observe(payment.id, 'completed');
+  assert.equal((await f.request('GET', `/v1/purchases/${first.id}`)).data.delivery_unlocked, true);
+});
+
+test('Reversal is independent of refund; duplicate completion and dispute wins cannot revive reversed funds', async t => {
+  const f = await fixture(t); const { c, payment } = await f.open(); const s = await f.submit(c);
+  const purchase = (await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: s.id })).data;
+  await f.observe(payment.id, 'completed'); const access = (await f.post(`/v1/purchases/${purchase.id}/delivery-access`)).data;
+  await f.observe(payment.id, 'disputed'); await f.observe(payment.id, 'reversal_pending');
+  await f.observe(payment.id, 'completed');
+  assert.equal((await f.request('GET', `/v1/purchases/${purchase.id}`)).data.delivery_unlocked, false);
+  await f.observe(payment.id, 'reversed');
+  await f.observe(payment.id, 'completed'); await f.observe(payment.id, 'dispute_won');
+  const pay = (await f.request('GET', `/v1/payments/${payment.id}`)).data;
+  assert.equal(pay.capture_state, 'completed'); assert.equal(pay.reversal_state, 'reversed'); assert.equal(pay.reversed_minor, 500); assert.equal(pay.refunded_minor, 0);
+  assert.equal((await f.request('GET', `/v1/purchases/${purchase.id}`)).data.status, 'reversed');
+  assert.equal((await f.request('GET', new URL(access.artifacts[0].url).pathname)).data.code, 'DELIVERY_LOCKED');
+  assert.equal((await f.post(`/v1/payments/${payment.id}/refunds`, { reason: 'Cannot refund reversed funds' }, 'admin-demo')).status, 409);
+  assert.equal((await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data.allocations[0].ledger_state, 'reversed');
+});
+
+test('Merchant-favor dispute resolution restores only a retained capture with no other hold', async t => {
+  for (const held of [false, true]) {
+    const f = await fixture(t); const { c, payment } = await f.open(); const s = await f.submit(c);
+    const purchase = (await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: s.id })).data;
+    await f.observe(payment.id, 'completed'); await f.observe(payment.id, 'disputed');
+    if (held) await f.post(`/v1/payments/${payment.id}/refunds`, { reason: 'Refund remains pending' }, 'admin-demo');
+    await f.observe(payment.id, 'dispute_won');
+    const result = (await f.request('GET', `/v1/purchases/${purchase.id}`)).data;
+    assert.equal(result.delivery_unlocked, !held);
+    assert.equal((await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data.allocations[0].ledger_state, held ? 'held' : 'allocated');
+  }
+  const f = await fixture(t); const { c, payment } = await f.open(); const s = await f.submit(c);
+  const purchase = (await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: s.id })).data;
+  await f.observe(payment.id, 'completed'); await f.observe(payment.id, 'disputed'); await f.observe(payment.id, 'dispute_lost');
+  assert.equal((await f.request('GET', `/v1/purchases/${purchase.id}`)).data.delivery_unlocked, false);
+});
+
+test('Personas and rotated credentials share provisioned operators and only one participation share per operator', async t => {
+  const f = await fixture(t); const { c, payment } = await f.open(); const alpha = await f.submit(c);
+  const duplicate = await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'Rotated token', artifacts: [{ asset_id: alpha.artifacts[0].asset_id }] }, 'agent-alpha-rotated');
+  assert.equal(duplicate.data.code, 'DUPLICATE_SUBMISSION');
+  await f.submit(c, 'agent-beta'); await f.submit(c, 'agent-gamma'); await f.submit(c, 'agent-guest'); await f.submit(c, 'agent-guest-alt');
+  const profiles = (await f.request('GET', '/v1/agents', undefined, null)).data.items;
+  assert.equal(new Set(profiles.map((a: any) => a.operator_id)).size, 1);
+  await f.advance(720); await f.observe(payment.id, 'completed');
+  const ledger = (await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data.allocations;
+  assert.equal(ledger.length, 2); assert.deepEqual(ledger.map((a: any) => a.amount.amount_minor), [23, 22]);
+  assert.equal(new Set(ledger.map((a: any) => a.recipient_id)).size, 2);
+  const own = (await f.request('GET', '/v1/agents/me/earnings', undefined, 'agent-alpha-rotated')).data.items;
+  assert.equal(own.length, 1); assert.equal(own[0].operator_id, 'operator_provable');
+  const guests = (await f.request('GET', '/v1/agents/me/earnings', undefined, 'agent-guest-alt')).data.items;
+  assert.equal(guests.length, 1); assert.equal(guests[0].operator_id, 'operator_guest');
+});
+
+test('Gallery refresh starts from the beginning and recovers an older late qualifier', async t => {
+  const f = await fixture(t); const address = await f.app.listen({ host: '127.0.0.1', port: 0 });
+  const { c } = await f.open(); const older = await f.submit(c, 'agent-alpha', false);
+  await f.advance(1); const newer = await f.submit(c, 'agent-beta'); await f.advance(1); await f.submit(c, 'agent-gamma');
+  const client = createApiClient({ baseUrl: address, token: 'buyer-demo' });
+  assert.equal((await readQualifiedGallery(client, c.id, { limit: 1 })).length, 2);
+  const firstPage = (await f.request('GET', `/v1/competitions/${c.id}/submissions?limit=1`)).data;
+  assert.equal(firstPage.items[0].id, newer.id); assert.ok(firstPage.next_cursor);
+  await f.post(`/__mock/submissions/${older.id}/qualification`, grade, 'admin-demo');
+  const forwardOnly = (await f.request('GET', `/v1/competitions/${c.id}/submissions?cursor=${firstPage.next_cursor}`)).data.items;
+  assert.ok(!forwardOnly.some((s: any) => s.id === older.id)); // Demonstrates the original trap.
+  assert.ok((await readQualifiedGallery(client, c.id, { limit: 1 })).some(s => s.id === older.id));
+});
+
+test('Expired access replay stays stale; a new nonfinancial key renews access without another charge', async t => {
+  const f = await fixture(t); const { c, payment } = await f.open(); const s = await f.submit(c);
+  const purchase = (await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: s.id })).data;
+  await f.observe(payment.id, 'completed'); const pay = (await f.request('GET', `/v1/payments/${payment.id}`)).data;
+  const path = `/v1/purchases/${purchase.id}/delivery-access`;
+  const first = (await f.post(path, undefined, 'buyer-demo', 'access_known_1')).data;
+  await f.advance(60);
+  const replay = (await f.post(path, undefined, 'buyer-demo', 'access_known_1')).data;
+  assert.deepEqual(replay, first); assert.equal((await f.request('GET', new URL(replay.artifacts[0].url).pathname)).status, 409);
+  const fresh = (await f.post(path, undefined, 'buyer-demo', 'access_fresh_2')).data;
+  assert.notEqual(fresh.artifacts[0].url, first.artifacts[0].url); assert.equal((await f.request('GET', new URL(fresh.artifacts[0].url).pathname)).status, 200);
+  assert.equal((await f.request('GET', `/v1/payments/${payment.id}`)).data.operation_id, pay.operation_id);
+  assert.equal((await f.request('GET', `/v1/competitions/${c.id}/purchases`)).data.items.length, 1);
+});
+
+test('Local scenario driver advances an existing browser-created competition outside the buyer UI', async t => {
+  const f = await fixture(t); const address = await f.app.listen({ host: '127.0.0.1', port: 0 }); const { c } = await f.open();
+  const s = await f.submit(c, 'agent-alpha', false);
+  assert.equal((await f.request('GET', `/v1/competitions/${c.id}/submissions`)).data.items.length, 0);
+  const driven = await driveMockCompetition({ baseUrl: address, competitionId: c.id, qualify: true }); assert.equal(driven.qualified, 1);
+  const purchase = (await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: s.id })).data;
+  assert.equal(purchase.delivery_unlocked, false);
+  const paid = await driveMockCompetition({ baseUrl: address, competitionId: c.id, completePayments: true }); assert.equal(paid.completed, 1);
+  assert.equal((await assertPaidOriginals(address, purchase.id)).assertions.original_hashes_verified, true);
+  assert.equal((await driveMockCompetition({ baseUrl: address, competitionId: c.id, completePayments: true })).completed, 0);
+  await assert.rejects(driveMockCompetition({ baseUrl: 'https://example.org', competitionId: c.id, qualify: true }), /loopback/);
+});
+
+test('Qualification results bind exact immutable artifact hashes; missing or stale bindings cannot change visibility', async t => {
+  const f = await fixture(t); const { c } = await f.open(); const s = await f.submit(c, 'agent-alpha', false);
+  const path = `/__mock/submissions/${s.id}/qualification`;
+  assert.equal((await f.request('POST', path, grade, 'admin-demo')).status, 400);
+  assert.equal((await f.post(path, { ...grade, artifact_hashes: [{ asset_id: s.artifacts[0].asset_id, sha256: '0'.repeat(64) }] }, 'admin-demo')).status, 400);
+  assert.equal((await f.post(path, { ...grade, artifact_hashes: [{ asset_id: 'asset_wrong', sha256: s.artifacts[0].sha256 }] }, 'admin-demo')).status, 400);
+  assert.equal((await f.request('GET', `/v1/competitions/${c.id}/submissions`)).data.items.length, 0);
+  assert.equal((await f.post(path, grade, 'admin-demo')).status, 200);
+});
+
+test('Confirmed provider expense remains explicit and platform subsidizes a 50-cent participation capture', async t => {
+  const f = await fixture(t); const { c, payment } = await f.open(); await f.submit(c); await f.advance(720);
+  await f.observe(payment.id, 'completed');
+  const unknown = (await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data.accounting[0];
+  assert.equal(unknown.provider_expense_minor, null); assert.equal(unknown.expense_state, 'unknown');
+  await f.post(`/__mock/payments/${payment.id}/observation`, { observation: 'completed', provider_expense_minor: 51 }, 'admin-demo');
+  const settlement = (await f.request('GET', `/v1/competitions/${c.id}/settlement`)).data;
+  assert.deepEqual(settlement.accounting[0], { payment_id: payment.id, currency: 'USD', gross_minor: 50, commission_minor: 5,
+    provider_expense_minor: 51, deducted_expense_minor: 0, platform_absorbed_expense_minor: 51, distributable_minor: 45, expense_state: 'confirmed' });
+  assert.equal(settlement.allocations[0].amount.amount_minor, 45); assert.equal(settlement.allocations[0].payout_state, 'simulated');
+  assert.equal((await f.post(`/__mock/payments/${payment.id}/observation`, { observation: 'completed', provider_expense_minor: 0 }, 'admin-demo')).status, 409);
+});
+
+test('Authorization safety uses provider creation time and retries never reset the financial or competition clocks', async t => {
+  const f = await fixture(t, { authorizationAgeSeconds: 3600 }); const { c, payment } = await f.open();
+  assert.equal(Date.parse(c.opens_at) - Date.parse(payment.authorized_at), 3600_000);
+  await f.advance(2); const repeated = await f.post(`/v1/competitions/${c.id}/authorize`);
+  assert.equal(repeated.data.authorized_at, payment.authorized_at); assert.equal((await f.request('GET', `/v1/competitions/${c.id}`)).data.opens_at, c.opens_at);
+  const aged = await fixture(t, { authorizationAgeSeconds: 3 * 86400 }); const created = (await aged.post('/v1/competitions', brief)).data;
+  await aged.post(`/v1/competitions/${created.id}/checkout`);
+  assert.equal((await aged.post(`/v1/competitions/${created.id}/authorize`)).data.code, 'PAYMENT_NOT_READY');
+  assert.equal((await aged.request('GET', `/v1/competitions/${created.id}`)).data.opens_at, null);
+});
+
+test('Blank text, decoded oversized dimensions, shared credential quotas, and abandoned upload cleanup are enforced', async t => {
+  const f = await fixture(t); const { c } = await f.open();
+  const input = { competition_id: c.id, type: 'text', mime_type: 'text/plain', content_base64: Buffer.from(' \n\t').toString('base64') };
+  assert.equal((await f.post('/v1/assets', input, 'agent-alpha')).status, 400);
+  const wide = await sharp({ create: { width: 4097, height: 1, channels: 3, background: 'red' } }).png().toBuffer();
+  assert.equal((await f.post('/v1/assets', { ...input, type: 'image', mime_type: 'image/png', content_base64: wide.toString('base64') }, 'agent-alpha')).status, 400);
+  const huge = await sharp({ create: { width: 4001, height: 4001, channels: 3, background: 'black' } }).png().toBuffer();
+  assert.ok(huge.length < 2097152);
+  assert.equal((await f.post('/v1/assets', { ...input, type: 'image', mime_type: 'image/png', content_base64: huge.toString('base64') }, 'agent-alpha')).status, 400);
+  const used = await f.submit(c); const abandoned = await f.upload(c); await f.upload(c, 'agent-alpha-rotated');
+  assert.equal((await f.post('/v1/assets', { ...input, content_base64: Buffer.from('another').toString('base64') }, 'agent-alpha-rotated')).status, 409);
+  await f.advance(3900);
+  assert.equal((await f.request('GET', `/v1/assets/${abandoned.id}`, undefined, 'admin-demo')).status, 404);
+  assert.equal((await f.request('GET', `/v1/assets/${used.artifacts[0].asset_id}`, undefined, 'admin-demo')).status, 200);
+});
+
+test('Rotated credentials retain the registered agent idempotency scope for uploads', async t => {
+  const f = await fixture(t); const { c } = await f.open();
+  const input = { competition_id: c.id, type: 'text', mime_type: 'text/plain', content_base64: Buffer.from(content).toString('base64') };
+  const one = await f.post('/v1/assets', input, 'agent-alpha', 'stable_upload_key');
+  const replay = await f.post('/v1/assets', input, 'agent-alpha-rotated', 'stable_upload_key');
+  assert.equal(replay.status, 201); assert.deepEqual(replay.data, one.data);
+});
+
+test('Mixed evaluator failure policy is explicit: two qualifiers plus one timeout waive only an undecided fee', async t => {
+  for (const selected of [false, true]) {
+    const f = await fixture(t); const { c, payment } = await f.open(); const a = await f.submit(c); await f.submit(c, 'agent-beta'); await f.submit(c, 'agent-gamma', false);
+    if (selected) await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: a.id });
+    await f.advance(420);
+    const result = (await f.request('GET', `/v1/competitions/${c.id}`)).data;
+    const pay = (await f.request('GET', `/v1/payments/${payment.id}`)).data;
+    assert.equal(result.outcome, selected ? 'winner_selected' : 'infrastructure_failure');
+    assert.equal(pay.purpose, selected ? 'first_purchase' : 'initial');
+    assert.equal(pay.authorization_state, selected ? 'authorized' : 'voided');
+  }
+});
+
+test('Aggregate artifact bytes are checked at submission even when each uploaded image is within its limit', async t => {
+  const f = await fixture(t); const { c } = await f.open();
+  const bytes = await sharp({ create: { width: 750, height: 750, channels: 3, background: 'blue' } }).png({ compressionLevel: 0 }).toBuffer();
+  assert.ok(bytes.length <= 2097152 && bytes.length * 2 > 3145728);
+  const one = await f.upload(c, 'agent-alpha', 'image', 'image/png', bytes); const two = await f.upload(c, 'agent-alpha', 'image', 'image/png', bytes);
+  assert.equal((await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'Too large in total', artifacts: [{ asset_id: one.id }, { asset_id: two.id }] }, 'agent-alpha')).status, 400);
+});
+
+test('Buyer/operator ownership blocks self-competition before internal generation or upload', async t => {
+  const f = await fixture(t); const created = (await f.post('/v1/competitions', brief, 'buyer-platform')).data;
+  await f.post(`/v1/competitions/${created.id}/checkout`, undefined, 'buyer-platform');
+  await f.post(`/v1/competitions/${created.id}/authorize`, undefined, 'buyer-platform');
+  assert.equal((await f.post(`/v1/competitions/${created.id}/agent-runs`, { agent_ids: ['agent_alpha'] }, 'buyer-platform')).status, 403);
+  assert.equal((await f.post('/v1/assets', { competition_id: created.id, type: 'text', mime_type: 'text/plain', content_base64: Buffer.from(content).toString('base64') }, 'agent-alpha')).status, 403);
 });
 
 after(() => {

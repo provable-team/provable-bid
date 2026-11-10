@@ -6,16 +6,9 @@ import { creativeAgents, creativeFixture } from './fixtures.js';
 import { operations, resolve, validator, validateResponse } from '../../../scripts/contract.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
 
+import { principals, internalPrincipal, type Principal } from './identity.js';
+
 type S = components['schemas'];
-type Principal = { id: string; role: 'buyer' | 'agent' | 'admin' };
-const principals: Record<string, Principal> = {
-  'buyer-demo': { id: 'buyer_demo', role: 'buyer' },
-  'buyer-other': { id: 'buyer_other', role: 'buyer' },
-  'agent-alpha': { id: 'agent_alpha', role: 'agent' },
-  'agent-beta': { id: 'agent_beta', role: 'agent' },
-  'agent-gamma': { id: 'agent_gamma', role: 'agent' },
-  'admin-demo': { id: 'admin_demo', role: 'admin' },
-};
 class Fault extends Error {
   constructor(public status: number, public code: S['Problem']['code'], message: string) { super(message); }
 }
@@ -29,20 +22,28 @@ function canonical(value: any): string {
 }
 const id = (prefix: string) => `${prefix}_${randomUUID()}`;
 const money = (amount_minor: number): S['Money'] => ({ currency: 'USD', amount_minor });
+const artifactDigests = (s: S['Submission']): S['ArtifactDigest'][] => s.artifacts.map(a => ({ asset_id: a.asset_id, sha256: a.sha256 }));
 
 /** In-memory executable contract fixture. No PayPal/AI/storage/payout integration. */
-export async function createMock(options: { now?: () => number } = {}) {
+export async function createMock(options: { now?: () => number; authorizationAgeSeconds?: number } = {}) {
   const app = Fastify({ logger: false, bodyLimit: 3_000_000, requestIdHeader: false });
   await app.register(cors, { origin: ['http://localhost:3000', 'http://127.0.0.1:3000'], exposedHeaders: ['X-Request-Id'] });
   let offset = 0;
   const time = () => (options.now?.() ?? Date.now()) + offset;
   const stamp = () => new Date(time()).toISOString();
   const at = (ms: number) => new Date(ms).toISOString();
+  const urlFor = (path: string) => {
+    const address = app.server.address();
+    const port = address && typeof address === 'object' ? address.port : 4010;
+    return `http://127.0.0.1:${port}${path}`;
+  };
   const health = (): S['Health'] => ({ status: 'ok', mode: 'mock', server_time: stamp() });
   const policy: S['Policy'] = { terms_version: 'sandbox-v1', participation_fee_bps: 1000, commission_bps: 1000, expense_cap_minor: 0, qualification_grace_seconds: 120 };
   const competitions = new Map<string, S['Competition']>();
+  const buyerOperators = new Map<string, string | null>();
   const submissions = new Map<string, S['Submission']>();
   const assets = new Map<string, PrivateAsset>();
+  const submissionAccounting = new Map<string, { operator_id: string; recipient_id: string }>();
   const runs = new Map<string, S['AgentRun']>();
   const payments = new Map<string, S['Payment']>();
   const purchases = new Map<string, S['Purchase']>();
@@ -75,7 +76,7 @@ export async function createMock(options: { now?: () => number } = {}) {
   const compSubmissions = (c: S['Competition']) => [...submissions.values()].filter(s => s.competition_id === c.id);
   function canReadSubmission(s: S['Submission'], p: Principal) {
     const c = fetchOne(competitions, s.competition_id);
-    return p.role === 'admin' || s.agent_id === p.id || (p.role === 'buyer' && c.buyer_id === p.id && s.qualification_status === 'qualified');
+    return p.role === 'admin' || (p.role === 'agent' && s.agent_id === p.agent_id) || (p.role === 'buyer' && c.buyer_id === p.id && s.qualification_status === 'qualified');
   }
   function requireOpen(c: S['Competition']) {
     demand(c.state === 'open' && time() < Date.parse(c.submission_deadline!), 'DEADLINE_PASSED', 'Submission window is not open.');
@@ -83,7 +84,8 @@ export async function createMock(options: { now?: () => number } = {}) {
   async function ingest(input: S['UploadAsset'], who: Principal): Promise<S['Asset']> {
     demand(who.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
     const c = fetchOne(competitions, input.competition_id); readCompetition(c, who); requireOpen(c);
-    demand([...assets.values()].filter(a => a.metadata.competition_id === c.id && a.metadata.owner_agent_id === who.id).length < 3, 'INVALID_STATE', 'At most three staged assets per agent/competition.');
+    demand(buyerOperators.get(c.id) !== who.operator_id, 'FORBIDDEN', 'Buyer operator cannot compete in its own competition.', 403);
+    demand([...assets.values()].filter(a => a.metadata.competition_id === c.id && a.metadata.owner_agent_id === who.agent_id).length < 3, 'INVALID_STATE', 'At most three staged assets per agent/competition.');
     let prepared: Awaited<ReturnType<typeof prepareAsset>>;
     try { prepared = await prepareAsset(input); } catch {
       throw new Fault(400, 'VALIDATION_ERROR', 'Asset bytes, media type, or dimensions do not meet the contract.');
@@ -92,9 +94,9 @@ export async function createMock(options: { now?: () => number } = {}) {
     requireOpen(c);
     const assetId = id('asset');
     const metadata: S['Asset'] = {
-      id: assetId, competition_id: c.id, owner_agent_id: who.id, type: input.type, mime_type: input.mime_type,
+      id: assetId, competition_id: c.id, owner_agent_id: who.agent_id, type: input.type, mime_type: input.mime_type,
       size_bytes: prepared.original.length, sha256: prepared.sha256, width: prepared.width, height: prepared.height,
-      preview: { url: `http://127.0.0.1:4010/v1/assets/${assetId}/preview`, mime_type: input.type === 'text' ? 'text/plain' : 'image/png',
+      preview: { url: urlFor(`/v1/assets/${assetId}/preview`), mime_type: input.type === 'text' ? 'text/plain' : 'image/png',
         width: prepared.previewWidth, height: prepared.previewHeight, text_excerpt: prepared.excerpt },
       created_at: stamp(), server_time: stamp(),
     };
@@ -104,24 +106,27 @@ export async function createMock(options: { now?: () => number } = {}) {
   function submit(c: S['Competition'], who: Principal, title: string, refs: { asset_id: string }[]): S['Submission'] {
     demand(who.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
     requireOpen(c);
-    demand(c.buyer_id !== who.id, 'FORBIDDEN', 'Buyer cannot compete in own competition.', 403);
-    demand(!compSubmissions(c).some(s => s.recipient_principal_id === who.id), 'DUPLICATE_SUBMISSION', 'One immutable submission per principal.');
+    demand(buyerOperators.get(c.id) !== who.operator_id, 'FORBIDDEN', 'Buyer operator cannot compete in its own competition.', 403);
+    demand(!compSubmissions(c).some(s => s.agent_id === who.agent_id), 'DUPLICATE_SUBMISSION', 'One immutable submission per registered agent identity.');
     demand(new Set(refs.map(x => x.asset_id)).size === refs.length, 'VALIDATION_ERROR', 'Artifact asset IDs must be distinct.', 400);
     const originals = refs.map(r => fetchOne(assets, r.asset_id));
-    demand(originals.every(a => a.metadata.owner_agent_id === who.id && a.metadata.competition_id === c.id), 'NOT_FOUND', 'Resource not found.', 404);
+    demand(originals.every(a => a.metadata.owner_agent_id === who.agent_id && a.metadata.competition_id === c.id), 'NOT_FOUND', 'Resource not found.', 404);
     demand(originals.reduce((sum, a) => sum + a.original.length, 0) <= 3_145_728, 'VALIDATION_ERROR', 'Submission originals exceed 3 MiB.', 400);
     const artifacts: S['Artifact'][] = originals.map(({ metadata: a }) => ({
       asset_id: a.id, type: a.type, mime_type: a.mime_type, size_bytes: a.size_bytes, sha256: a.sha256,
       width: a.width, height: a.height, preview: a.preview,
     }));
-    const s: S['Submission'] = { id: id('sub'), competition_id: c.id, agent_id: who.id, recipient_principal_id: who.id,
+    const s: S['Submission'] = { id: id('sub'), competition_id: c.id, agent_id: who.agent_id, operator_id: who.operator_id,
       title, artifacts, qualification_status: 'pending', qualification: null, created_at: stamp(), server_time: stamp() };
-    submissions.set(s.id, s); return s;
+    submissions.set(s.id, s);
+    submissionAccounting.set(s.id, { operator_id: who.operator_id, recipient_id: who.recipient_id });
+    return s;
   }
-  const entitled = (p: S['Payment']) => p.capture_state === 'completed' && p.refund_state === 'none' && p.refunded_minor === 0 && p.dispute_state === 'none';
+  const entitled = (p: S['Payment']) => p.capture_state === 'completed' && p.refund_state === 'none' && p.refunded_minor === 0 && p.reversal_state === 'none' && p.reversed_minor === 0 && ['none', 'won'].includes(p.dispute_state);
   function purchaseView(p: S['Purchase']): S['Purchase'] {
     const pay = fetchOne(payments, p.payment_id);
-    const status: S['Purchase']['status'] = pay.dispute_state !== 'none' ? 'disputed'
+    const status: S['Purchase']['status'] = pay.reversal_state === 'reversed' ? 'reversed'
+      : ['open', 'lost'].includes(pay.dispute_state) ? 'disputed'
       : pay.refunded_minor > 0 ? 'refunded'
       : pay.capture_state === 'completed' ? 'payment_completed'
       : pay.capture_state === 'failed' ? 'payment_failed'
@@ -136,13 +141,13 @@ export async function createMock(options: { now?: () => number } = {}) {
       capture_state: 'none', operation_state: 'idle', operation_id: null,
       provider_order_id: id('MOCK_ORDER'), provider_authorization_id: null, provider_capture_id: null,
       authorized_at: null, authorization_expires_at: null, captured_minor: 0, refunded_minor: 0,
-      refund_state: 'none', dispute_state: 'none', last_error_code: null,
+      refund_state: 'none', dispute_state: 'none', reversal_state: 'none', reversed_minor: 0, provider_expense_minor: null, last_error_code: null,
       created_at: stamp(), updated_at: stamp(), server_time: stamp(),
     };
     payments.set(p.id, p);
     const checkout: S['Checkout'] = {
       payment_id: p.id, provider_order_id: p.provider_order_id!, intent: purpose === 'initial' ? 'AUTHORIZE' : 'CAPTURE',
-      approval_url: `http://127.0.0.1:4010/mock-approval?payment_id=${p.id}`,
+      approval_url: urlFor(`/mock-approval?payment_id=${p.id}`),
       expires_at: purpose === 'initial' ? at(time() + 600_000) : c.decision_deadline!, server_time: stamp(),
     };
     checkouts.set(p.id, checkout);
@@ -163,15 +168,15 @@ export async function createMock(options: { now?: () => number } = {}) {
     const c = fetchOne(competitions, p.competition_id);
     const existing = [...allocations.values()].filter(a => a.payment_id === p.id);
     if (existing.length) return;
-    const gross = p.captured_minor;
-    const net = gross - Math.floor(gross * c.policy.commission_bps / 10000); // demo absorbs expenses
+    const net = captureAccounting(p).distributable_minor;
     const purchase = [...purchases.values()].find(x => x.payment_id === p.id);
-    const recipients = purchase ? [fetchOne(submissions, purchase.submission_id).recipient_principal_id]
-      : [...new Set(compSubmissions(c).filter(s => s.qualification_status === 'qualified').map(s => s.recipient_principal_id))].sort();
+    const eligible = purchase ? [fetchOne(submissionAccounting, purchase.submission_id)]
+      : compSubmissions(c).filter(s => s.qualification_status === 'qualified').map(s => fetchOne(submissionAccounting, s.id));
+    const recipients = [...new Map(eligible.map(a => [a.operator_id, a])).values()].sort((a,b) => a.operator_id.localeCompare(b.operator_id));
     demand(recipients.length > 0);
     recipients.forEach((recipient, index) => {
       const a: S['Allocation'] = {
-        id: id('alloc'), competition_id: c.id, payment_id: p.id, recipient_principal_id: recipient,
+        id: id('alloc'), competition_id: c.id, payment_id: p.id, operator_id: recipient.operator_id, recipient_id: recipient.recipient_id,
         kind: purchase ? 'winner' : 'participation',
         amount: money(Math.floor(net / recipients.length) + (index < net % recipients.length ? 1 : 0)),
         ledger_state: 'allocated', payout_state: 'simulated', provider_payout_id: null, created_at: stamp(),
@@ -181,8 +186,18 @@ export async function createMock(options: { now?: () => number } = {}) {
   }
   function holdAllocations(p: S['Payment'], reversed: boolean) {
     for (const a of allocations.values()) if (a.payment_id === p.id) {
-      a.ledger_state = reversed ? 'reversed' : 'held'; a.payout_state = 'blocked';
+      if (a.ledger_state !== 'reversed') a.ledger_state = reversed ? 'reversed' : 'held';
+      a.payout_state = 'blocked';
     }
+  }
+  function captureAccounting(p: S['Payment']): S['CaptureAccounting'] {
+    const c = fetchOne(competitions, p.competition_id);
+    const commission = Math.floor(p.captured_minor * c.policy.commission_bps / 10000);
+    const deducted = Math.min(p.provider_expense_minor ?? 0, c.policy.expense_cap_minor, p.captured_minor - commission);
+    return { payment_id: p.id, currency: 'USD', gross_minor: p.captured_minor, commission_minor: commission,
+      provider_expense_minor: p.provider_expense_minor, deducted_expense_minor: deducted,
+      platform_absorbed_expense_minor: p.provider_expense_minor === null ? null : p.provider_expense_minor - deducted,
+      distributable_minor: p.captured_minor - commission - deducted, expense_state: p.provider_expense_minor === null ? 'unknown' : 'confirmed' };
   }
   function tick() {
     for (const c of competitions.values()) {
@@ -199,7 +214,7 @@ export async function createMock(options: { now?: () => number } = {}) {
         const all = compSubmissions(c);
         for (const s of all) if (s.qualification_status === 'pending') {
           s.qualification_status = 'error';
-          s.qualification = { status: 'error', checks: [], reason: 'Qualification deadline exceeded.', evaluator_version: 'mock-timeout-v1', failure_code: null };
+          s.qualification = { status: 'error', checks: [], reason: 'Qualification deadline exceeded.', evaluator_version: 'mock-timeout-v1', failure_code: null, artifact_hashes: artifactDigests(s) };
         }
         if (c.first_purchase_id) { c.state = 'closed'; c.outcome = 'winner_selected'; }
         else if (all.some(s => s.qualification_status === 'error')) { c.state = 'cancelled'; c.outcome = 'infrastructure_failure'; voidAuthorization(p); }
@@ -210,6 +225,11 @@ export async function createMock(options: { now?: () => number } = {}) {
       if (c.state === 'deciding' && time() >= Date.parse(c.decision_deadline!)) {
         c.state = 'closed'; c.outcome = 'participation_fee'; queueCapture(p, 'participation_fee'); update(c);
       }
+    }
+    const submitted = new Set([...submissions.values()].flatMap(s => s.artifacts.map(a => a.asset_id)));
+    for (const [assetId, asset] of assets) {
+      const c = competitions.get(asset.metadata.competition_id);
+      if (!submitted.has(assetId) && c?.submission_deadline && time() >= Date.parse(c.submission_deadline) + 3600_000) assets.delete(assetId);
     }
   }
   function page(items: any[], query: any, decorate = true) {
@@ -234,13 +254,13 @@ export async function createMock(options: { now?: () => number } = {}) {
       case 'uploadAsset': return ok(view(await ingest(body, p)), 201);
       case 'getAsset': {
         const asset = fetchOne(assets, params.asset_id);
-        demand(asset.metadata.owner_agent_id === p.id || p.role === 'admin', 'NOT_FOUND', 'Resource not found.', 404);
+        demand((p.role === 'agent' && asset.metadata.owner_agent_id === p.agent_id) || p.role === 'admin', 'NOT_FOUND', 'Resource not found.', 404);
         return ok(view(asset.metadata));
       }
       case 'getAssetPreview': {
         const asset = fetchOne(assets, params.asset_id);
         const bound = [...submissions.values()].find(s => s.artifacts.some(a => a.asset_id === asset.metadata.id));
-        demand(p.role === 'admin' || asset.metadata.owner_agent_id === p.id || (bound && canReadSubmission(bound, p)), 'NOT_FOUND', 'Resource not found.', 404);
+        demand(p.role === 'admin' || (p.role === 'agent' && asset.metadata.owner_agent_id === p.agent_id) || (bound && canReadSubmission(bound, p)), 'NOT_FOUND', 'Resource not found.', 404);
         return { status: 200, body: asset.metadata.type === 'text' ? asset.preview.toString('utf8') : asset.preview,
           type: asset.metadata.preview.mime_type, cache: 'no-store' };
       }
@@ -249,6 +269,7 @@ export async function createMock(options: { now?: () => number } = {}) {
         if (p.role !== 'admin') owner(c, p); requireOpen(c);
         const agents = (body.agent_ids as string[]).map(agentId => creativeAgents.find(a => a.id === agentId));
         demand(agents.every(a => a?.status === 'available'), 'VALIDATION_ERROR', 'Every agent must be available in the internal registry.', 400);
+        demand(agents.every(a => a!.operator_id !== buyerOperators.get(c.id)), 'FORBIDDEN', 'Buyer operator cannot trigger its own competing agents.', 403);
         const result: S['AgentRun'][] = [];
         for (const agent of agents) {
           const existing = [...runs.values()].find(r => r.competition_id === c.id && r.agent_id === agent!.id);
@@ -260,7 +281,7 @@ export async function createMock(options: { now?: () => number } = {}) {
           try {
             if (!alreadySubmitted) {
               const fixture = await creativeFixture(agent!);
-              const who: Principal = { id: agent!.id, role: 'agent' };
+              const who = internalPrincipal(agent!.id);
               const image = await ingest({ competition_id: c.id, type: 'image', mime_type: 'image/png', content_base64: fixture.image.toString('base64') }, who);
               const text = await ingest({ competition_id: c.id, type: 'text', mime_type: 'text/plain', content_base64: Buffer.from(fixture.text).toString('base64') }, who);
               run.submission_id = submit(c, who, `Five Minute Scenes — ${agent!.name}`, [{ asset_id: image.id }, { asset_id: text.id }]).id;
@@ -289,7 +310,7 @@ export async function createMock(options: { now?: () => number } = {}) {
           created_at: stamp(), opens_at: null, submission_deadline: null, qualification_deadline: null, decision_deadline: null,
           version: 1, server_time: stamp(),
         };
-        competitions.set(c.id, c); return ok(view(c), 201);
+        competitions.set(c.id, c); buyerOperators.set(c.id, p.operator_id ?? null); return ok(view(c), 201);
       }
       case 'listCompetitions': return ok(page([...competitions.values()].filter(c => c.opens_at || c.buyer_id === p.id || p.role === 'admin'), query));
       case 'getCompetition': { const c = fetchOne(competitions, params.competition_id); readCompetition(c, p); return ok(view(c)); }
@@ -305,7 +326,10 @@ export async function createMock(options: { now?: () => number } = {}) {
         if (c.opens_at) return ok(view(pay), 202);
         demand(c.state === 'awaiting_authorization');
         demand(time() < Date.parse(fetchOne(checkouts, pay.id).expires_at), 'DEADLINE_PASSED', 'Checkout expired.');
-        pay.authorization_state = 'authorized'; pay.authorized_at = stamp(); pay.authorization_expires_at = at(time() + 29 * 86400_000);
+        const providerCreated = time() - (options.authorizationAgeSeconds ?? 0) * 1000;
+        const schedule = (c.submission_window_seconds + c.policy.qualification_grace_seconds + c.decision_window_seconds) * 1000;
+        demand(time() + schedule + 900_000 < providerCreated + 3 * 86400_000, 'PAYMENT_NOT_READY', 'Provider authorization is too old for the capture safety horizon.');
+        pay.authorization_state = 'authorized'; pay.authorized_at = at(providerCreated); pay.authorization_expires_at = at(providerCreated + 29 * 86400_000);
         pay.provider_authorization_id = id('MOCK_AUTH'); pay.operation_id = id('op'); pay.operation_state = 'succeeded'; pay.updated_at = stamp();
         c.opens_at = stamp(); c.submission_deadline = at(time() + c.submission_window_seconds * 1000);
         c.qualification_deadline = at(Date.parse(c.submission_deadline) + policy.qualification_grace_seconds * 1000);
@@ -339,6 +363,7 @@ export async function createMock(options: { now?: () => number } = {}) {
           demand(checks.length === c.requirements.length && new Set(checks.map(x => x.requirement_id)).size === checks.length && checks.every(x => c.requirements.some(r => r.id === x.requirement_id)), 'VALIDATION_ERROR', 'Exactly one check per requirement is required.', 400);
           demand(body.status === 'qualified' ? body.failure_code === null && checks.every(x => x.passed) : body.failure_code === 'requirements_not_met' && checks.some(x => !x.passed), 'VALIDATION_ERROR', 'Qualification status contradicts checks.', 400);
         }
+        demand(body.artifact_hashes.length === s.artifacts.length && new Set(body.artifact_hashes.map((a: any) => a.asset_id)).size === s.artifacts.length && body.artifact_hashes.every((a: any) => s.artifacts.some(x => x.asset_id === a.asset_id && x.sha256 === a.sha256)), 'VALIDATION_ERROR', 'Qualification must match every frozen artifact digest.', 400);
         s.qualification_status = body.status; s.qualification = body; return ok(view(s));
       }
       case 'selectFirstWinner': {
@@ -398,7 +423,7 @@ export async function createMock(options: { now?: () => number } = {}) {
         owner(fetchOne(competitions, purchase.competition_id), p); demand(entitled(pay), 'DELIVERY_LOCKED', 'Payment not complete or funds are held/reversed.');
         const originalArtifacts = fetchOne(submissions, purchase.submission_id).artifacts.map(a => {
           const token = id('dl'); deliveries.set(token, { purchase: purchase.id, asset: a.asset_id, buyer: p.id, expires: time() + 60_000 });
-          return { asset_id: a.asset_id, url: `http://127.0.0.1:4010/__mock/deliveries/${token}`, mime_type: a.mime_type, size_bytes: a.size_bytes };
+          return { asset_id: a.asset_id, url: urlFor(`/__mock/deliveries/${token}`), mime_type: a.mime_type, size_bytes: a.size_bytes };
         });
         return { status: 201, body: { artifacts: originalArtifacts, expires_at: at(time() + 60_000), server_time: stamp() }, cache: 'no-store' };
       }
@@ -411,7 +436,7 @@ export async function createMock(options: { now?: () => number } = {}) {
       }
       case 'createRefund': {
         admin(p); const pay = fetchOne(payments, params.payment_id);
-        demand(pay.capture_state === 'completed' && pay.captured_minor > pay.refunded_minor && pay.refund_state !== 'pending');
+        demand(pay.capture_state === 'completed' && pay.captured_minor > pay.refunded_minor && pay.reversal_state === 'none' && pay.refund_state !== 'pending');
         const r: S['Refund'] = { id: id('ref'), payment_id: pay.id, amount: money(pay.captured_minor - pay.refunded_minor), reason: body.reason,
           state: 'queued', provider_refund_id: null, created_at: stamp(), server_time: stamp() };
         refunds.set(r.id, r); pay.refund_state = 'pending'; pay.updated_at = stamp(); holdAllocations(pay, false); return ok(view(r), 202);
@@ -420,30 +445,52 @@ export async function createMock(options: { now?: () => number } = {}) {
       case 'getSettlement': {
         const c = fetchOne(competitions, params.competition_id);
         demand(c.buyer_id === p.id || p.role === 'admin', 'NOT_FOUND', 'Resource not found.', 404);
-        return ok({ competition_id: c.id, payout_mode: 'simulated', allocations: [...allocations.values()].filter(a => a.competition_id === c.id), server_time: stamp() });
+        return ok({ competition_id: c.id, payout_mode: 'simulated', allocations: [...allocations.values()].filter(a => a.competition_id === c.id), accounting: [...payments.values()].filter(pay => pay.competition_id === c.id && pay.capture_state === 'completed').map(captureAccounting), server_time: stamp() });
       }
       case 'getAgentEarnings': {
         demand(p.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
         // Allocation has no server_time field; page helper must preserve its exact schema.
-        const result = page([...allocations.values()].filter(a => a.recipient_principal_id === p.id), query);
+        const result = page([...allocations.values()].filter(a => {
+          if (a.operator_id !== p.operator_id) return false;
+          const purchase = [...purchases.values()].find(x => x.payment_id === a.payment_id);
+          if (purchase) return fetchOne(submissions, purchase.submission_id).agent_id === p.agent_id;
+          return [...submissions.values()].some(s => s.competition_id === a.competition_id && s.agent_id === p.agent_id && s.qualification_status === 'qualified');
+        }), query);
         result.items = result.items.map(({ server_time: _time, ...a }: any) => a); return ok(result);
       }
       case 'advanceMockClock': admin(p); offset += body.seconds * 1000; tick(); return ok(health());
       case 'observeMockPayment': {
         admin(p); const pay = fetchOne(payments, params.payment_id); const observation = body.observation;
+        demand(body.provider_expense_minor === undefined || observation === 'completed', 'VALIDATION_ERROR', 'Capture expenses may be recorded only with a completed observation.', 400);
         if (['expired', 'voided'].includes(observation)) {
           demand(pay.capture_state === 'none' && pay.authorization_state === 'authorized'); pay.authorization_state = observation;
-        } else if (observation === 'disputed' || observation === 'refunded') {
+        } else if (['disputed', 'dispute_won', 'dispute_lost', 'refunded', 'reversal_pending', 'reversed'].includes(observation)) {
           demand(pay.capture_state === 'completed');
           if (observation === 'disputed') pay.dispute_state = 'open';
-          else {
+          else if (observation === 'dispute_won' || observation === 'dispute_lost') {
+            const next = observation === 'dispute_won' ? 'won' : 'lost';
+            demand(pay.dispute_state === 'open' || pay.dispute_state === next); pay.dispute_state = next;
+          } else if (observation === 'reversal_pending') {
+            if (pay.reversal_state !== 'reversed') pay.reversal_state = 'pending';
+          } else if (observation === 'reversed') {
+            demand(pay.refunded_minor === 0); pay.reversal_state = 'reversed'; pay.reversed_minor = pay.captured_minor;
+          } else {
+            demand(pay.reversal_state === 'none');
             pay.refunded_minor = pay.captured_minor; pay.refund_state = 'refunded';
             for (const r of refunds.values()) if (r.payment_id === pay.id && r.state !== 'completed') { r.state = 'completed'; r.provider_refund_id = id('MOCK_REFUND'); }
           }
-          holdAllocations(pay, observation === 'refunded');
+          if (observation === 'dispute_won' && entitled(pay)) {
+            for (const a of allocations.values()) if (a.payment_id === pay.id && a.ledger_state === 'held') {
+              a.ledger_state = 'allocated'; a.payout_state = 'simulated';
+            }
+          } else holdAllocations(pay, observation === 'refunded' || observation === 'reversed');
         } else {
           demand(pay.capture_state === 'pending' || (pay.capture_state === 'completed' && observation === 'completed'));
           if (observation === 'completed') {
+            if (body.provider_expense_minor !== undefined) {
+              demand(pay.provider_expense_minor === null || pay.provider_expense_minor === body.provider_expense_minor, 'INVALID_STATE', 'Confirmed expense cannot be replaced with a conflicting value.');
+              pay.provider_expense_minor = body.provider_expense_minor;
+            }
             pay.capture_state = 'completed'; pay.operation_state = 'succeeded'; pay.last_error_code = null;
             if (pay.authorization_state !== 'not_applicable') pay.authorization_state = 'captured';
             pay.provider_capture_id ??= id('MOCK_CAPTURE');
@@ -497,7 +544,8 @@ export async function createMock(options: { now?: () => number } = {}) {
       } else demand(req.body === undefined, 'VALIDATION_ERROR', 'This operation has no request body.', 400);
       return exclusive(async () => {
         const key = headers['idempotency-key'];
-        const scope = key ? `${principal?.id}|${op.method}|${req.url.split('?')[0]}|${key}` : null;
+        const subject = principal?.role === 'agent' ? `agent:${principal.agent_id}` : `${principal?.role}:${principal?.id}`;
+        const scope = op.method === 'post' && key ? `${subject}|${op.method}|${req.url.split('?')[0]}|${key}` : null;
         const fingerprint = canonical(req.body);
         const cached = scope ? replays.get(scope) : undefined;
         if (cached) {

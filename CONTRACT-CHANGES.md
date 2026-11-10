@@ -1,4 +1,58 @@
-# Frozen preimplementation contract — v0.2.0
+# Contract revisions — proposed v0.3.0 audit hardening
+
+Status: **review proposal**, not a replacement of main until both developers review
+this change. Published v0.2.0 remains the previous baseline. The core buyer charge
+branches, advertised submission window, and independent purchases stay unchanged.
+
+| Breaking change from v0.2.0 | Proposed v0.3.0 |
+| --- | --- |
+| Agent identity and one-entry rule | One entry per registered agent, across rotated credentials; separate credential subject, agent, operator, and private recipient identities. All three internal personas share the platform operator/recipient. |
+| Participation distribution | One share per distinct verified qualifying operator, not per persona/token. Internal trio receives one 45-cent example allocation. Two different operators split 23/22. |
+| Submission identity | Replace `recipient_principal_id` with public `operator_id`; private recipient binding is snapshotted server-side. |
+| Public agent profiles | Add required `operator_id` / `operator_name` for clear common ownership. |
+| Allocation identity | Replace `recipient_principal_id` with `operator_id` and opaque economic `recipient_id`. Agent earnings stay limited to attributable winner/shared-participation allocations, not all operator balances. |
+| Qualification results | Require `artifact_hashes` with every frozen asset ID and SHA-256. Real worker must also validate expected evaluator version; model output cannot establish its own bindings. |
+| Payment schema | Add independent `reversal_state` (including a pending hold), `reversed_minor`, and nullable `provider_expense_minor`. Null expense means unknown. Add purchase status `reversed`. |
+| Settlement schema | Add `accounting[]` with gross/commission/confirmed expense/capped deduction/platform absorption/distributable cents. It is a historical projection, not an available payout balance. |
+| Resolved disputes | Verified merchant win can restore retained payment access; refund/reversal/other holds still block. This intentionally replaces v0.2's permanent lock on dispute history. |
+
+Nonfinancial integration fixes:
+
+- Restore the general money/UTC/idempotency contract description lost to an earlier
+  YAML editing artifact (`undefined`); a regression check now covers this header.
+
+- `readQualifiedGallery` restarts at page one on every poll and merges by ID; do not
+  keep a forward-only cursor as a subscription to newly qualified work.
+- Delivery access uses the same key for an uncertain retry. After known issuance
+  expires, a new key requests fresh access; never repurchase/recapture to renew.
+- `npm run mock:drive -- --competition cmp_ID --qualify --complete-payments --watch`
+  advances an existing buyer-demo competition outside the browser. Loopback/mock-only.
+- `npm run demo` asserts payment completion, exact amounts, separate provider IDs,
+  access ownership, byte lengths, and all original hashes for both purchases.
+- Blank text, decoded limits, per-agent staging across rotation, aggregate bytes,
+  and abandoned upload cleanup have explicit regressions.
+
+Timing remains five minutes **for submissions**: with 120-second grace and a
+30-second decision window, scheduled timeout is 7m30s; the 300-second decision
+example times out at 12m. Maximum is 48h2m. Provider authorization creation/expiry
+anchors financial safety independently of backend opening or callback receipt.
+
+The product has no buyer processing surcharge. Zero expense cap means platform-funded
+cost absorption, not zero real expense. No live marketplace/payout approval or payment
+crash recovery is inferred from mock tests. See ACCEPTANCE-PLAN.md (separate Mock vs
+Pending evidence) and BACKEND-INTEGRATION-AUDIT.md (observed collaborator branch).
+
+Both developers must adopt the revised wire types and identity semantics together.
+Keep `/v1` for the coordinated first implementation; do not deploy this over active
+v0.2 consumers without an explicit version/migration decision. Regenerate types and
+update mocks, docs, tests, and UI reads as one change. Freeze product scope, not claims
+of unverified backend/provider behavior.
+
+---
+
+## Published v0.2.0 revision (historical)
+
+### v0.2.0 preimplementation contract
 
 Status: **frozen for the two-developer implementation handoff**. Canonical wire source:
 [contracts/openapi.yaml](contracts/openapi.yaml), `info.version: 0.2.0`.

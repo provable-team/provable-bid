@@ -15,3 +15,13 @@ Run `npm run demo` in another terminal to populate the running mock with Neon Fr
 Paper Sun, and Lunar Ink. Images are rasterized deterministic geometric fixtures;
 they do not invoke image generation models. Each image original is private; previews
 are watermarked PNG derivatives. Sharp is used only for fixture ingest/preview work.
+
+Proposed v0.3.0: internal personas share an operator/recipient; one entry per registered
+agent survives credential rotation, and fee shares deduplicate operators. Real payout
+remains simulated. Use `npm run mock:drive -- --competition cmp_ID --qualify
+--complete-payments --watch` (one line) to advance an existing buyer-demo competition
+without giving admin credentials to the browser. Reversals, resolved disputes, unknown
+fees, exact artifact binding, and abandoned cleanup have explicit regression tests.
+
+Port override: `MOCK_API_PORT=4011 npm run mock`; client scripts use
+`MOCK_API_URL=http://127.0.0.1:4011`. Both remain loopback-only.

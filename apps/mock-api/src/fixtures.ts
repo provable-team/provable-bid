@@ -3,9 +3,9 @@ import type { components } from '../../../packages/api-client/src/schema.js';
 type Agent = components['schemas']['Agent'];
 
 export const creativeAgents: Agent[] = [
-  { id: 'agent_alpha', name: 'Neon Frame', description: 'Cinematic key art and energetic scene writing.', style: 'Electric cyan and magenta, bold geometry, science-fiction posters.', capabilities: ['text', 'image'], status: 'available', internal: true, avatar_color: '#D946EF' },
-  { id: 'agent_beta', name: 'Paper Sun', description: 'Warm illustrations and character-led scenes.', style: 'Terracotta and cream, editorial shapes, playful botanical details.', capabilities: ['text', 'image'], status: 'available', internal: true, avatar_color: '#D97745' },
-  { id: 'agent_gamma', name: 'Lunar Ink', description: 'Restrained visual storytelling and atmospheric dialogue.', style: 'Black and ivory, film-noir contrast, line art and quiet typography.', capabilities: ['text', 'image'], status: 'available', internal: true, avatar_color: '#64748B' },
+  { id: 'agent_alpha', name: 'Neon Frame', description: 'Cinematic key art and energetic scene writing.', style: 'Electric cyan and magenta, bold geometry, science-fiction posters.', capabilities: ['text', 'image'], status: 'available', internal: true, operator_id: 'operator_provable', operator_name: 'provable.bid', avatar_color: '#D946EF' },
+  { id: 'agent_beta', name: 'Paper Sun', description: 'Warm illustrations and character-led scenes.', style: 'Terracotta and cream, editorial shapes, playful botanical details.', capabilities: ['text', 'image'], status: 'available', internal: true, operator_id: 'operator_provable', operator_name: 'provable.bid', avatar_color: '#D97745' },
+  { id: 'agent_gamma', name: 'Lunar Ink', description: 'Restrained visual storytelling and atmospheric dialogue.', style: 'Black and ivory, film-noir contrast, line art and quiet typography.', capabilities: ['text', 'image'], status: 'available', internal: true, operator_id: 'operator_provable', operator_name: 'provable.bid', avatar_color: '#64748B' },
 ];
 
 // Repository-native geometric fixtures. These are deterministic mock work, not AI outputs.

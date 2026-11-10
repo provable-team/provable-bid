@@ -3,10 +3,14 @@
 The API contract is the shared interface between Developer A (Codex: frontend/UX)
 and Developer B (Claude: backend/PayPal/agents). This repository intentionally contains
 only architecture, generated client/types, provider interfaces, a local mock, and
-contract checks. No Next.js application or real backend adapter has been built.
+contract checks. The internal personas share one platform operator and economic recipient;
+public identities are not independent payout accounts. No Next.js application or real backend adapter has been built.
 
-Frozen baseline: **v0.2.0**. Read [CONTRACT-CHANGES.md](CONTRACT-CHANGES.md) before
-switching from the v0.1.0 draft; submission, gallery, delivery, and adapter shapes changed.
+Review branch: **proposed v0.3.0**, following the published v0.2.0 baseline. Read
+[CONTRACT-CHANGES.md](CONTRACT-CHANGES.md) before adopting it. Coordinate identity,
+qualification, reversal, and settlement fields with both developers; main is unchanged
+until review. The collaborator prototype has different product/payment behavior;
+see [BACKEND-INTEGRATION-AUDIT.md](BACKEND-INTEGRATION-AUDIT.md).
 
 ## Start in either developer's clone
 
@@ -28,9 +32,10 @@ the process to clear in-memory state. It performs no external provider calls.
 | --- | --- |
 | `buyer-demo` | Demo buyer / owns its briefs and purchases |
 | `buyer-other` | Separate buyer / checks ownership failures |
-| `agent-alpha` | Neon Frame — cinematic cyan/magenta; text + image |
+| `agent-alpha` / `agent-alpha-rotated` | Same registered Neon Frame agent, separate fixture credentials |
 | `agent-beta` | Paper Sun — warm editorial; text + image |
 | `agent-gamma` | Lunar Ink — monochrome noir; text + image |
+| `agent-guest` / `agent-guest-alt` | Two allowlisted external-test personas owned by one guest operator; no internal-run registration |
 | `admin-demo` | Local grading, payment observations, time controls, refund/reconciliation |
 
 The mock's approval URL is an informational fixture, not a payment page. Calling
@@ -112,7 +117,9 @@ With `npm run mock` running, open another terminal and run `npm run demo`. It cr
 a $5 brief, opens a five-minute window, starts all three internal fixture agents,
 qualifies their image + text entries, selects an early winner, simulates $5 capture,
 and buys a second entry through a separate simulated checkout. It prints the gallery,
-preview links, deadlines, purchase IDs, and paid-original delivery links. Those links
+preview links, deadlines, purchase IDs, and paid-original delivery links. It also asserts
+completed/500/unlocked for both purchases, distinct payment/order/capture IDs, owner-only
+HTTP downloads, byte sizes, and SHA-256 hashes against each submitted artifact. Those links
 require `Authorization: Bearer buyer-demo`; delivery expires after 60 seconds. The mock
 server stays running with the records for frontend inspection. No external services
 are called. The CLI is a contract demonstration, not a frontend application.
@@ -132,11 +139,13 @@ The returned IDs are opaque and must be carried into later requests.
 | 7 | Admin fixture | `POST /__mock/advance` with `{"seconds":300}` reaches the submission deadline; new submissions fail. Another 120s finalizes qualification. Early buyer selection is also supported before these advances. |
 | 8 | Buyer | `POST /v1/competitions/{id}/selection` with `{"submission_id":"<alpha>"}` returns purchase with pending payment, delivery locked. |
 | 9 | Admin fixture | `POST /__mock/payments/{payment_id}/observation` with `{"observation":"completed"}` confirms 500 cents and simulated allocation. |
-| 10 | Buyer | GET purchase → payment_completed; `POST /v1/purchases/{id}/delivery-access` → expiring URL, then authenticated GET each `artifacts[].url` → that original text/image. |
+| 10 | Buyer | GET purchase → payment_completed; `POST /v1/purchases/{id}/delivery-access` → expiring URL, then authenticated GET each `artifacts[].url` → that original text/image. Access requests replay their original links under the same key, even if expired. A fresh link is a new nonfinancial request with a new key. |
 | 11 | Buyer | Before decision deadline: `POST /v1/competitions/{id}/additional-purchases` for beta → new CAPTURE checkout at 500 cents. `POST /v1/purchases/{new_id}/capture`; admin completed observation; delivery unlocks separately. |
 
 Qualification fixture for the two-requirement OpenAPI example. Always return one
-check per requirement in the created brief; the CLI generates these checks from the brief:
+check per requirement and one digest per artifact from the created submission. The
+CLI binds these automatically. The placeholders below must be replaced with stored
+artifact values (they are not literal request values):
 
 ```json
 {
@@ -147,15 +156,19 @@ check per requirement in the created brief; the CLI generates these checks from 
     { "requirement_id": "req_garden", "passed": true, "reason": "A garden is discovered." }
   ],
   "reason": "All objective requirements satisfied.",
-  "evaluator_version": "fixture-v1"
+  "evaluator_version": "fixture-v1",
+  "artifact_hashes": [
+    { "asset_id": "<actual submitted asset ID>", "sha256": "<actual 64-character SHA-256 from the submission>" }
+  ]
 }
 ```
 
 Alternate branches on a fresh competition:
 
 - **Reject:** finalize grading with +420s, then buyer POST rejection. Observe completed
-  fee capture; 50 cents captured, 5 commission, 45 split 15/15/15 over three principals
-  (23/22 if only two agents were triggered).
+  fee capture; 50 cents captured, 5 commission, one 45-cent allocation to the
+  platform operator owning all three internal personas. Two **different operators**
+  split 23/22; multiple tokens/personas do not multiply the participation share.
 - **Timeout:** grade then +720s from opening. Timeout commits same fee operation.
 - **No work:** +420s with no submissions → no_qualifiers and authorization voided.
 - **Evaluator failure:** leave an entry pending through +420s → infrastructure_failure,
@@ -171,6 +184,43 @@ Mock webhook replay requires headers `PAYPAL-TRANSMISSION-ID`, UTC
 PayPalEvent envelope. It records/deduplicates valid fixtures; it never trusts event
 bodies to change money. Payment observation is the mock's canonical provider state.
 This tests transport/security expectations, not real cryptographic verification.
+
+## Drive a fresh browser competition locally
+
+The seed demo operates on its **own** competition. A buyer-created browser competition
+needs deliberate fixture actions outside the buyer application. Start `npm run mock`,
+create/authorize the brief in the UI, trigger registered agents, then run:
+
+```sh
+npm run mock:drive -- --competition cmp_ID --qualify --complete-payments --watch
+```
+
+Use the actual browser competition ID. The driver polls for up to 600 seconds (override
+with `--duration-seconds`, max 3600), explicitly qualifies pending work, and completes
+already committed capture intents. It does not start agents, select winners, create
+purchases, or charge anything. Without `--watch`, it performs one pass. Use just
+`--qualify` or `--complete-payments` to control each stage independently.
+
+For a port conflict, start the server with `MOCK_API_PORT=4011 npm run mock` and
+run the CLI/demo with `MOCK_API_URL=http://127.0.0.1:4011`. Returned asset links use
+the listening port.
+
+The driver refuses non-loopback origins and APIs whose config is not `mode=mock`;
+it supports `buyer-demo` competitions only. Admin fixture credentials stay in the
+local CLI, never the buyer browser. Simulated grading is not evaluator evidence;
+simulated capture is not provider payment. To exercise pending/error/refund/reversal
+states, omit auto-completion and issue explicit admin fixture commands.
+
+Examples after a completed capture: observation `reversed` sets a separate reversal;
+`disputed` opens a hold, then `dispute_won` restores only retained/no-other-hold access,
+or `dispute_lost` preserves the hold. A completed observation may include a confirmed
+`provider_expense_minor`; omission stays unknown. A contradictory confirmed expense
+is rejected. Zero expense deduction cap keeps the agreed allocation and records
+platform absorption rather than charging an extra buyer fee.
+
+The 52-case ACCEPTANCE-PLAN.md separates mock coverage from real-provider/database,
+evaluator and frontend gates. A singleton fixture queue cannot certify multi-worker
+transactions or recovery after a provider-success/process-crash sequence.
 
 ## External upload and frontend gallery integration
 
@@ -188,9 +238,12 @@ The server validates actual bytes, creates a safe preview, and returns `Asset.id
 POST that to `/v1/competitions/{id}/submissions`. Up to three owned assets, 2 MiB each,
 3 MiB total; no cross-agent/cross-brief references or URL ingestion. Ready uploads and
 submission receipt must occur before the submission deadline; uploading alone is not
-an entry. One immutable entry per recipient principal remains unchanged.
+an entry. One immutable entry per registered agent; one participation share per verified operator.
+Credential rotation preserves the agent scope and does not create another entry/share.
 
-Buyer gallery: list submissions (qualified only), resolve each `agent_id` against the
+Buyer gallery: use `readQualifiedGallery(api, competitionId)` on every polling cycle
+(or restart manual pagination at the beginning and merge by ID). A later qualifier
+may have an earlier creation time than a retained cursor. Then resolve each `agent_id` against the
 public profile registry, and use `artifacts[].preview`. Fetch preview URLs with bearer
 auth using `fetch(url,{headers:{Authorization: ...}})`; for images call `response.blob()`
 then `URL.createObjectURL(blob)` and revoke on unmount. Never put tokens in query strings.
@@ -247,7 +300,7 @@ state and cannot prove provider permissions, persistence, process crashes, or ba
 
 ## Two-day milestones
 
-Day 1 first half: agree on frozen v0.2.0; A builds brief/competition/selection screens
+Day 1 first half: review the v0.3.0 proposal against the v0.2.0 baseline; A builds brief/competition/selection screens
 against mock, B builds storage/state/agent qualification. Day 1 second half: A handles
 all pending/failed payment UX; B proves sandbox authorization, both capture amounts,
 and void. Day 2 first half: pair by changing only API base URL; verify generated

@@ -139,13 +139,13 @@ export interface paths {
         };
         /**
          * List qualified buyer gallery entries or an agent's own entries
-         * @description Buyer owner sees qualified entries only; pending/failed/error entries are omitted. An agent sees only its own entry in any state. Admin sees all entries for review. Others receive 404. Filtering happens before pagination.
+         * @description Buyer owner sees qualified entries only; pending/failed/error entries are omitted. An agent sees only its own entry in any state. Admin sees all entries for review. Others receive 404. Filtering happens before pagination. Restart at the first page on each gallery refresh and merge by ID; a creation-time cursor alone can miss an older entry that qualifies later.
          */
         get: operations["listSubmissions"];
         put?: never;
         /**
          * Submit finished text/image artifacts during the open window
-         * @description Agent only. Agent/principal derive from token. One immutable submission per principal/competition (409 across different keys). Upload 1..3 owned ready assets bound to this competition first; server derives type/MIME/hash/preview. No remote URLs or buyer-provided storage keys. All assets must belong to this agent and competition; asset IDs must be distinct. Commit before submission_deadline; grading may finish during grace. Full originals never appear in submission responses.
+         * @description Agent only. Agent/operator derive from the server credential binding. One immutable entry per registered agent identity per competition, independent of token rotation. An operator may own multiple allowlisted agents but receives only one participation share. Upload 1..3 owned ready assets bound to this competition first; server derives MIME/hash/preview. Asset IDs must be distinct and ownership/competition match. Receipt must precede submission_deadline; qualification may finish during grace. No original bytes in responses. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
          */
         post: operations["submitWork"];
         delete?: never;
@@ -331,10 +331,7 @@ export interface paths {
         put?: never;
         /**
          * Issue buyer-bound delivery URLs for all purchased originals after payment completion
-         * @description Buyer owner only. Requires completed capture, zero refunds, and dispute_state none.
-         *     Otherwise 409 DELIVERY_LOCKED. Never available for participation fees. No-store.
-         *     URL expires in 60 seconds; storage/download gateway must recheck entitlement.
-         *     Previously downloaded work cannot be recalled. Mock URL serves fixture text only.
+         * @description Buyer owner only. Requires completed capture, zero refunds, no reversal, and dispute_state none or won (merchant-favor resolution verified via the separate disputes resource plus retained capture). Pending/failed refunds and open/lost disputes lock delivery. 60-second buyer-bound URLs; gateway rechecks every read. Replaying the same Idempotency-Key returns the original URLs, even if expired. After known expiry, request fresh access with a NEW nonfinancial key. Never repurchase/recapture to renew a link. No-store; participation charges never grant access.
          */
         post: operations["createDeliveryAccess"];
         delete?: never;
@@ -439,9 +436,7 @@ export interface paths {
         };
         /**
          * Read buyer/admin accounting allocations and payout status
-         * @description Buyer owner/admin only. One ledger allocation per recipient principal and payment.
-         *     Mock payouts are simulated and never marked paid. Includes confirmed payment
-         *     allocations only; reversals/holds preserve audit history. An allocation is not cash.
+         * @description Buyer owner/admin only. Allocations appear after confirmed capture. Participation is one equal share per distinct verified operator (stable operator-ID remainder order), even when that operator owns several agents/credentials. Internal personas share the platform operator/recipient and are not independent sellers. Commission/expense projections are explicit; zero expense cap means platform-subsidized costs, not free processing. Mock payout state is simulated and never paid. Reversals/refunds retain capture history with reversed/held allocations.
          */
         get: operations["getSettlement"];
         put?: never;
@@ -459,7 +454,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the authenticated agent principal's own allocations */
+        /**
+         * Read the agent's attributable operator allocations
+         * @description Agent only. Returns operator-owned allocations attributable to this agent: its purchased work and the one shared participation allocation in competitions where it qualified. Does not expose other personas' winner allocations or all operator earnings. A shared participation allocation may appear in several persona views with the same allocation ID; deduplicate by ID. Credentials/operator/recipient mappings are provisioned server-side.
+         */
         get: operations["getAgentEarnings"];
         put?: never;
         post?: never;
@@ -531,6 +529,7 @@ export interface paths {
          *     qualified requires passed checks for every requirement. failed uses a failure_code:
          *     requirements_not_met needs a failing check; spam/invalid_output use no checks.
          *     error means infrastructure failure and cannot create a participation fee.
+         *      artifact_hashes must exactly match the immutable submission. A real backend also checks the job's expected evaluator version. This fixture admin command is not a real evaluator.
          */
         post: operations["qualifyMockSubmission"];
         delete?: never;
@@ -552,10 +551,7 @@ export interface paths {
         put?: never;
         /**
          * Set a canonical provider fixture and reconcile it
-         * @description Admin only. completed/pending/failed/unknown apply only to a committed capture.
-         *     No rollback from completed to pending/failed. disputed locks entitlement; refunded
-         *     represents confirmed full refund. expired/voided apply only before any capture.
-         *     Webhook bodies never set these states; this is the authoritative provider fixture.
+         * @description Admin only. pending/failed/unknown/completed apply to a committed capture. No completed-to-pending rollback. Optional provider_expense_minor may be recorded on completed; a conflicting later value is rejected. disputed opens a hold. dispute_won/dispute_lost require an open or already matching dispute. Merchant win restores access only if capture is retained and no refund/reversal hold exists. reversed records a confirmed full reversal independently of refund. refunded confirms a full refund. expired/voided apply before capture only. Webhook bodies never directly change money; observations simulate canonical provider-resource reconciliation.
          */
         post: operations["observeMockPayment"];
         delete?: never;
@@ -597,7 +593,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a private text/image original and create a safe preview
-         * @description Agent only, authorized/open competition, now < submission_deadline. Decode/validate before returning 201 ready metadata. Private original is immutable. No arbitrary URL fetching. Sync small upload is deliberately simpler than signed storage uploads. 2 MiB per asset, 3 MiB total original bytes per submission, at most 3 assets. Assets not submitted before deadline are garbage-collected. Original ownership and competition binding are checked again when submitting.
+         * @description Agent only, authorized/open competition, now < submission_deadline. Decode/validate before returning 201 ready metadata. Private original is immutable. No arbitrary URL fetching. Sync small upload is deliberately simpler than signed storage uploads. 2 MiB per asset, 3 MiB total original bytes per submission, at most 3 assets. Assets not submitted before deadline are garbage-collected. Original ownership and competition binding are checked again when submitting. At most three staged assets per registered agent/competition, shared across rotated credentials. Unsubmitted uploads expire one hour after submission_deadline; submitted originals are retained. Blank whitespace-only text is invalid. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
          */
         post: operations["uploadAsset"];
         delete?: never;
@@ -709,7 +705,7 @@ export interface paths {
         put?: never;
         /**
          * Queue allowlisted internal agents for an authorized competition
-         * @description Buyer owner or admin only, competition open and now < submission_deadline. IDs must be available registered internal agents; reject entire batch if any ID is invalid/unavailable. One run per competition/agent principal across keys; return existing run on repetition. Persist runs/jobs before response. Server chooses adapter credentials; caller cannot pass prompts, model/provider keys, callback URLs, wallets, or budgets. Agents choose their own compute; this command creates no buyer charge. Demo fixture run immediately submits image + text, remaining pending until explicit mock qualification. Real orchestration is deferred.
+         * @description Buyer owner or admin only, competition open and now < submission_deadline. IDs must be available registered internal agents; reject entire batch if any ID is invalid/unavailable. One run per competition/agent principal across keys; return existing run on repetition. Persist runs/jobs before response. Server chooses adapter credentials; caller cannot pass prompts, model/provider keys, callback URLs, wallets, or budgets. Agents choose their own compute; this command creates no buyer charge. Demo fixture run immediately submits image + text, remaining pending until explicit mock qualification. Real orchestration is deferred. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
          */
         post: operations["startAgentRuns"];
         delete?: never;
@@ -832,12 +828,13 @@ export interface components {
              * @enum {string|null}
              */
             failure_code: "requirements_not_met" | "spam" | "invalid_output" | null;
+            /** @description Exactly one server-computed digest for each frozen artifact. Bind trusted evaluator jobs/results to inputs; do not let a model invent these values. */
+            artifact_hashes: components["schemas"]["ArtifactDigest"][];
         };
         Submission: {
             id: components["schemas"]["Id"];
             competition_id: components["schemas"]["Id"];
             agent_id: components["schemas"]["Id"];
-            recipient_principal_id: components["schemas"]["Id"];
             title: string;
             /** @enum {string} */
             qualification_status: "pending" | "qualified" | "failed" | "error";
@@ -845,6 +842,7 @@ export interface components {
             created_at: components["schemas"]["Timestamp"];
             server_time: components["schemas"]["Timestamp"];
             artifacts: components["schemas"]["Artifact"][];
+            operator_id: components["schemas"]["Id"];
         };
         Checkout: {
             payment_id: components["schemas"]["Id"];
@@ -882,6 +880,7 @@ export interface components {
             provider_order_id: string | null;
             provider_authorization_id: string | null;
             provider_capture_id: string | null;
+            /** @description Provider-reported authorization creation time, never callback receipt, browser time, or restart time. Safety horizon and expiry derive from this origin. */
             authorized_at: components["schemas"]["Timestamp"] | null;
             authorization_expires_at: components["schemas"]["Timestamp"] | null;
             captured_minor: number;
@@ -894,6 +893,14 @@ export interface components {
             created_at: components["schemas"]["Timestamp"];
             updated_at: components["schemas"]["Timestamp"];
             server_time: components["schemas"]["Timestamp"];
+            /**
+             * @description Independent from refunds/disputes. Pending reversal evidence creates a hold; confirmed reversal records the amount and reverses allocation. A completed capture GET cannot clear either state.
+             * @enum {string}
+             */
+            reversal_state: "none" | "pending" | "reversed";
+            reversed_minor: number;
+            /** @description Confirmed capture-processing expense only; null is unknown, not zero. Expenses are never charged above the agreed buyer price. Demo policy absorbs all provider expenses. */
+            provider_expense_minor: number | null;
         };
         Purchase: {
             id: components["schemas"]["Id"];
@@ -907,7 +914,7 @@ export interface components {
              * @description Derived from Payment; completion is separate from actual agent payout.
              * @enum {string}
              */
-            status: "awaiting_approval" | "payment_pending" | "payment_completed" | "payment_failed" | "refunded" | "disputed";
+            status: "awaiting_approval" | "payment_pending" | "payment_completed" | "payment_failed" | "refunded" | "disputed" | "reversed";
             delivery_unlocked: boolean;
             checkout: components["schemas"]["Checkout"] | null;
             created_at: components["schemas"]["Timestamp"];
@@ -928,7 +935,6 @@ export interface components {
             id: components["schemas"]["Id"];
             competition_id: components["schemas"]["Id"];
             payment_id: components["schemas"]["Id"];
-            recipient_principal_id: components["schemas"]["Id"];
             /** @enum {string} */
             kind: "winner" | "participation";
             amount: components["schemas"]["Money"];
@@ -938,6 +944,9 @@ export interface components {
             payout_state: "simulated" | "not_scheduled" | "queued" | "pending" | "paid" | "failed" | "blocked";
             provider_payout_id: string | null;
             created_at: components["schemas"]["Timestamp"];
+            operator_id: components["schemas"]["Id"];
+            /** @description Private provisioned economic payout-recipient ID. No PayPal address/account identifier. Several personas share it. */
+            recipient_id: components["schemas"]["Id"];
         };
         /**
          * @description Provider-owned envelope preserved for verification/audit. Opaque nested provider
@@ -1035,6 +1044,9 @@ export interface components {
             /** @constant */
             internal: true;
             avatar_color: string;
+            operator_id: components["schemas"]["Id"];
+            /** @description Public owning organization, not an independent seller persona. Internal demo agents all belong to provable.bid. */
+            operator_name: string;
         };
         AgentPage: {
             items: components["schemas"]["Agent"][];
@@ -1061,6 +1073,23 @@ export interface components {
             items: components["schemas"]["AgentRun"][];
             next_cursor: string | null;
             server_time: components["schemas"]["Timestamp"];
+        };
+        ArtifactDigest: {
+            asset_id: components["schemas"]["Id"];
+            sha256: string;
+        };
+        CaptureAccounting: {
+            payment_id: components["schemas"]["Id"];
+            /** @constant */
+            currency: "USD";
+            gross_minor: number;
+            commission_minor: number;
+            provider_expense_minor: number | null;
+            deducted_expense_minor: number;
+            platform_absorbed_expense_minor: number | null;
+            distributable_minor: number;
+            /** @enum {string} */
+            expense_state: "unknown" | "confirmed";
         };
     };
     responses: {
@@ -1254,6 +1283,8 @@ export interface components {
                     payout_mode: "simulated" | "disabled" | "approved_provider";
                     allocations: components["schemas"]["Allocation"][];
                     server_time: components["schemas"]["Timestamp"];
+                    /** @description Historical capture economics under frozen terms, not cash available for payout. Unknown expense remains null. Platform must separately fund any subsidy; real payouts remain disabled in the MVP. */
+                    accounting: components["schemas"]["CaptureAccounting"][];
                 };
             };
         };
@@ -2135,7 +2166,9 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    observation: "pending" | "unknown" | "completed" | "failed" | "disputed" | "refunded" | "expired" | "voided";
+                    observation: "pending" | "unknown" | "completed" | "failed" | "disputed" | "dispute_won" | "dispute_lost" | "refunded" | "reversed" | "expired" | "voided" | "reversal_pending";
+                    /** @description Optional on completed only. Stable confirmed fixture expense; omitted stays unknown. */
+                    provider_expense_minor?: number;
                 };
             };
         };
