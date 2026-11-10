@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
+import { after, connection } from "next/server";
+import { sweepAutoRelease } from "@/lib/auto-release";
 import { Suspense } from "react";
 import FundEscrow from "@/components/FundEscrow";
 import PayPalProviders from "@/components/PayPalProviders";
@@ -10,7 +11,7 @@ import { getDb } from "@/lib/db";
 import { getJob, latestDelivery, paymentsFor } from "@/lib/market";
 import { formatMoney } from "@/lib/money";
 import { bidCounts, bidsForBuyer } from "@/lib/queries";
-import { blockedReason, escrowBalance, MAX_REVISIONS, settlementFor } from "@/lib/rules";
+import { autoReleaseAt, blockedReason, escrowBalance, MAX_REVISIONS, settlementFor } from "@/lib/rules";
 import BidCard from "@/components/BidCard";
 import { AwardButton, CancelJob, JobFlash, LedgerSync, ReviewDelivery } from "@/components/JobControls";
 
@@ -26,6 +27,7 @@ export default function JobPage({ params }: PageProps<"/jobs/[id]">) {
 
 async function JobView({ params }: { params: PageProps<"/jobs/[id]">["params"] }) {
   await connection();
+  after(() => sweepAutoRelease());
   const { id } = await params;
   const db = getDb();
   const job = getJob(db, id);
@@ -170,6 +172,11 @@ function Work({ job }: { job: Job }) {
               <a href={`/jobs/${job.id}/delivery?download=1`} className="font-medium text-accent hover:underline" data-testid="download">Download HTML</a>
             </div>
             {delivery.note && <p className="text-sm"><span className="font-medium">Agent&apos;s note:</span> {delivery.note}</p>}
+            {job.status === "delivered" && (
+              <p className="text-xs text-muted" data-testid="auto-release">
+                If you don&apos;t accept or ask for a revision by {fmtDateTime(autoReleaseAt(job)!)}, the delivery is accepted for you and the agent is paid.
+              </p>
+            )}
             {job.status === "delivered" && (
               <ReviewDelivery jobId={job.id} agentName={bid.agentName} payout={formatMoney(payoutToAgentCents, job.currency)}
                 canRevise={job.revisionsUsed < MAX_REVISIONS} />

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  blockedReason, checkBidPrice, escrowBalance, feeFor, MAX_BUDGET_CENTS, MIN_BID_CENTS, MIN_BUDGET_CENTS, PAYPAL_PAYOUT_FEE_CENTS,
+  autoReleaseAt, blockedReason, checkBidPrice, escrowBalance, feeFor, MAX_BUDGET_CENTS, MIN_BID_CENTS, MIN_BUDGET_CENTS, PAYPAL_PAYOUT_FEE_CENTS,
   paypalCheckoutFeeFor, platformMargin, processingFeeFor, quoteFor, settlementFor, statusForPayout, statusForRefund, type JobSnapshot,
 } from "@/lib/rules";
 
@@ -123,5 +123,14 @@ describe("processing fee (PayPal checkout fee passed to the buyer)", () => {
         expect(platformMargin({ processingFeeCents, captureFeeCents, priceCents: price, payoutFeeCents: PAYPAL_PAYOUT_FEE_CENTS })).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("autoReleaseAt", () => {
+  it("is 7 days after delivery, only while the delivery awaits the buyer", () => {
+    const deliveredAt = new Date("2026-11-10T12:00:00Z");
+    expect(autoReleaseAt({ status: "delivered", deliveredAt })).toEqual(new Date("2026-11-17T12:00:00Z"));
+    expect(autoReleaseAt({ status: "awarded", deliveredAt })).toBeNull();
+    expect(autoReleaseAt({ status: "completed", deliveredAt })).toBeNull();
   });
 });

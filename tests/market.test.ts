@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, t, type DB } from "@/lib/db";
 import {
   acceptDelivery, agentByToken, assignmentFor, awardBid, buyerOwns, cancelJob, createJob, createOperatorSession, endOperatorSession, executePayment,
-  markFunded, operatorBySession, paymentsFor, placeBid, registerAgent, requestRevision, rotateAgentToken, settleJob, submitDelivery, syncPayment,
+  markFunded, operatorBySession, paymentsFor, placeBid, registerAgent, requestRevision, releaseDueDeliveries, rotateAgentToken, settleJob, settleStragglers, submitDelivery, syncPayment,
   upsertOperator, withdrawBid, type PaymentRail,
 } from "@/lib/market";
 import { escrowBalance, processingFeeFor } from "@/lib/rules";
@@ -248,5 +248,70 @@ describe("settling and the winner's view", () => {
     expect(a).toMatchObject({ payoutToAgentCents: 228_00, feeCents: 12_00, deliveryCount: 1, latest: { revisionRequest: "Warmer colours please" } });
     expect(a.job.status).toBe("awarded");
     expect(a.payout).toBeUndefined();
+  });
+});
+
+describe("7-day auto-release", () => {
+  async function delivered(at0: number) {
+    fund();
+    const { bidId } = ok(placeBid(db, alice.agentId, jobId, { priceCents: 240_00, deliveryHours: 48, pitch: "x", sampleHtml: sample }, T0));
+    ok(await awardBid(db, fake.rail, jobId, bidId, at(1)));
+    ok(submitDelivery(db, alice.agentId, jobId, { html: "<h1>v1</h1>" }, at(at0)));
+  }
+  const payouts = () => fake.calls.filter((c) => c.op === "payout");
+
+  it("pays the agent once the buyer has ignored a delivery for 7 days, and not before", async () => {
+    await delivered(10);
+    expect(await releaseDueDeliveries(db, fake.rail, at(10 + 167))).toEqual([]);
+    expect(await releaseDueDeliveries(db, fake.rail, at(10 + 168))).toEqual([jobId]);
+    expect(payouts()).toEqual([{ op: "payout", key: `job-${jobId}-payout`, amountCents: 228_00, to: "PAYERANN0001" }]);
+    expect(db.select({ type: t.jobEvents.type }).from(t.jobEvents).all().map((e) => e.type)).toContain("auto_accepted");
+    expect(await releaseDueDeliveries(db, fake.rail, at(10 + 400))).toEqual([]); // already completed
+    expect(payouts()).toHaveLength(1);
+  });
+
+  it("restarts the clock when the buyer asks for a revision and the agent re-delivers", async () => {
+    await delivered(10);
+    ok(requestRevision(db, jobId, "Bigger photos please", at(100)));
+    expect(await releaseDueDeliveries(db, fake.rail, at(10 + 200))).toEqual([]); // awarded again, not delivered
+    ok(submitDelivery(db, alice.agentId, jobId, { html: "<h1>v2</h1>" }, at(150)));
+    expect(await releaseDueDeliveries(db, fake.rail, at(150 + 167))).toEqual([]);
+    expect(await releaseDueDeliveries(db, fake.rail, at(150 + 168))).toEqual([jobId]);
+  });
+
+  it("never pays twice when the buyer accepts at the same moment", async () => {
+    await delivered(10);
+    const [buyer, sweep] = await Promise.all([acceptDelivery(db, fake.rail, jobId, at(200)), releaseDueDeliveries(db, fake.rail, at(200))]);
+    expect(buyer.ok || sweep.length === 1).toBe(true);
+    expect(payouts()).toHaveLength(1);
+  });
+});
+
+describe("settleStragglers", () => {
+  it("retries unsent and syncs in-flight payments nobody is watching, but leaves fresh rows alone", async () => {
+    fund();
+    const { bidId } = ok(placeBid(db, alice.agentId, jobId, { priceCents: 240_00, deliveryHours: 48, pitch: "x", sampleHtml: sample }, T0));
+    ok(await awardBid(db, fake.rail, jobId, bidId, at(1)));
+    ok(submitDelivery(db, alice.agentId, jobId, { html: "<h1>v1</h1>" }, at(2)));
+    fake.state.failNext = true;
+    ok(await acceptDelivery(db, fake.rail, jobId, at(3))); // payout fails to send → pending
+    const payout = () => paymentsFor(db, jobId).find((p) => p.kind === "payout")!;
+    expect(payout().status).toBe("pending");
+
+    expect(await settleStragglers(db, fake.rail, new Date(at(3).getTime() + 30_000))).toBe(0); // too fresh
+    expect(await settleStragglers(db, fake.rail, at(4))).toBe(1); // retried → in flight
+    expect(payout().status).toBe("in_flight");
+    fake.state.payoutItemStatus = "SUCCESS";
+    expect(await settleStragglers(db, fake.rail, at(5))).toBe(1); // synced → settled
+    expect(payout().status).toBe("succeeded");
+    expect(await settleStragglers(db, fake.rail, at(6))).toBe(0);
+    expect(fake.calls.filter((c) => c.op === "payout")).toHaveLength(1);
+  });
+
+  it("also picks up a row that was recorded but never attempted (server died before calling PayPal)", async () => {
+    fund();
+    db.insert(t.payments).values({ jobId, kind: "refund", amountCents: 50_00, currency: "USD", idempotencyKey: "orphan", createdAt: at(1) }).run();
+    expect(await settleStragglers(db, fake.rail, at(2))).toBe(1);
+    expect(fake.calls).toEqual([{ op: "refund", key: "orphan", amountCents: 50_00 }]);
   });
 });

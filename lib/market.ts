@@ -1,10 +1,11 @@
 // Marketplace operations. Plain functions over `db`; PayPal is reached through a PaymentRail
 // so the money flow is testable without the network. Server Actions and the agent API stay thin.
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import { t, type DB } from "@/lib/db";
 import type { PaymentKind } from "@/lib/db/schema";
 import { hashSecret, newId, newSecret } from "@/lib/ids";
 import {
+  AUTO_RELEASE_HOURS,
   blockedReason,
   checkBidPrice,
   escrowBalance,
@@ -356,7 +357,7 @@ export function requestRevision(db: DB, jobId: string, request: string, now = ne
   return { ok: true, data: { deliveryDueAt } };
 }
 
-export async function acceptDelivery(db: DB, rail: PaymentRail, jobId: string, now = new Date()) {
+export async function acceptDelivery(db: DB, rail: PaymentRail, jobId: string, now = new Date(), o: { auto?: boolean } = {}) {
   const step = db.transaction((tx) => {
     const d = tx as unknown as DB;
     const job = getJob(d, jobId);
@@ -372,7 +373,7 @@ export async function acceptDelivery(db: DB, rail: PaymentRail, jobId: string, n
       .get()!;
     const { payoutToAgentCents, feeCents } = settlementFor(job.budgetCents, bid.priceCents);
     d.update(t.jobs).set({ status: "completed", completedAt: now }).where(eq(t.jobs.id, jobId)).run();
-    logEvent(d, jobId, "accepted", `payout ${payoutToAgentCents}, fee ${feeCents}`);
+    logEvent(d, jobId, o.auto ? "auto_accepted" : "accepted", `payout ${payoutToAgentCents}, fee ${feeCents}`);
     const payoutId = recordPayment(d, {
       jobId, kind: "payout", amountCents: payoutToAgentCents, currency: job.currency,
       idempotencyKey: `job-${jobId}-payout`, recipient: operator.payerId,
@@ -427,4 +428,33 @@ export function assignmentFor(db: DB, jobId: string, agentId: string) {
   const payout = paymentsFor(db, jobId).find((p) => p.kind === "payout");
   const { payoutToAgentCents, feeCents } = settlementFor(job.budgetCents, bid.priceCents);
   return { job, bid, latest, payout, payoutToAgentCents, feeCents, deliveryCount: db.select({ id: t.deliveries.id }).from(t.deliveries).where(eq(t.deliveries.jobId, jobId)).all().length };
+}
+
+// Accept every delivery the buyer has left unanswered for AUTO_RELEASE_HOURS, so agents can't be stranded.
+// Safe to run concurrently with a buyer's own accept: acceptDelivery re-checks the status in its transaction,
+// and the payout's idempotency key is unique per job.
+export async function releaseDueDeliveries(db: DB, rail: PaymentRail, now = new Date()) {
+  const cutoff = new Date(now.getTime() - AUTO_RELEASE_HOURS * HOUR);
+  const due = db.select({ id: t.jobs.id }).from(t.jobs).where(and(eq(t.jobs.status, "delivered"), lte(t.jobs.deliveredAt, cutoff))).all();
+  const released: string[] = [];
+  for (const { id } of due) {
+    const r = await acceptDelivery(db, rail, id, now, { auto: true });
+    if (r.ok) released.push(id);
+  }
+  return released;
+}
+
+// Follow up on refunds/payouts nobody is watching (e.g. an auto-released payout, or a buyer who closed the tab):
+// retry unsent ones and sync in-flight ones. Rows touched in the last minute are left to whoever is handling them.
+export async function settleStragglers(db: DB, rail: PaymentRail, now = new Date(), minAgeMs = 60_000) {
+  const rows = db
+    .select({ id: t.payments.id, status: t.payments.status })
+    .from(t.payments)
+    .where(and(inArray(t.payments.kind, ["refund", "payout"]), inArray(t.payments.status, ["pending", "in_flight"]), lte(sql`coalesce(${t.payments.updatedAt}, ${t.payments.createdAt})`, now.getTime() - minAgeMs)))
+    .all();
+  for (const p of rows) {
+    if (p.status === "pending") await executePayment(db, rail, p.id, now);
+    else await syncPayment(db, rail, p.id, now);
+  }
+  return rows.length;
 }

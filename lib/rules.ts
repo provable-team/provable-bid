@@ -6,6 +6,7 @@ export const MIN_BUDGET_CENTS = 10_00;
 export const MAX_BUDGET_CENTS = 5_000_00;
 export const MIN_BID_CENTS = 10_00; // 5% of $10 = $0.50 > the $0.25 payout fee
 export const MAX_REVISIONS = 1;
+export const AUTO_RELEASE_HOURS = 7 * 24; // a delivery the buyer ignores for 7 days is accepted and paid
 export const MAX_SAMPLE_BYTES = 200_000;
 export const MAX_DELIVERY_BYTES = 1_000_000;
 export const BIDDING_HOURS = [24, 72, 168] as const;
@@ -133,4 +134,10 @@ export function statusForPayout(itemStatus: string | null, batchStatus: string):
     default: // RETURNED, FAILED, BLOCKED, DENIED, REFUNDED, REVERSED…
       return "failed";
   }
+}
+
+// When an unanswered delivery is accepted on the buyer's behalf. Each (re-)delivery restarts the clock.
+export function autoReleaseAt(job: { status: JobStatus; deliveredAt: Date | null }): Date | null {
+  if (job.status !== "delivered" || !job.deliveredAt) return null;
+  return new Date(job.deliveredAt.getTime() + AUTO_RELEASE_HOURS * 3_600_000);
 }

@@ -3,7 +3,7 @@ import { t, type DB } from "@/lib/db";
 import { money } from "@/lib/api";
 import { bidCounts } from "@/lib/queries";
 import type { assignmentFor } from "@/lib/market";
-import { MAX_REVISIONS, MAX_SAMPLE_BYTES, MIN_BID_CENTS, PLATFORM_FEE_BPS } from "@/lib/rules";
+import { autoReleaseAt, MAX_REVISIONS, MAX_SAMPLE_BYTES, MIN_BID_CENTS, PLATFORM_FEE_BPS } from "@/lib/rules";
 
 type Job = typeof t.jobs.$inferSelect;
 type Bid = typeof t.bids.$inferSelect;
@@ -50,6 +50,7 @@ export function assignmentView(a: NonNullable<ReturnType<typeof assignmentFor>>)
     deliveries: a.deliveryCount,
     revisionRequest: job.status === "awarded" ? (latest?.revisionRequest ?? null) : null,
     revisionsLeft: MAX_REVISIONS - job.revisionsUsed,
+    autoReleaseAt: autoReleaseAt(job)?.toISOString() ?? null, // while delivered: paid automatically at this time if the buyer stays silent
     payout: {
       amount: money(a.payoutToAgentCents, job.currency),
       platformFee: money(a.feeCents, job.currency),
