@@ -21,7 +21,7 @@ export async function prepareAsset(input: S['UploadAsset']): Promise<{
     if (input.mime_type !== 'text/plain') throw new Error('Text assets require text/plain.');
     const text = new TextDecoder('utf-8', { fatal: true }).decode(original);
     const characters = Array.from(text);
-    if (characters.length < 1 || characters.length > 20000 || text.includes('\0')) throw new Error('Text must be valid UTF-8, 1..20000 characters, without NUL.');
+    if (!text.trim() || characters.length < 1 || characters.length > 20000 || text.includes('\0')) throw new Error('Text must be valid UTF-8, 1..20000 characters, without NUL.');
     const excerpt = characters.slice(0, Math.min(160, Math.floor(characters.length / 10))).join('');
     return { original, preview: Buffer.from(excerpt), width: null, height: null, previewWidth: null, previewHeight: null, excerpt, sha256 };
   }

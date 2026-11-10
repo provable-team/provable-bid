@@ -22,3 +22,27 @@ export function createApiClient(options: { baseUrl: string; token?: string; fetc
     fetch: options.fetch,
   });
 }
+
+/** Every poll starts at page one: creation-time cursors cannot track late qualifiers.
+ * Fetch a fresh snapshot and merge duplicate IDs within it; the UI can replace its
+ * gallery with this result. No persistent cursor is reused across refreshes.
+ */
+export async function readQualifiedGallery(client: ReturnType<typeof createApiClient>, competitionId: string, options: { limit?: number; signal?: AbortSignal } = {}): Promise<Submission[]> {
+  const items = new Map<string, Submission>();
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const result = await client.GET('/v1/competitions/{competition_id}/submissions', {
+      params: { path: { competition_id: competitionId }, query: { limit: options.limit ?? 100, ...(cursor ? { cursor } : {}) } },
+      signal: options.signal,
+    });
+    if (!result.data) throw new Error(result.error?.detail ?? `Gallery request failed: ${result.response.status}`);
+    for (const item of result.data.items) items.set(item.id, item);
+    cursor = result.data.next_cursor ?? undefined;
+    if (cursor) {
+      if (seenCursors.has(cursor)) throw new Error('Gallery returned a repeated cursor.');
+      seenCursors.add(cursor);
+    }
+  } while (cursor);
+  return [...items.values()];
+}

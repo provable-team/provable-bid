@@ -1,6 +1,8 @@
 # PayPal flows — sandbox integration handoff
 
-Contract baseline: v0.2.0; payment decisions/state machines are unchanged from v0.1.0.
+Proposed v0.3.0 revision of the published v0.2.0 baseline. Initial full/10%-partial/void
+and independent additional purchase branches are preserved. Reversal, resolved-dispute,
+operator identity, and explicit expense accounting changes require review.
 Artifact delivery now returns one protected URL per purchased original.
 
 Scope: a design for Developer B, with a runnable **mock**, not an implemented PayPal
@@ -198,8 +200,9 @@ actual refunded cents even though this API only initiates full remaining refunds
 
 Disputes and reversals freeze any future delivery and payout, preserve prior captures,
 and append accounting adjustments. Provider capture completion is historical and is
-not overwritten to pretend money was never collected. A later dispute win does not
-automatically reopen delivery in this MVP. Real already-paid recipients may require
+not overwritten to pretend money was never collected. A verified merchant-favor
+dispute resolution may restore access only if funds remain captured, with zero
+refunds and no refund/reversal hold. Open/lost disputes keep access locked. Real already-paid recipients may require
 reserves/recovery; that operational model must precede enabling real payouts.
 
 Allocate only confirmed net money using frozen policy and integer rounding in
@@ -217,3 +220,52 @@ verified duplicate/out-of-order events; full and external partial refund; disput
 reversed payment blocks delivery. Compare actual provider dashboard amounts and
 IDs with local journal. This repository's contract tests do not establish sandbox
 capabilities or replace those acceptance checks.
+
+
+## Explicit reversal/dispute reconciliation mapping (proposed v0.3.0)
+
+| Verified event / observation | Resource and required local effect |
+| --- | --- |
+| Capture completed/pending/declined | GET the bound capture/order, validate expected merchant/currency/amount, and project historical capture status. Duplicate completion cannot clear refund/reversal/dispute state. |
+| Capture refunded / refund pending/failed | Read bound capture/refund resources; sum unique confirmed refund records once and preserve pending reservations. Do not reinterpret refund as a reversal or vice versa. |
+| Capture reversed | Persist verified reversal evidence and a pending hold in the durable inbox/payment transaction; recheck capture/order binding and provider reversal/transaction evidence. Confirm reversed amount once known, append reversal accounting, keep capture history. Ambiguous evidence stays held for operator review. |
+| Dispute created/updated/resolved | GET `/v1/customer/disputes/{dispute_id}` and verify its transaction binding; separately read capture/refund data. Open/lost means held; merchant-favor resolution only lifts this dispute's hold when all other holds are absent. |
+
+The capture status enum does not expose a standalone `REVERSED` value; do not wait
+for a capture GET to magically return one or erase verified reversal evidence because
+that GET still says completed. A canonical binding plus retained verified event/provider
+transaction evidence must resolve the operation; uncertainty remains a hold.
+[Capture status definition](https://developer.paypal.com/api/payments/v2/definitions/capture_status/),
+[reversal event](https://developer.paypal.com/api/rest/webhooks/event-names),
+[separate disputes resource](https://developer.paypal.com/platforms/disputes/integrate-disputes/).
+
+Store each dispute ID/outcome and reversal evidence independently so one resolved
+case cannot clear another open case. The wire fields are an aggregate projection.
+No fake dispute should be created to represent a reversal. Real immutable journal,
+transaction queries, signature verification, and multi-worker recovery remain pending
+acceptance gates. The mock observations exercise projection/entitlement only.
+
+## Expense policy and illustrative small-charge economics
+
+Zero expense cap means **platform absorption**, never disappearance of processing
+cost or permission to add a buyer surcharge. Unknown expense is null. The settlement
+projection reports confirmed expense, capped deduction, absorbed expense, and net
+allocation; actual payouts also need available funding/reserves.
+
+As checked 2026-11-10, published US Checkout pricing is 3.49% + $0.49; micropayment
+pricing requires application and lists 4.99% + $0.09. Nominal rounded examples:
+
+| Capture | Standard example fee | Net before other costs |
+| --- | --- | --- |
+| 500 cents | 66 cents | 434 cents |
+| 50 cents | 51 cents | -1 cent |
+
+These are illustrative calculations, not account quotes: actual pricing, rounding,
+minimums/caps and eligibility require C42 evidence. The 51-cent mock expense is an
+intentional subsidy stress test. [PayPal US fee schedule](https://www.paypal.com/us/business/paypal-business-fees).
+
+A 50-cent capture with 5-cent commission and zero expense deductions allocates 45
+cents while the platform absorbs the processing expense. For internal agents, that
+allocation is within the same company, not an external seller payout or extra revenue.
+For real external recipients, subsidized distributions require separately available
+funds. Batching outgoing payouts does not remove each incoming capture's expense.
