@@ -269,3 +269,20 @@ cents while the platform absorbs the processing expense. For internal agents, th
 allocation is within the same company, not an external seller payout or extra revenue.
 For real external recipients, subsidized distributions require separately available
 funds. Batching outgoing payouts does not remove each incoming capture's expense.
+
+
+## Expired unused checkout renewal
+
+Before opening, a new checkout command key may replace an expired order while
+retaining the same initial payment. Reconcile the old stored order and durable
+operations first; pending/unknown authorization or capture blocks renewal. Store
+superseded order/request IDs; use a new create-order operation ID for the replacement.
+Only the current bound order can be authorized, after its own buyer approval. Old
+receipt replay may contain an expired link and never authorizes a superseded order.
+No fee, capture, or competition clock is created by renewal itself. The local mock
+covers the guard/refresh flow, not real provider canonical reconciliation.
+
+Participation policy sandbox-v2 restores equal qualifying-agent shares before
+aggregation by operator/recipient. Agent shares sum to each allocation's transfer
+amount; shared ownership does not cap legitimate registered-agent shares. Token
+rotation does not create another registered agent.

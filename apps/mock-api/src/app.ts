@@ -38,7 +38,7 @@ export async function createMock(options: { now?: () => number; authorizationAge
     return `http://127.0.0.1:${port}${path}`;
   };
   const health = (): S['Health'] => ({ status: 'ok', mode: 'mock', server_time: stamp() });
-  const policy: S['Policy'] = { terms_version: 'sandbox-v1', participation_fee_bps: 1000, commission_bps: 1000, expense_cap_minor: 0, qualification_grace_seconds: 120 };
+  const policy: S['Policy'] = { terms_version: 'sandbox-v2', participation_allocation_basis: 'qualified_agent', participation_fee_bps: 1000, commission_bps: 1000, expense_cap_minor: 0, qualification_grace_seconds: 120 };
   const competitions = new Map<string, S['Competition']>();
   const buyerOperators = new Map<string, string | null>();
   const submissions = new Map<string, S['Submission']>();
@@ -50,6 +50,7 @@ export async function createMock(options: { now?: () => number; authorizationAge
   const refunds = new Map<string, S['Refund']>();
   const allocations = new Map<string, S['Allocation']>();
   const checkouts = new Map<string, S['Checkout']>();
+  const supersededCheckouts = new Map<string, S['Checkout']>();
   const deliveries = new Map<string, { purchase: string; asset: string; buyer: string; expires: number }>();
   const replays = new Map<string, { fingerprint: string; status: number; body: unknown; cache?: string }>();
   const webhookEvents = new Set<string>();
@@ -77,6 +78,21 @@ export async function createMock(options: { now?: () => number; authorizationAge
   function canReadSubmission(s: S['Submission'], p: Principal) {
     const c = fetchOne(competitions, s.competition_id);
     return p.role === 'admin' || (p.role === 'agent' && s.agent_id === p.agent_id) || (p.role === 'buyer' && c.buyer_id === p.id && s.qualification_status === 'qualified');
+  }
+  function submissionView(s: S['Submission'], p: Principal): S['Submission'] {
+    const result = view(s);
+    if (p.role === 'buyer' && result.qualification) {
+      // Evaluator text has access to private originals. Never use it as a second
+      // preview channel: all buyer-visible explanation strings are platform-owned.
+      const qualification = result.qualification;
+      result.qualification = {
+        ...qualification,
+        reason: qualification.status === 'qualified' ? 'All objective requirements satisfied.' : 'Qualification did not pass.',
+        evaluator_version: 'public-summary-v1',
+        checks: qualification.checks.map(check => ({ ...check, reason: check.passed ? 'Requirement satisfied.' : 'Requirement not satisfied.' })),
+      };
+    }
+    return result;
   }
   function requireOpen(c: S['Competition']) {
     demand(c.state === 'open' && time() < Date.parse(c.submission_deadline!), 'DEADLINE_PASSED', 'Submission window is not open.');
@@ -147,7 +163,7 @@ export async function createMock(options: { now?: () => number; authorizationAge
     payments.set(p.id, p);
     const checkout: S['Checkout'] = {
       payment_id: p.id, provider_order_id: p.provider_order_id!, intent: purpose === 'initial' ? 'AUTHORIZE' : 'CAPTURE',
-      approval_url: urlFor(`/mock-approval?payment_id=${p.id}`),
+      approval_url: urlFor(`/mock-approval?payment_id=${p.id}&order_id=${p.provider_order_id}`),
       expires_at: purpose === 'initial' ? at(time() + 600_000) : c.decision_deadline!, server_time: stamp(),
     };
     checkouts.set(p.id, checkout);
@@ -170,19 +186,26 @@ export async function createMock(options: { now?: () => number; authorizationAge
     if (existing.length) return;
     const net = captureAccounting(p).distributable_minor;
     const purchase = [...purchases.values()].find(x => x.payment_id === p.id);
-    const eligible = purchase ? [fetchOne(submissionAccounting, purchase.submission_id)]
-      : compSubmissions(c).filter(s => s.qualification_status === 'qualified').map(s => fetchOne(submissionAccounting, s.id));
-    const recipients = [...new Map(eligible.map(a => [a.operator_id, a])).values()].sort((a,b) => a.operator_id.localeCompare(b.operator_id));
-    demand(recipients.length > 0);
-    recipients.forEach((recipient, index) => {
+    const eligible = (purchase ? [fetchOne(submissions, purchase.submission_id)]
+      : compSubmissions(c).filter(s => s.qualification_status === 'qualified')).sort((a,b) => a.agent_id === b.agent_id ? 0 : a.agent_id < b.agent_id ? -1 : 1);
+    demand(eligible.length > 0);
+    const groups = new Map<string, { operator_id: string; recipient_id: string; shares: S['AgentShare'][] }>();
+    eligible.forEach((submission, index) => {
+      const recipient = fetchOne(submissionAccounting, submission.id);
+      const key = `${recipient.operator_id}|${recipient.recipient_id}`;
+      const group = groups.get(key) ?? { ...recipient, shares: [] };
+      group.shares.push({ agent_id: submission.agent_id, amount_minor: Math.floor(net / eligible.length) + (index < net % eligible.length ? 1 : 0) });
+      groups.set(key, group);
+    });
+    for (const recipient of [...groups.values()].sort((a,b) => a.operator_id.localeCompare(b.operator_id) || a.recipient_id.localeCompare(b.recipient_id))) {
       const a: S['Allocation'] = {
         id: id('alloc'), competition_id: c.id, payment_id: p.id, operator_id: recipient.operator_id, recipient_id: recipient.recipient_id,
         kind: purchase ? 'winner' : 'participation',
-        amount: money(Math.floor(net / recipients.length) + (index < net % recipients.length ? 1 : 0)),
+        amount: money(recipient.shares.reduce((sum, share) => sum + share.amount_minor, 0)), agent_shares: recipient.shares,
         ledger_state: 'allocated', payout_state: 'simulated', provider_payout_id: null, created_at: stamp(),
       };
       allocations.set(a.id, a);
-    });
+    }
   }
   function holdAllocations(p: S['Payment'], reversed: boolean) {
     for (const a of allocations.values()) if (a.payment_id === p.id) {
@@ -318,6 +341,19 @@ export async function createMock(options: { now?: () => number; authorizationAge
         const c = fetchOne(competitions, params.competition_id); owner(c, p);
         demand(['draft', 'awaiting_authorization'].includes(c.state));
         if (!c.initial_payment_id) { c.initial_payment_id = makePayment(c, 'initial').id; c.state = 'awaiting_authorization'; update(c); }
+        const previous = fetchOne(checkouts, c.initial_payment_id);
+        if (time() >= Date.parse(previous.expires_at)) {
+          const payment = fetchOne(payments, c.initial_payment_id);
+          // A real adapter must canonical-GET the old order and reconcile its journal
+          // before reaching this branch. Never replace unknown financial outcomes.
+          demand(payment.authorization_state === 'none' && payment.capture_state === 'none' && payment.provider_authorization_id === null && !['queued', 'running', 'unknown'].includes(payment.operation_state), 'PAYMENT_NOT_READY', 'Reconcile the existing order before renewing checkout.');
+          supersededCheckouts.set(previous.provider_order_id, structuredClone(previous));
+          payment.provider_order_id = id('MOCK_ORDER'); payment.operation_id = id('op'); payment.operation_state = 'succeeded'; payment.updated_at = stamp();
+          checkouts.set(payment.id, { ...previous, provider_order_id: payment.provider_order_id,
+            approval_url: urlFor(`/mock-approval?payment_id=${payment.id}&order_id=${payment.provider_order_id}`),
+            expires_at: at(time() + 600_000), server_time: stamp() });
+          update(c);
+        }
         return ok(view(fetchOne(checkouts, c.initial_payment_id)), 201);
       }
       case 'authorizeCompetition': {
@@ -344,11 +380,11 @@ export async function createMock(options: { now?: () => number; authorizationAge
       case 'listSubmissions': {
         const c = fetchOne(competitions, params.competition_id);
         demand(p.id === c.buyer_id || p.role === 'agent' || p.role === 'admin', 'NOT_FOUND', 'Resource not found.', 404);
-        return ok(page(compSubmissions(c).filter(s => canReadSubmission(s, p)), query));
+        return ok(page(compSubmissions(c).filter(s => canReadSubmission(s, p)).map(s => submissionView(s, p)), query));
       }
       case 'getSubmission': {
         const s = fetchOne(submissions, params.submission_id);
-        demand(canReadSubmission(s, p), 'NOT_FOUND', 'Resource not found.', 404); return ok(view(s));
+        demand(canReadSubmission(s, p), 'NOT_FOUND', 'Resource not found.', 404); return ok(submissionView(s, p));
       }
       case 'qualifyMockSubmission': {
         admin(p); const s = fetchOne(submissions, params.submission_id); const c = fetchOne(competitions, s.competition_id);

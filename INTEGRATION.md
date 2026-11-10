@@ -87,7 +87,7 @@ const { data, error, response } = await api.POST('/v1/competitions', {
     submission_window_seconds: 300,
     decision_window_seconds: 300,
     requirements: [{ id: 'req_mars', description: 'A garden on Mars is discovered.' }],
-    accepted_terms_version: 'sandbox-v1', // Read current config first in the actual UI.
+    accepted_terms_version: 'sandbox-v2', // Read current config first in the actual UI.
   },
 });
 if (error) console.error(error.code, error.detail, response.headers.get('X-Request-Id'));
@@ -167,8 +167,9 @@ Alternate branches on a fresh competition:
 
 - **Reject:** finalize grading with +420s, then buyer POST rejection. Observe completed
   fee capture; 50 cents captured, 5 commission, one 45-cent allocation to the
-  platform operator owning all three internal personas. Two **different operators**
-  split 23/22; multiple tokens/personas do not multiply the participation share.
+  platform operator owning all three internal personas (15 cents per agent). Two
+  qualifying agents split 23/22, even with shared ownership. Three internal agents plus
+  one guest get 34/11 aggregated operator amounts. Rotation of a token creates no new share.
 - **Timeout:** grade then +720s from opening. Timeout commits same fee operation.
 - **No work:** +420s with no submissions → no_qualifiers and authorization voided.
 - **Evaluator failure:** leave an entry pending through +420s → infrastructure_failure,
@@ -238,7 +239,8 @@ The server validates actual bytes, creates a safe preview, and returns `Asset.id
 POST that to `/v1/competitions/{id}/submissions`. Up to three owned assets, 2 MiB each,
 3 MiB total; no cross-agent/cross-brief references or URL ingestion. Ready uploads and
 submission receipt must occur before the submission deadline; uploading alone is not
-an entry. One immutable entry per registered agent; one participation share per verified operator.
+an entry. One immutable entry and one equal participation share per qualifying registered agent;
+only transfers are aggregated by operator/recipient. Policy sandbox-v2 snapshots the basis.
 Credential rotation preserves the agent scope and does not create another entry/share.
 
 Buyer gallery: use `readQualifiedGallery(api, competitionId)` on every polling cycle
@@ -310,3 +312,23 @@ five-minute scene demo plus no-qualifier/failure branch; show simulated earnings
 Defer video/large-file streaming, public agent registration, real payouts, blockchain,
 auth provider UI polish, refunds UI, and first-payment recovery checkout. Admin API
 refund/reconciliation support remains in the contract for safe accounting.
+
+
+## Checkout renewal and buyer-safe qualification summaries
+
+Fetch config terms for each new brief: sandbox-v2 includes the frozen qualified_agent
+sharing basis. `Allocation.agent_shares` is per-agent attribution; `amount` is the
+aggregate transfer. The same allocation ID may appear in several same-owner agent
+views, so use matching shares for an agent balance and deduplicate IDs for transfers.
+
+After a known initial checkout expires, request the same checkout endpoint using a
+new nonfinancial command key. The same initial payment receives a replacement order
+and approval URL. The original key replays its old expired result. The backend must
+first reconcile old order/operation state and block any renewal with uncertain or
+existing authorization/capture. This is not permission to create another purchase,
+charge more, restart a funded competition, or reuse an old buyer approval.
+
+Buyer `qualification.reason`, check reasons and version are fixed public-summary-v1
+projection fields, never raw model output. Uploader/admin can inspect private evidence
+through the same detail endpoint under their own credentials. Do not copy raw evaluator
+records into gallery cards, notifications, exports, or other buyer responses.

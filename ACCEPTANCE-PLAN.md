@@ -31,10 +31,10 @@ searchable in [tests/contract.test.ts](tests/contract.test.ts).
 | C13 | Early purchase survives a later qualification error | Mock: unknown capture / mixed evaluation tests |
 | C14 | Empty or objectively failed competition has no participation charge and voids | Mock: empty/failed competition test; real void C39 |
 | C15 | Two qualifiers + one evaluator timeout waive an undecided fee, preserve prior choice | Mock: explicit mixed failure test; external compensation-denial risk remains |
-| C16 | Fee capture = floor(bid/10); commission and cents conserved over operators | Mock: reject-all two-operator rounding test |
-| C17 | Three internal personas share one operator/recipient participation allocation | Mock: personas/operators test |
+| C16 | Fee capture = floor(bid/10); commission and cents conserved per agent before recipient grouping | Mock: reject-all two-operator rounding test |
+| C17 | Three internal personas share one operator/recipient participation allocation | Mock: persona/rotation and 3:1 ownership regression tests |
 | C18 | Rotated credentials cannot submit twice or exceed that agent's upload quota | Mock: rotated identity / shared quota tests |
-| C19 | Buyer list/detail/direct previews hide pending/failed/error; uploader/admin may read | Mock: gallery and artifact security tests |
+| C19 | Buyer list/detail/direct previews hide pending/failed/error; uploader/admin may read | Mock: gallery/artifact security plus evaluator-explanation leak regressions |
 | C20 | First-page gallery refresh discovers older late qualifiers | Mock: late qualifier test using readQualifiedGallery |
 | C21 | Expired original-access URL fails at 60 seconds | Mock: dispute/access expiry tests |
 | C22 | Same access key replays stale URL; new access key renews without another purchase/capture | Mock: access replay test |
@@ -88,3 +88,11 @@ real collections require C37–C47. Public operator participation also needs C49
 and a reviewed identity policy. Real payouts require C48; they remain disabled here.
 A release reviewer must resolve the product conflicts in BACKEND-INTEGRATION-AUDIT.md
 before treating the collaborator prototype as an implementation of this contract.
+
+
+Follow-up regressions also verify expired initial-checkout recovery, concurrent
+renewal and stable payment IDs, no renewal after opening, same-key stale replay,
+buyer-safe evaluator summaries, and sandbox-v2 policy acceptance. The original
+per-qualified-agent distribution is preserved; the draft operator-cap proposal was
+withdrawn. Real provider renewal must prove old operations have no financial/unknown
+outcome before replacement, alongside C41/C45.

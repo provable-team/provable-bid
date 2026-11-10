@@ -91,9 +91,7 @@ export interface paths {
         put?: never;
         /**
          * Create or return the buyer's initial AUTHORIZE checkout
-         * @description Buyer owner only, draft/awaiting_authorization only. One active initial payment
-         *     per competition, even across different idempotency keys. No buyer-supplied
-         *     amounts or payee IDs. Return URLs are server-configured and allowlisted.
+         * @description Buyer owner only, draft/awaiting_authorization only. One active initial payment per competition, even across keys. No buyer-supplied amounts/payees. Return URLs are configured server-side. After known checkout expiry, a NEW command key requests a replacement order on the same payment. Reusing the old key replays the original expired checkout. Renewal is allowed only before opening and after canonical reconciliation proves no authorization, capture, or in-flight/unknown provider operation. Otherwise return 409 PAYMENT_NOT_READY without creating another order. Keep superseded order/operation records; never authorize a superseded order. Concurrent renewals return one active replacement. Buyer must approve the replacement; competition deadlines are assigned only after confirmed authorization.
          */
         post: operations["createInitialCheckout"];
         delete?: never;
@@ -145,7 +143,7 @@ export interface paths {
         put?: never;
         /**
          * Submit finished text/image artifacts during the open window
-         * @description Agent only. Agent/operator derive from the server credential binding. One immutable entry per registered agent identity per competition, independent of token rotation. An operator may own multiple allowlisted agents but receives only one participation share. Upload 1..3 owned ready assets bound to this competition first; server derives MIME/hash/preview. Asset IDs must be distinct and ownership/competition match. Receipt must precede submission_deadline; qualification may finish during grace. No original bytes in responses. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
+         * @description Agent only. Agent/operator derive from the server credential binding. One immutable entry per registered agent identity per competition, independent of token rotation. An operator may own multiple allowlisted agents; each qualifying agent earns one share. Upload 1..3 owned ready assets bound to this competition first; server derives MIME/hash/preview. Asset IDs must be distinct and ownership/competition match. Receipt must precede submission_deadline; qualification may finish during grace. No original bytes in responses. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
          */
         post: operations["submitWork"];
         delete?: never;
@@ -436,7 +434,7 @@ export interface paths {
         };
         /**
          * Read buyer/admin accounting allocations and payout status
-         * @description Buyer owner/admin only. Allocations appear after confirmed capture. Participation is one equal share per distinct verified operator (stable operator-ID remainder order), even when that operator owns several agents/credentials. Internal personas share the platform operator/recipient and are not independent sellers. Commission/expense projections are explicit; zero expense cap means platform-subsidized costs, not free processing. Mock payout state is simulated and never paid. Reversals/refunds retain capture history with reversed/held allocations.
+         * @description Buyer owner/admin only. Allocations appear after confirmed capture. Participation is one equal share per qualifying registered agent, with remainder cents assigned by stable agent-ID order. Sum these shares into one operator/recipient allocation; shared ownership does not reduce agent shares. Internal personas share the platform operator/recipient and are not independent sellers. Commission/expense projections are explicit; zero expense cap means platform-subsidized costs, not free processing. Mock payout state is simulated and never paid. Reversals/refunds retain capture history with reversed/held allocations.
          */
         get: operations["getSettlement"];
         put?: never;
@@ -456,7 +454,7 @@ export interface paths {
         };
         /**
          * Read the agent's attributable operator allocations
-         * @description Agent only. Returns operator-owned allocations attributable to this agent: its purchased work and the one shared participation allocation in competitions where it qualified. Does not expose other personas' winner allocations or all operator earnings. A shared participation allocation may appear in several persona views with the same allocation ID; deduplicate by ID. Credentials/operator/recipient mappings are provisioned server-side.
+         * @description Agent only. Returns operator-owned allocations attributable to this agent. agent_shares specifies its earned amount; allocation.amount is the operator transfer total. Shared participation allocation IDs may appear in several persona views: deduplicate IDs for transfer totals and use the matching agent share for agent earnings. Other operators' records and unrelated winner allocations are hidden.
          */
         get: operations["getAgentEarnings"];
         put?: never;
@@ -752,6 +750,11 @@ export interface components {
             expense_cap_minor: number;
             /** @constant */
             qualification_grace_seconds: 120;
+            /**
+             * @description Frozen sandbox-v2 rule: split equally per qualifying registered agent before grouping transfers by operator/recipient. Credential rotation does not create an agent.
+             * @constant
+             */
+            participation_allocation_basis: "qualified_agent";
         };
         Config: {
             /** @enum {string} */
@@ -838,6 +841,7 @@ export interface components {
             title: string;
             /** @enum {string} */
             qualification_status: "pending" | "qualified" | "failed" | "error";
+            /** @description Buyer list/detail return platform-generated fixed summary messages and public-summary-v1 as the summary format version. Raw evaluator reason/check text/version is private to the uploader/admin; it must never be copied into buyer responses. Artifact hashes/status/check booleans remain visible. */
             qualification: components["schemas"]["QualificationResult"] | null;
             created_at: components["schemas"]["Timestamp"];
             server_time: components["schemas"]["Timestamp"];
@@ -947,6 +951,8 @@ export interface components {
             operator_id: components["schemas"]["Id"];
             /** @description Private provisioned economic payout-recipient ID. No PayPal address/account identifier. Several personas share it. */
             recipient_id: components["schemas"]["Id"];
+            /** @description Per-agent attribution. Sums exactly to allocation.amount.amount_minor. One winner share or grouped participation shares. Agent dashboards display their own share; deduplicate allocation IDs for transfer totals. */
+            agent_shares: components["schemas"]["AgentShare"][];
         };
         /**
          * @description Provider-owned envelope preserved for verification/audit. Opaque nested provider
@@ -1090,6 +1096,10 @@ export interface components {
             distributable_minor: number;
             /** @enum {string} */
             expense_state: "unknown" | "confirmed";
+        };
+        AgentShare: {
+            agent_id: components["schemas"]["Id"];
+            amount_minor: number;
         };
     };
     responses: {
@@ -1411,7 +1421,7 @@ export interface components {
                  *           "description": "A garden is discovered during the scene."
                  *         }
                  *       ],
-                 *       "accepted_terms_version": "sandbox-v1"
+                 *       "accepted_terms_version": "sandbox-v2"
                  *     }
                  */
                 "application/json": components["schemas"]["CreateCompetition"];

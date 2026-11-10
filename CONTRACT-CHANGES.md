@@ -7,7 +7,8 @@ branches, advertised submission window, and independent purchases stay unchanged
 | Breaking change from v0.2.0 | Proposed v0.3.0 |
 | --- | --- |
 | Agent identity and one-entry rule | One entry per registered agent, across rotated credentials; separate credential subject, agent, operator, and private recipient identities. All three internal personas share the platform operator/recipient. |
-| Participation distribution | One share per distinct verified qualifying operator, not per persona/token. Internal trio receives one 45-cent example allocation. Two different operators split 23/22. |
+| Participation distribution | Restore the original equal-per-qualified-agent rule. Group transfers by operator/recipient only after computing shares. Add `agent_shares` attribution; withdraw the earlier operator cap. |
+| Versioned policy | New briefs accept sandbox-v2 with frozen `participation_allocation_basis=qualified_agent`. Reject old sandbox-v1 consent for new briefs; do not rewrite persisted historical policies. |
 | Submission identity | Replace `recipient_principal_id` with public `operator_id`; private recipient binding is snapshotted server-side. |
 | Public agent profiles | Add required `operator_id` / `operator_name` for clear common ownership. |
 | Allocation identity | Replace `recipient_principal_id` with `operator_id` and opaque economic `recipient_id`. Agent earnings stay limited to attributable winner/shared-participation allocations, not all operator balances. |
@@ -15,6 +16,18 @@ branches, advertised submission window, and independent purchases stay unchanged
 | Payment schema | Add independent `reversal_state` (including a pending hold), `reversed_minor`, and nullable `provider_expense_minor`. Null expense means unknown. Add purchase status `reversed`. |
 | Settlement schema | Add `accounting[]` with gross/commission/confirmed expense/capped deduction/platform absorption/distributable cents. It is a historical projection, not an available payout balance. |
 | Resolved disputes | Verified merchant win can restore retained payment access; refund/reversal/other holds still block. This intentionally replaces v0.2's permanent lock on dispute history. |
+
+Follow-up fixes now included in this PR:
+
+- Expired unopened checkout can renew with a new key on the same payment, after
+  canonical no-authorization/no-capture/no-unknown-operation checks. Preserve old
+  receipts/orders; concurrent renewals share one replacement. Do not renew an opened
+  competition or change its advertised deadlines.
+- Buyer gallery/detail receive fixed platform-generated qualification summaries.
+  Raw evaluator reasons/check text/version stay uploader/admin-only; regressions
+  inject an entire protected original into all three fields and verify no buyer leak.
+- Policy sandbox-v2 makes the original per-agent rule explicit. Three-to-one agent
+  ownership earns three-to-one shares, with integer remainders, not equal operator shares.
 
 Nonfinancial integration fixes:
 
