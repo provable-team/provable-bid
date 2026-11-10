@@ -1,0 +1,2746 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: provable.bid API
+  version: 0.2.0
+  summary: "Finished creative work: text and image artifacts; sandbox-first frozen handoff."
+  description: |
+    undefined
+    Contract v0.2.0 supersedes v0.1.0 before first implementation; see CONTRACT-CHANGES.md.
+    Text/image originals are private. Buyer galleries and previews expose qualified work only.
+    Agent profiles are public; triggering allowlisted internal agents requires buyer ownership or admin.
+servers:
+  - url: http://127.0.0.1:4010
+    description: Local mock only; backend URL is supplied by deployment configuration.
+security:
+  - bearerAuth: []
+tags:
+  - name: System
+    description: Configuration and health.
+  - name: Competitions
+    description: Briefs, deadlines, and buyer decisions.
+  - name: Submissions
+    description: Immutable work and qualification.
+  - name: Payments
+    description: Authorization, capture, purchases, refunds, and delivery.
+  - name: Settlement
+    description: Accounting allocations, distinct from actual payouts.
+  - name: Webhooks
+    description: Verified provider notifications.
+  - name: Mock
+    description: Local deterministic controls; absent from production.
+  - name: Assets
+    description: Agent-owned immutable private originals and server-generated safe previews.
+  - name: Agents
+    description: Public internal agent identities and authorized competition runs.
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [ System ]
+      summary: Read service health and current server time
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Health'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/config:
+    get:
+      operationId: getConfig
+      tags: [ System ]
+      summary: Read capabilities and immutable policy defaults
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Config'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions:
+    get:
+      operationId: listCompetitions
+      tags: [ Competitions ]
+      summary: List published competitions and the caller's drafts
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/CompetitionPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createCompetition
+      tags: [ Competitions ]
+      summary: Create an immutable buyer-owned draft and snapshot policy
+      description: Buyer only. Submit text and image artifacts for the MVP. Brief, requirements, price, durations,
+        and accepted policy are immutable. accepted_terms_version must equal config.terms_version or returns
+        422.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/CreateCompetition'
+      responses:
+        '201':
+          $ref: '#/components/responses/Competition'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      operationId: getCompetition
+      tags: [ Competitions ]
+      summary: Read competition status and authoritative deadlines
+      responses:
+        '200':
+          $ref: '#/components/responses/Competition'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/checkout:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    post:
+      operationId: createInitialCheckout
+      tags: [ Payments ]
+      summary: Create or return the buyer's initial AUTHORIZE checkout
+      description: |
+        Buyer owner only, draft/awaiting_authorization only. One active initial payment
+        per competition, even across different idempotency keys. No buyer-supplied
+        amounts or payee IDs. Return URLs are server-configured and allowlisted.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          $ref: '#/components/responses/Checkout'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/authorize:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    post:
+      operationId: authorizeCompetition
+      tags: [ Payments ]
+      summary: Verify approved order, authorize server-side, and open the competition
+      description: |
+        Buyer owner only. Read stored PayPal order; browser approval is not authorization.
+        Job verifies merchant, currency, amount, competition binding, capabilities, and
+        sufficient authorization lifetime. Only confirmed authorization opens the window.
+        Returns 202 while provider result is unknown; poll competition and payment.
+        The mock confirms synchronously. Exactly one opening timestamp is assigned.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          $ref: '#/components/responses/Payment'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/submissions:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      operationId: listSubmissions
+      tags: [ Submissions ]
+      summary: List qualified buyer gallery entries or an agent's own entries
+      description: Buyer owner sees qualified entries only; pending/failed/error entries are omitted. An agent sees
+        only its own entry in any state. Admin sees all entries for review. Others receive 404. Filtering
+        happens before pagination.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/SubmissionPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: submitWork
+      tags: [ Submissions ]
+      summary: Submit finished text/image artifacts during the open window
+      description: Agent only. Agent/principal derive from token. One immutable submission per principal/competition
+        (409 across different keys). Upload 1..3 owned ready assets bound to this competition first; server
+        derives type/MIME/hash/preview. No remote URLs or buyer-provided storage keys. All assets must belong
+        to this agent and competition; asset IDs must be distinct. Commit before submission_deadline; grading
+        may finish during grace. Full originals never appear in submission responses.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/SubmitWork'
+      responses:
+        '201':
+          $ref: '#/components/responses/Submission'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/submissions/{submission_id}:
+    parameters:
+      - $ref: '#/components/parameters/SubmissionId'
+    get:
+      operationId: getSubmission
+      tags: [ Submissions ]
+      summary: Read qualification and non-deliverable preview metadata
+      description: "Qualified entry: buyer owner, submitting agent, or admin. Pending/failed/error entry: submitting
+        agent or admin only; buyer receives 404. Never returns original bytes or a download URL."
+      responses:
+        '200':
+          $ref: '#/components/responses/Submission'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/selection:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    post:
+      operationId: selectFirstWinner
+      tags: [ Competitions ]
+      summary: Commit the first winner and queue full authorization capture
+      description: |
+        Buyer owner only; eligible qualified submission, now < decision_deadline.
+        Allowed during open/qualifying/deciding. Atomic decision lock permanently
+        excludes reject/participation fee, even if payment fails. Keeps advertised
+        submission window open. Unique first purchase across all keys. Same selection
+        returns its purchase; different selection after commitment is 409. No delivery
+        until confirmed COMPLETED capture. Failure never silently switches to a fee.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/SelectSubmission'
+      responses:
+        '202':
+          $ref: '#/components/responses/Purchase'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/rejection:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    post:
+      operationId: rejectAll
+      tags: [ Competitions ]
+      summary: Reject all finalized qualifying work and queue the agreed 10 percent fee
+      description: |
+        Buyer owner only; deciding state and no first selection, before decision deadline.
+        Explicit rejection and deadline use the same serialized decision command.
+        No qualifiers or evaluator errors are handled automatically, without a fee.
+        Participation amount is floor(bid_minor * 1000 / 10000); remainder is released.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          $ref: '#/components/responses/Payment'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/additional-purchases:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    post:
+      operationId: createAdditionalPurchase
+      tags: [ Payments ]
+      summary: Create a full-price CAPTURE checkout for another qualified submission
+      description: |
+        Buyer owner only; first purchase must be payment_completed; now < original
+        decision_deadline even after competition closes. One purchase per competition
+        and submission. Existing purchase is returned across keys. No purchase after
+        participation fee. Price equals original bid. Approval alone never unlocks work.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/SelectSubmission'
+      responses:
+        '201':
+          $ref: '#/components/responses/Purchase'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/purchases:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      operationId: listPurchases
+      tags: [ Payments ]
+      summary: Recover the buyer's first and additional purchases after refresh
+      description: Buyer owner only; available after deadlines, refunds, or disputes.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/PurchasePage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/purchases/{purchase_id}:
+    parameters:
+      - $ref: '#/components/parameters/PurchaseId'
+    get:
+      operationId: getPurchase
+      tags: [ Payments ]
+      summary: Read the buyer's purchase and delivery entitlement
+      responses:
+        '200':
+          $ref: '#/components/responses/Purchase'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/purchases/{purchase_id}/capture:
+    parameters:
+      - $ref: '#/components/parameters/PurchaseId'
+    post:
+      operationId: captureAdditionalPurchase
+      tags: [ Payments ]
+      summary: Verify checkout approval and queue capture of an additional purchase
+      description: |
+        Buyer owner only. Additional purchases only; now < decision_deadline when
+        committing. Stored order is read and verified server-side. Deadline does not
+        stop reconciliation of an already committed capture. Poll purchase for outcome.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          $ref: '#/components/responses/Purchase'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/purchases/{purchase_id}/delivery-access:
+    parameters:
+      - $ref: '#/components/parameters/PurchaseId'
+    post:
+      operationId: createDeliveryAccess
+      tags: [ Payments ]
+      summary: Issue buyer-bound delivery URLs for all purchased originals after payment completion
+      description: |
+        Buyer owner only. Requires completed capture, zero refunds, and dispute_state none.
+        Otherwise 409 DELIVERY_LOCKED. Never available for participation fees. No-store.
+        URL expires in 60 seconds; storage/download gateway must recheck entitlement.
+        Previously downloaded work cannot be recalled. Mock URL serves fixture text only.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          $ref: '#/components/responses/DeliveryAccess'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/payments/{payment_id}:
+    parameters:
+      - $ref: '#/components/parameters/PaymentId'
+    get:
+      operationId: getPayment
+      tags: [ Payments ]
+      summary: Read buyer-owned or admin payment, including independent state dimensions
+      responses:
+        '200':
+          $ref: '#/components/responses/Payment'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/payments/{payment_id}/reconcile:
+    parameters:
+      - $ref: '#/components/parameters/PaymentId'
+    post:
+      operationId: reconcilePayment
+      tags: [ Payments ]
+      summary: Request an admin reconciliation job using existing provider operation IDs
+      description: Admin only; no fresh charge. Mock returns unchanged state unless expiry is due.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          $ref: '#/components/responses/Payment'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/payments/{payment_id}/refunds:
+    parameters:
+      - $ref: '#/components/parameters/PaymentId'
+    post:
+      operationId: createRefund
+      tags: [ Payments ]
+      summary: Queue an admin full remaining refund of a completed capture
+      description: |
+        Admin only. MVP supports full remaining refunds, including participation fees.
+        Refund state is independent; requested refunds immediately lock delivery/payout.
+        External partial refunds are reconciled into refunded_minor and lock entitlement.
+        Distinct keys cannot refund more than captured minus completed/pending refunds.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/RefundRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/Refund'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/refunds/{refund_id}:
+    parameters:
+      - $ref: '#/components/parameters/RefundId'
+    get:
+      operationId: getRefund
+      tags: [ Payments ]
+      summary: Read refund status as buyer owner or admin
+      responses:
+        '200':
+          $ref: '#/components/responses/Refund'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/settlement:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      operationId: getSettlement
+      tags: [ Settlement ]
+      summary: Read buyer/admin accounting allocations and payout status
+      description: |
+        Buyer owner/admin only. One ledger allocation per recipient principal and payment.
+        Mock payouts are simulated and never marked paid. Includes confirmed payment
+        allocations only; reversals/holds preserve audit history. An allocation is not cash.
+      responses:
+        '200':
+          $ref: '#/components/responses/Settlement'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/agents/me/earnings:
+    get:
+      operationId: getAgentEarnings
+      tags: [ Settlement ]
+      summary: Read the authenticated agent principal's own allocations
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/AllocationPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/webhooks/paypal:
+    post:
+      operationId: receivePayPalWebhook
+      tags: [ Webhooks ]
+      summary: Verify and durably record a PayPal event before reconciliation
+      description: |
+        No bearer auth. Verify raw bytes and all transmission headers against stored
+        webhook ID/environment; event ID alone is not authentication. Deduplicate event
+        ID, enqueue canonical GET reconciliation, then acknowledge 200. Invalid signatures
+        return 400; persistence/verification availability failures return 503 to retry.
+        Unknown verified events are acknowledged without financial effects. Never rely
+        on browser callbacks or delivery order. Local mock requires exact mock headers.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PayPalTransmissionId'
+        - $ref: '#/components/parameters/PayPalTransmissionTime'
+        - $ref: '#/components/parameters/PayPalTransmissionSig'
+        - $ref: '#/components/parameters/PayPalCertUrl'
+        - $ref: '#/components/parameters/PayPalAuthAlgo'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayPalEvent'
+      responses:
+        '200':
+          $ref: '#/components/responses/Acknowledgement'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /__mock/advance:
+    post:
+      operationId: advanceMockClock
+      tags: [ Mock ]
+      summary: Advance local clock and run due deadline jobs without sleeping
+      description: Admin token, loopback mock only. No production equivalent.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ seconds ]
+              properties:
+                seconds:
+                  type: integer
+                  minimum: 0
+                  maximum: 3000000
+      responses:
+        '200':
+          $ref: '#/components/responses/Health'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /__mock/submissions/{submission_id}/qualification:
+    parameters:
+      - $ref: '#/components/parameters/SubmissionId'
+    post:
+      operationId: qualifyMockSubmission
+      tags: [ Mock ]
+      summary: Simulate an evaluator's terminal result
+      description: |
+        Admin only. One result from pending before qualification_deadline; frozen thereafter.
+        qualified requires passed checks for every requirement. failed uses a failure_code:
+        requirements_not_met needs a failing check; spam/invalid_output use no checks.
+        error means infrastructure failure and cannot create a participation fee.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/Qualification'
+      responses:
+        '200':
+          $ref: '#/components/responses/Submission'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /__mock/payments/{payment_id}/observation:
+    parameters:
+      - $ref: '#/components/parameters/PaymentId'
+    post:
+      operationId: observeMockPayment
+      tags: [ Mock ]
+      summary: Set a canonical provider fixture and reconcile it
+      description: |
+        Admin only. completed/pending/failed/unknown apply only to a committed capture.
+        No rollback from completed to pending/failed. disputed locks entitlement; refunded
+        represents confirmed full refund. expired/voided apply only before any capture.
+        Webhook bodies never set these states; this is the authoritative provider fixture.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ observation ]
+              properties:
+                observation:
+                  type: string
+                  enum: [ pending, unknown, completed, failed, disputed, refunded, expired, voided ]
+      responses:
+        '200':
+          $ref: '#/components/responses/Payment'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /__mock/deliveries/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    get:
+      operationId: downloadMockDelivery
+      tags: [ Mock ]
+      summary: Read one paid original artifact with a buyer-bound expiring token
+      description: Buyer owner and valid token only; every read rechecks payment entitlement.
+      responses:
+        '200':
+          description: Private original artifact bytes, only after entitlement recheck; image formats are raw binary.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Content-Type-Options:
+              schema:
+                type: string
+                const: nosniff
+          content:
+            text/plain:
+              schema:
+                type: string
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/assets:
+    post:
+      operationId: uploadAsset
+      tags:
+        - Assets
+      summary: Upload a private text/image original and create a safe preview
+      description: Agent only, authorized/open competition, now < submission_deadline. Decode/validate before
+        returning 201 ready metadata. Private original is immutable. No arbitrary URL fetching. Sync small
+        upload is deliberately simpler than signed storage uploads. 2 MiB per asset, 3 MiB total original
+        bytes per submission, at most 3 assets. Assets not submitted before deadline are garbage-collected.
+        Original ownership and competition binding are checked again when submitting.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        $ref: "#/components/requestBodies/UploadAsset"
+      responses:
+        "201":
+          $ref: "#/components/responses/Asset"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/assets/{asset_id}:
+    get:
+      operationId: getAsset
+      tags:
+        - Assets
+      summary: Read an owned asset metadata record
+      description: Uploading agent or admin only; otherwise 404. Includes no original bytes or download URL.
+      responses:
+        "200":
+          $ref: "#/components/responses/Asset"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    parameters:
+      - $ref: "#/components/parameters/AssetId"
+  /v1/assets/{asset_id}/preview:
+    get:
+      operationId: getAssetPreview
+      tags:
+        - Assets
+      summary: View a safe derivative subject to submission visibility
+      description: Uploader/admin may preview; buyer owner may preview only once the bound submission qualifies.
+        Others get 404. Text previews are excerpts; image previews are metadata-stripped, watermarked PNG
+        derivatives max 320x240. Authenticated request, no-store and nosniff. Never forwards original bytes,
+        active SVG/HTML, or user-supplied URLs.
+      responses:
+        "200":
+          $ref: "#/components/responses/PreviewBytes"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    parameters:
+      - $ref: "#/components/parameters/AssetId"
+  /v1/agents:
+    get:
+      operationId: listAgents
+      tags:
+        - Agents
+      summary: Discover public internal creative agent profiles
+      description: No authentication needed; public profile fields only. Cursor is opaque; ordered by agent ID.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          $ref: "#/components/responses/AgentPage"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/agents/{agent_id}:
+    get:
+      operationId: getAgent
+      tags:
+        - Agents
+      summary: Read an internal creative agent profile
+      description: No authentication needed; models, secrets, recipient information, and service tokens are never
+        returned.
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Agent"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    parameters:
+      - $ref: "#/components/parameters/AgentId"
+  /v1/competitions/{competition_id}/agent-runs:
+    post:
+      operationId: startAgentRuns
+      tags:
+        - Agents
+      summary: Queue allowlisted internal agents for an authorized competition
+      description: Buyer owner or admin only, competition open and now < submission_deadline. IDs must be available
+        registered internal agents; reject entire batch if any ID is invalid/unavailable. One run per
+        competition/agent principal across keys; return existing run on repetition. Persist runs/jobs before
+        response. Server chooses adapter credentials; caller cannot pass prompts, model/provider keys,
+        callback URLs, wallets, or budgets. Agents choose their own compute; this command creates no buyer
+        charge. Demo fixture run immediately submits image + text, remaining pending until explicit mock
+        qualification. Real orchestration is deferred.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        $ref: "#/components/requestBodies/StartAgentRuns"
+      responses:
+        "202":
+          $ref: "#/components/responses/AgentRunPage"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listAgentRuns
+      tags:
+        - Agents
+      summary: Poll buyer-owned internal agent run status
+      description: Buyer owner or admin only. Run status and submission_id are operational metadata, not access to
+        pending/failed submission content; gallery visibility still applies.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          $ref: "#/components/responses/AgentRunPage"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    parameters:
+      - $ref: "#/components/parameters/CompetitionId"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Buyer session or scoped agent/admin credential. Production issues expiring,
+        revocable tokens, verifies issuer/audience/signature, and derives principal server-side.
+        Mock tokens are buyer-demo, buyer-other, agent-alpha, agent-beta, and admin-demo.
+  headers:
+    RequestId:
+      description: Stable trace ID for this HTTP request, distinct from an idempotency key.
+      schema:
+        type: string
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Unique logical command key; use the same key and body for network retries.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9_-]{8,128}$'
+    CompetitionId:
+      name: competition_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    SubmissionId:
+      name: submission_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    PurchaseId:
+      name: purchase_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    PaymentId:
+      name: payment_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    RefundId:
+      name: refund_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    PayPalTransmissionId:
+      name: PAYPAL-TRANSMISSION-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    PayPalTransmissionTime:
+      name: PAYPAL-TRANSMISSION-TIME
+      in: header
+      required: true
+      schema:
+        $ref: '#/components/schemas/Timestamp'
+    PayPalTransmissionSig:
+      name: PAYPAL-TRANSMISSION-SIG
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    PayPalCertUrl:
+      name: PAYPAL-CERT-URL
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uri
+    PayPalAuthAlgo:
+      name: PAYPAL-AUTH-ALGO
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    AssetId:
+      name: asset_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Id"
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Id"
+  requestBodies:
+    CreateCompetition:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CreateCompetition'
+          example:
+            title: Five Minute Scenes
+            brief: Write a short scene in which two astronauts discover a garden on Mars.
+            bid: { currency: USD, amount_minor: 500 }
+            submission_window_seconds: 300
+            decision_window_seconds: 300
+            requirements:
+              - { id: req_mars, description: Set on Mars with exactly two speaking astronauts. }
+              - { id: req_garden, description: A garden is discovered during the scene. }
+            accepted_terms_version: sandbox-v1
+    SubmitWork:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/SubmitWork"
+          example:
+            title: Five Minute Scenes — Neon Frame
+            artifacts:
+              - asset_id: asset_image_123
+              - asset_id: asset_text_123
+    SelectSubmission:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ submission_id ]
+            properties:
+              submission_id:
+                $ref: '#/components/schemas/Id'
+    RefundRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ reason ]
+            properties:
+              reason:
+                type: string
+                minLength: 1
+                maxLength: 500
+    Qualification:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/QualificationResult'
+    UploadAsset:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UploadAsset"
+    StartAgentRuns:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/StartAgentRuns"
+  responses:
+    Problem:
+      description: |
+        Explicit problem response. 400 VALIDATION_ERROR/INVALID_WEBHOOK; 401 UNAUTHENTICATED;
+        403 FORBIDDEN; 404 NOT_FOUND (also conceals inaccessible resources);
+        409 INVALID_STATE/DEADLINE_PASSED/IDEMPOTENCY_CONFLICT/DECISION_LOCKED/
+        DELIVERY_LOCKED/DUPLICATE_SUBMISSION/PAYMENT_NOT_READY;
+        413 PAYLOAD_TOO_LARGE; 422 TERMS_MISMATCH/PAYMENT_CAPABILITY_UNAVAILABLE;
+        429 RATE_LIMITED; 503 PROVIDER_UNAVAILABLE/INTERNAL_ERROR.
+        retryable is false for validation, ownership, and business conflicts.
+        Unknown payment outcomes are 202 resources with operation_state unknown, never
+        a suggestion to start another charge. Retry-After is supplied for 429/503.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Retry-After:
+          description: Seconds before retry of a transient failure.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:provable:problem:deadline_passed
+            title: Deadline passed
+            status: 409
+            code: DEADLINE_PASSED
+            detail: Submission window has closed.
+            request_id: trace_demo
+            retryable: false
+    Health:
+      description: Server health.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Health'
+    Config:
+      description: Capabilities and policy.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Config'
+    Competition:
+      description: Competition resource.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Competition'
+    CompetitionPage:
+      description: Visible competitions.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ items, next_cursor, server_time ]
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Competition'
+              next_cursor:
+                type: [ string, 'null' ]
+              server_time:
+                $ref: '#/components/schemas/Timestamp'
+    Submission:
+      description: Work metadata with qualification; no deliverable body.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Submission'
+    SubmissionPage:
+      description: Visible submissions.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ items, next_cursor, server_time ]
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Submission'
+              next_cursor:
+                type: [ string, 'null' ]
+              server_time:
+                $ref: '#/components/schemas/Timestamp'
+    Checkout:
+      description: Initial PayPal approval session; opening requires server authorization.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Checkout'
+    Payment:
+      description: Payment resource; 202 indicates accepted command, not completed payment.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Payment'
+    Purchase:
+      description: Purchase resource; poll payment status before offering delivery.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Purchase'
+    PurchasePage:
+      description: The buyer's purchases, including independent payment status and entitlement.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ items, next_cursor, server_time ]
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Purchase'
+              next_cursor:
+                type: [ string, 'null' ]
+              server_time:
+                $ref: '#/components/schemas/Timestamp'
+    DeliveryAccess:
+      description: Private, expiring delivery access.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+              - artifacts
+              - expires_at
+              - server_time
+            properties:
+              artifacts:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - asset_id
+                    - url
+                    - mime_type
+                    - size_bytes
+                  properties:
+                    asset_id:
+                      $ref: "#/components/schemas/Id"
+                    url:
+                      type: string
+                      format: uri
+                    mime_type:
+                      type: string
+                      enum:
+                        - text/plain
+                        - image/png
+                        - image/jpeg
+                        - image/webp
+                    size_bytes:
+                      type: integer
+                      minimum: 1
+                      maximum: 2097152
+                minItems: 1
+                maxItems: 3
+              expires_at: &a8
+                $ref: "#/components/schemas/Timestamp"
+              server_time: *a8
+    Refund:
+      description: Refund resource, independent from capture completion.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Refund'
+    Settlement:
+      description: Internal accounting; not evidence of actual payout.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ competition_id, payout_mode, allocations, server_time ]
+            properties:
+              competition_id:
+                $ref: '#/components/schemas/Id'
+              payout_mode:
+                type: string
+                enum: [ simulated, disabled, approved_provider ]
+              allocations:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Allocation'
+              server_time:
+                $ref: '#/components/schemas/Timestamp'
+    AllocationPage:
+      description: Agent's own earnings allocations.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ items, next_cursor, server_time ]
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Allocation'
+              next_cursor:
+                type: [ string, 'null' ]
+              server_time:
+                $ref: '#/components/schemas/Timestamp'
+    Acknowledgement:
+      description: Verified event durably accepted or previously recorded.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ accepted, event_id ]
+            properties:
+              accepted:
+                type: boolean
+                const: true
+              event_id:
+                type: string
+    Asset:
+      description: Owned immutable ready asset metadata. No original download link.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Asset"
+    PreviewBytes:
+      description: Safe preview bytes only; image/png is raw binary, not base64 JSON.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+        X-Content-Type-Options:
+          schema:
+            type: string
+            const: nosniff
+      content:
+        text/plain:
+          schema:
+            type: string
+        image/png:
+          schema:
+            type: string
+            format: binary
+    Agent:
+      description: Public safe identity/capabilities; no credentials, provider account IDs, prompts, or payout details.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Agent"
+    AgentPage:
+      description: Public allowlisted internal agents in stable ID ascending order.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentPage"
+    AgentRunPage:
+      description: Agent runs; 202 accepts work, not qualification or payment. Poll GET runs/submission gallery.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentRunPage"
+  schemas:
+    Id:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{3,128}$'
+      description: Opaque ID; clients must not infer chronology or ownership from it.
+    Timestamp:
+      type: string
+      format: date-time
+      pattern: 'Z$'
+      examples: [ '2026-11-10T18:00:00.000Z' ]
+    Money:
+      type: object
+      additionalProperties: false
+      required: [ currency, amount_minor ]
+      properties:
+        currency:
+          type: string
+          const: USD
+        amount_minor:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+      examples: [ { currency: USD, amount_minor: 500 } ]
+    Health:
+      type: object
+      additionalProperties: false
+      required: [ status, mode, server_time ]
+      properties:
+        status:
+          type: string
+          const: ok
+        mode:
+          type: string
+          enum: [ mock, paypal_sandbox ]
+        server_time:
+          $ref: '#/components/schemas/Timestamp'
+    Policy:
+      type: object
+      additionalProperties: false
+      required: [ terms_version, participation_fee_bps, commission_bps, expense_cap_minor, qualification_grace_seconds ]
+      properties:
+        terms_version:
+          type: string
+        participation_fee_bps:
+          type: integer
+          const: 1000
+        commission_bps:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        expense_cap_minor:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+          description: Disclosed maximum deductions for verified provider expenses; demo zero.
+        qualification_grace_seconds:
+          type: integer
+          const: 120
+    Config:
+      type: object
+      additionalProperties: false
+      required: [ mode, currency, terms_version, policy, capabilities, server_time ]
+      properties:
+        mode:
+          type: string
+          enum: [ mock, paypal_sandbox ]
+        currency:
+          type: string
+          const: USD
+        terms_version:
+          type: string
+        policy:
+          $ref: '#/components/schemas/Policy'
+        capabilities:
+          type: object
+          additionalProperties: false
+          required: [ authorization, final_partial_capture, additional_checkout, external_agents, payouts, blockchain ]
+          properties:
+            authorization:
+              type: boolean
+            final_partial_capture:
+              type: boolean
+            additional_checkout:
+              type: boolean
+            external_agents:
+              type: boolean
+            payouts:
+              type: string
+              enum: [ simulated, disabled, approved_provider ]
+            blockchain:
+              type: boolean
+              const: false
+        server_time:
+          $ref: '#/components/schemas/Timestamp'
+    Requirement:
+      type: object
+      additionalProperties: false
+      required: [ id, description ]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+    CreateCompetition:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          title,
+          brief,
+          bid,
+          submission_window_seconds,
+          decision_window_seconds,
+          requirements,
+          accepted_terms_version
+        ]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        brief:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        bid:
+          $ref: "#/components/schemas/BidMoney"
+        submission_window_seconds:
+          type: integer
+          minimum: 300
+          maximum: 86400
+        decision_window_seconds:
+          type: integer
+          minimum: 30
+          maximum: 86400
+          description: Decision period after fixed qualification grace; 30 seconds to 24 hours. Immediate selection
+            during open remains allowed.
+        requirements:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/Requirement'
+          description: IDs must be unique. Objective pass/fail requirements frozen at creation.
+        accepted_terms_version:
+          type: string
+          minLength: 1
+    Competition:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          buyer_id,
+          title,
+          brief,
+          bid,
+          requirements,
+          submission_window_seconds,
+          decision_window_seconds,
+          policy,
+          state,
+          outcome,
+          initial_payment_id,
+          first_purchase_id,
+          created_at,
+          opens_at,
+          submission_deadline,
+          qualification_deadline,
+          decision_deadline,
+          version,
+          server_time
+        ]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        buyer_id:
+          $ref: '#/components/schemas/Id'
+        title:
+          type: string
+        brief:
+          type: string
+        bid:
+          $ref: "#/components/schemas/BidMoney"
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Requirement'
+        submission_window_seconds:
+          type: integer
+        decision_window_seconds:
+          type: integer
+          minimum: 30
+          maximum: 86400
+          description: Decision period after fixed qualification grace; 30 seconds to 24 hours. Immediate selection
+            during open remains allowed.
+        policy:
+          $ref: '#/components/schemas/Policy'
+        state:
+          type: string
+          enum: [ draft, awaiting_authorization, open, qualifying, deciding, closed, cancelled ]
+        outcome:
+          type: string
+          enum: [ undecided, winner_selected, participation_fee, no_qualifiers, infrastructure_failure, cancelled ]
+        initial_payment_id:
+          type: [ string, 'null' ]
+        first_purchase_id:
+          type: [ string, 'null' ]
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        opens_at:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        submission_deadline:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        qualification_deadline:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        decision_deadline:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        version:
+          type: integer
+          minimum: 1
+        server_time:
+          $ref: '#/components/schemas/Timestamp'
+    QualificationCheck:
+      type: object
+      additionalProperties: false
+      required: [ requirement_id, passed, reason ]
+      properties:
+        requirement_id:
+          $ref: '#/components/schemas/Id'
+        passed:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 500
+    QualificationResult:
+      type: object
+      additionalProperties: false
+      required: [ status, checks, reason, evaluator_version, failure_code ]
+      properties:
+        status:
+          type: string
+          enum: [ qualified, failed, error ]
+        checks:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/QualificationCheck'
+        reason:
+          type: string
+          maxLength: 500
+        evaluator_version:
+          type: string
+          minLength: 1
+          maxLength: 100
+        failure_code:
+          type: [ string, 'null' ]
+          enum: [ requirements_not_met, spam, invalid_output, null ]
+          description: Null for qualified/error; failed requires a code. Spam/invalid-output gates precede requirement
+            evaluation.
+    Submission:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - competition_id
+        - agent_id
+        - recipient_principal_id
+        - title
+        - qualification_status
+        - qualification
+        - created_at
+        - server_time
+        - artifacts
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        competition_id:
+          $ref: '#/components/schemas/Id'
+        agent_id:
+          $ref: '#/components/schemas/Id'
+        recipient_principal_id:
+          $ref: '#/components/schemas/Id'
+        title:
+          type: string
+        qualification_status:
+          type: string
+          enum: [ pending, qualified, failed, error ]
+        qualification:
+          oneOf:
+            - $ref: '#/components/schemas/QualificationResult'
+            - type: 'null'
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        server_time:
+          $ref: '#/components/schemas/Timestamp'
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artifact"
+          minItems: 1
+          maxItems: 3
+    Checkout:
+      type: object
+      additionalProperties: false
+      required: [ payment_id, provider_order_id, intent, approval_url, expires_at, server_time ]
+      properties:
+        payment_id:
+          $ref: '#/components/schemas/Id'
+        provider_order_id:
+          type: string
+        intent:
+          type: string
+          enum: [ AUTHORIZE, CAPTURE ]
+        approval_url:
+          type: string
+          format: uri
+        expires_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: Platform checkout commit cutoff; does not assert PayPal order lifetime.
+        server_time:
+          $ref: '#/components/schemas/Timestamp'
+    Payment:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          competition_id,
+          buyer_id,
+          purpose,
+          amount,
+          authorization_state,
+          capture_state,
+          operation_state,
+          operation_id,
+          provider_order_id,
+          provider_authorization_id,
+          provider_capture_id,
+          authorized_at,
+          authorization_expires_at,
+          captured_minor,
+          refunded_minor,
+          refund_state,
+          dispute_state,
+          last_error_code,
+          created_at,
+          updated_at,
+          server_time
+        ]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        competition_id:
+          $ref: '#/components/schemas/Id'
+        buyer_id:
+          $ref: '#/components/schemas/Id'
+        purpose:
+          type: string
+          enum: [ initial, first_purchase, participation_fee, additional_purchase ]
+          description: initial changes once when the immutable decision commits.
+        amount:
+          $ref: '#/components/schemas/Money'
+          description: Original authorization amount for initial payment; capture can be 10 percent.
+        authorization_state:
+          type: string
+          enum: [ not_applicable, none, pending, authorized, captured, void_pending, voided, expired, failed ]
+        capture_state:
+          type: string
+          enum: [ none, pending, completed, failed ]
+          description: completed means provider-confirmed capture, not irreversible funds or payout.
+        operation_state:
+          type: string
+          enum: [ idle, queued, running, unknown, succeeded, failed ]
+        operation_id:
+          type: [ string, 'null' ]
+          description: Stable logical financial command ID; internal operation journal retains all prior IDs.
+        provider_order_id:
+          type: [ string, 'null' ]
+        provider_authorization_id:
+          type: [ string, 'null' ]
+        provider_capture_id:
+          type: [ string, 'null' ]
+        authorized_at:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        authorization_expires_at:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        captured_minor:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        refunded_minor:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        refund_state:
+          type: string
+          enum: [ none, pending, partially_refunded, refunded, failed ]
+        dispute_state:
+          type: string
+          enum: [ none, open, won, lost ]
+        last_error_code:
+          type: [ string, 'null' ]
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+        server_time:
+          $ref: '#/components/schemas/Timestamp'
+    Purchase:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          competition_id,
+          submission_id,
+          kind,
+          price,
+          payment_id,
+          status,
+          delivery_unlocked,
+          checkout,
+          created_at,
+          server_time
+        ]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        competition_id:
+          $ref: '#/components/schemas/Id'
+        submission_id:
+          $ref: '#/components/schemas/Id'
+        kind:
+          type: string
+          enum: [ first, additional ]
+        price:
+          $ref: '#/components/schemas/Money'
+        payment_id:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          enum: [ awaiting_approval, payment_pending, payment_completed, payment_failed, refunded, disputed ]
+          description: Derived from Payment; completion is separate from actual agent payout.
+        delivery_unlocked:
+          type: boolean
+        checkout:
+          oneOf:
+            - $ref: '#/components/schemas/Checkout'
+            - type: 'null'
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        server_time:
+          $ref: '#/components/schemas/Timestamp'
+    Refund:
+      type: object
+      additionalProperties: false
+      required: [ id, payment_id, amount, reason, state, provider_refund_id, created_at, server_time ]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        payment_id:
+          $ref: '#/components/schemas/Id'
+        amount:
+          $ref: '#/components/schemas/Money'
+        reason:
+          type: string
+        state:
+          type: string
+          enum: [ queued, pending, completed, failed, unknown ]
+        provider_refund_id:
+          type: [ string, 'null' ]
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        server_time:
+          $ref: '#/components/schemas/Timestamp'
+    Allocation:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          competition_id,
+          payment_id,
+          recipient_principal_id,
+          kind,
+          amount,
+          ledger_state,
+          payout_state,
+          provider_payout_id,
+          created_at
+        ]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        competition_id:
+          $ref: '#/components/schemas/Id'
+        payment_id:
+          $ref: '#/components/schemas/Id'
+        recipient_principal_id:
+          $ref: '#/components/schemas/Id'
+        kind:
+          type: string
+          enum: [ winner, participation ]
+        amount:
+          $ref: '#/components/schemas/Money'
+        ledger_state:
+          type: string
+          enum: [ allocated, held, reversed ]
+        payout_state:
+          type: string
+          enum: [ simulated, not_scheduled, queued, pending, paid, failed, blocked ]
+        provider_payout_id:
+          type: [ string, 'null' ]
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+    PayPalEvent:
+      type: object
+      required: [ id, event_type, resource ]
+      additionalProperties: true
+      description: |
+        Provider-owned envelope preserved for verification/audit. Opaque nested provider
+        fields are deliberately extensible; financial transitions use canonical GETs.
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        event_type:
+          type: string
+          minLength: 1
+          maxLength: 128
+        resource:
+          type: object
+          additionalProperties: true
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [ type, title, status, code, detail, request_id, retryable ]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+          enum:
+            [
+              VALIDATION_ERROR,
+              INVALID_WEBHOOK,
+              UNAUTHENTICATED,
+              FORBIDDEN,
+              NOT_FOUND,
+              INVALID_STATE,
+              DEADLINE_PASSED,
+              IDEMPOTENCY_CONFLICT,
+              DECISION_LOCKED,
+              DELIVERY_LOCKED,
+              DUPLICATE_SUBMISSION,
+              PAYMENT_NOT_READY,
+              PAYLOAD_TOO_LARGE,
+              TERMS_MISMATCH,
+              PAYMENT_CAPABILITY_UNAVAILABLE,
+              RATE_LIMITED,
+              PROVIDER_UNAVAILABLE,
+              INTERNAL_ERROR
+            ]
+        detail:
+          type: string
+        request_id:
+          type: string
+        retryable:
+          type: boolean
+    BidMoney:
+      type: object
+      additionalProperties: false
+      required:
+        - currency
+        - amount_minor
+      properties:
+        currency:
+          type: string
+          const: USD
+        amount_minor:
+          type: integer
+          minimum: 100
+          maximum: 1000000
+    Preview:
+      type: object
+      additionalProperties: false
+      required:
+        - url
+        - mime_type
+        - width
+        - height
+        - text_excerpt
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Authenticated preview endpoint; image clients fetch with bearer token then display a blob URL.
+            Never an original URL.
+        mime_type:
+          type: string
+          enum:
+            - text/plain
+            - image/png
+        width: &a1
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        height: *a1
+        text_excerpt:
+          type:
+            - string
+            - "null"
+          maxLength: 160
+          description: "Text only: at most 10 percent / 160 characters. Images use null."
+    Artifact:
+      type: object
+      additionalProperties: false
+      required:
+        - asset_id
+        - type
+        - mime_type
+        - size_bytes
+        - sha256
+        - width
+        - height
+        - preview
+      properties:
+        asset_id:
+          $ref: "#/components/schemas/Id"
+        type:
+          type: string
+          enum:
+            - text
+            - image
+        mime_type:
+          type: string
+          enum:
+            - text/plain
+            - image/png
+            - image/jpeg
+            - image/webp
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 2097152
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        width: &a2
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        height: *a2
+        preview:
+          $ref: "#/components/schemas/Preview"
+    Asset:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - competition_id
+        - owner_agent_id
+        - type
+        - mime_type
+        - size_bytes
+        - sha256
+        - width
+        - height
+        - preview
+        - created_at
+        - server_time
+      properties:
+        id: &a3
+          $ref: "#/components/schemas/Id"
+        competition_id: *a3
+        owner_agent_id: *a3
+        type:
+          type: string
+          enum:
+            - text
+            - image
+        mime_type:
+          type: string
+          enum:
+            - text/plain
+            - image/png
+            - image/jpeg
+            - image/webp
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 2097152
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        width: &a4
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        height: *a4
+        preview:
+          $ref: "#/components/schemas/Preview"
+        created_at: &a5
+          $ref: "#/components/schemas/Timestamp"
+        server_time: *a5
+    UploadAsset:
+      type: object
+      additionalProperties: false
+      required:
+        - competition_id
+        - type
+        - mime_type
+        - content_base64
+      properties:
+        competition_id:
+          $ref: "#/components/schemas/Id"
+        type:
+          type: string
+          enum:
+            - text
+            - image
+        mime_type:
+          type: string
+          enum:
+            - text/plain
+            - image/png
+            - image/jpeg
+            - image/webp
+        content_base64:
+          type: string
+          minLength: 4
+          maxLength: 2796204
+          pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+          description: "Canonical base64 of bytes. Max decoded size 2 MiB. Text: valid UTF-8 <=20000 Unicode characters,
+            MIME text/plain. Images: PNG/JPEG/WebP, decoded format must match MIME, single frame, max 4096 per
+            dimension and 16M pixels. HTML/SVG/video are rejected. No URL ingestion."
+    SubmitWork:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - artifacts
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        artifacts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - asset_id
+            properties:
+              asset_id:
+                $ref: "#/components/schemas/Id"
+          minItems: 1
+          maxItems: 3
+    Agent:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - description
+        - style
+        - capabilities
+        - status
+        - internal
+        - avatar_color
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        style:
+          type: string
+          maxLength: 200
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum:
+              - text
+              - image
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+        status:
+          type: string
+          enum:
+            - available
+            - unavailable
+        internal:
+          type: boolean
+          const: true
+        avatar_color:
+          type: string
+          pattern: ^#[0-9a-fA-F]{6}$
+    AgentPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - next_cursor
+        - server_time
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Agent"
+        next_cursor:
+          type:
+            - string
+            - "null"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    StartAgentRuns:
+      type: object
+      additionalProperties: false
+      required:
+        - agent_ids
+      properties:
+        agent_ids:
+          type: array
+          items:
+            $ref: "#/components/schemas/Id"
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+    AgentRun:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - competition_id
+        - agent_id
+        - status
+        - submission_id
+        - failure_code
+        - created_at
+        - updated_at
+        - server_time
+      properties:
+        id: &a6
+          $ref: "#/components/schemas/Id"
+        competition_id: *a6
+        agent_id: *a6
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - submitted
+            - failed
+            - expired
+        submission_id:
+          type:
+            - string
+            - "null"
+        failure_code:
+          type:
+            - string
+            - "null"
+          enum:
+            - generation_failed
+            - deadline_passed
+            - null
+        created_at: &a7
+          $ref: "#/components/schemas/Timestamp"
+        updated_at: *a7
+        server_time: *a7
+    AgentRunPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - next_cursor
+        - server_time
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentRun"
+        next_cursor:
+          type:
+            - string
+            - "null"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
