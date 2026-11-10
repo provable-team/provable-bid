@@ -6,9 +6,10 @@ import { z } from "zod";
 import { isBuyer, rememberBuyer } from "@/lib/buyer";
 import { getDb } from "@/lib/db";
 import { escrowLineItems, fundJobFromOrder, payerProblem } from "@/lib/escrow";
-import { attachOrder, createJob, getJob, type Result } from "@/lib/market";
-import { toCents } from "@/lib/money";
+import { acceptDelivery, attachOrder, awardBid, cancelJob, createJob, getJob, requestRevision, settleJob, type Result } from "@/lib/market";
+import { formatMoney, toCents } from "@/lib/money";
 import { capturePayPalOrder, createPayPalOrder, describePayPalError, getPayPalOrder } from "@/lib/paypal/orders";
+import { paypalRail } from "@/lib/paypal/rail";
 import { BIDDING_HOURS, MAX_BUDGET_CENTS, MIN_BUDGET_CENTS } from "@/lib/rules";
 
 // Server Actions are public HTTP endpoints: validate every input and check the buyer key.
@@ -74,4 +75,63 @@ export async function captureEscrow(jobId: string, orderId: string): Promise<Res
     console.error("[paypal] captureEscrow failed:", err);
     return { ok: false, error: describePayPalError(err) };
   }
+}
+
+// ---------------------------------------------------------------- buyer decisions after funding
+// Each returns a friendly message; a PayPal failure leaves a retryable row that syncPayments() retries.
+
+const bidIdSchema = z.string().regex(/^b_[a-z0-9]{10}$/);
+const notBuyer = { ok: false as const, error: "Only this job's buyer can do that." };
+
+async function asBuyer(jobId: string) {
+  return jobIdSchema.safeParse(jobId).success && (await isBuyer(jobId));
+}
+
+function moneyNote(p: { status: string; error: string | null } | null, what: string) {
+  if (!p) return "";
+  if (p.status === "pending") return ` PayPal didn't take the ${what} yet (${p.error}); it will retry.`;
+  return "";
+}
+
+export async function awardJob(jobId: string, bidId: string): Promise<Result<{ message: string }>> {
+  if (!(await asBuyer(jobId)) || !bidIdSchema.safeParse(bidId).success) return notBuyer;
+  const r = await awardBid(getDb(), paypalRail, jobId, bidId);
+  if (!r.ok) return r;
+  refresh();
+  const back = r.data.refundToBuyerCents;
+  return { ok: true, data: { message: (back > 0 ? `Awarded. ${formatMoney(back)} is on its way back to you.` : "Awarded.") + moneyNote(r.data.refund, "refund") } };
+}
+
+export async function askForRevision(jobId: string, request: string): Promise<Result<{ message: string }>> {
+  if (!(await asBuyer(jobId))) return notBuyer;
+  const text = z.string().trim().min(10, "Say what should change (10+ characters).").max(2000).safeParse(request);
+  if (!text.success) return { ok: false, error: text.error.issues[0].message };
+  const r = requestRevision(getDb(), jobId, text.data);
+  if (!r.ok) return r;
+  refresh();
+  return { ok: true, data: { message: "Revision requested. The agent has a fresh delivery window." } };
+}
+
+export async function acceptJob(jobId: string): Promise<Result<{ message: string }>> {
+  if (!(await asBuyer(jobId))) return notBuyer;
+  const r = await acceptDelivery(getDb(), paypalRail, jobId);
+  if (!r.ok) return r;
+  refresh();
+  return { ok: true, data: { message: `Accepted. ${formatMoney(r.data.payoutToAgentCents)} is being paid to the agent.` + moneyNote(r.data.payout, "payout") } };
+}
+
+export async function cancelOrder(jobId: string): Promise<Result<{ message: string }>> {
+  if (!(await asBuyer(jobId))) return notBuyer;
+  const r = await cancelJob(getDb(), paypalRail, jobId);
+  if (!r.ok) return r;
+  refresh();
+  return { ok: true, data: { message: (r.data.refundCents > 0 ? `Cancelled. ${formatMoney(r.data.refundCents)} is on its way back to you.` : "Cancelled.") + moneyNote(r.data.refund, "refund") } };
+}
+
+// Called by the ledger while money is moving: retries unsent rows and picks up PayPal's latest status.
+export async function syncPayments(jobId: string): Promise<Result<{ settled: boolean }>> {
+  if (!(await asBuyer(jobId))) return notBuyer;
+  const rows = await settleJob(getDb(), paypalRail, jobId);
+  refresh();
+  return { ok: true, data: { settled: rows.every((p) => p.status === "succeeded" || p.status === "failed") } };
 }

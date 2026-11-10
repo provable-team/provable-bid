@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, t, type DB } from "@/lib/db";
 import {
-  acceptDelivery, agentByToken, awardBid, buyerOwns, cancelJob, createJob, createOperatorSession, endOperatorSession, executePayment,
-  markFunded, operatorBySession, paymentsFor, placeBid, registerAgent, requestRevision, rotateAgentToken, submitDelivery, syncPayment,
+  acceptDelivery, agentByToken, assignmentFor, awardBid, buyerOwns, cancelJob, createJob, createOperatorSession, endOperatorSession, executePayment,
+  markFunded, operatorBySession, paymentsFor, placeBid, registerAgent, requestRevision, rotateAgentToken, settleJob, submitDelivery, syncPayment,
   upsertOperator, withdrawBid, type PaymentRail,
 } from "@/lib/market";
 import { escrowBalance, processingFeeFor } from "@/lib/rules";
@@ -213,5 +213,40 @@ describe("failures and cancellations", () => {
     expect(c.refundCents).toBe(240_00);
     expect(fake.calls.map((x) => x.amountCents)).toEqual([60_00, 240_00]);
     expect(escrowBalance(paymentsFor(db, jobId))).toBe(0);
+  });
+});
+
+describe("settling and the winner's view", () => {
+  it("settleJob retries an unsent payout and syncs it to success, paying exactly once", async () => {
+    fund();
+    const { bidId } = ok(placeBid(db, alice.agentId, jobId, { priceCents: 200_00, deliveryHours: 24, pitch: "x", sampleHtml: sample }, T0));
+    ok(await awardBid(db, fake.rail, jobId, bidId, at(1)));
+    ok(submitDelivery(db, alice.agentId, jobId, { html: "<h1>done</h1>" }, at(2)));
+    fake.state.failNext = true;
+    const done = ok(await acceptDelivery(db, fake.rail, jobId, at(3)));
+    expect(done.payout).toMatchObject({ status: "pending", error: "PayPal 422: INSUFFICIENT_FUNDS" });
+
+    let rows = await settleJob(db, fake.rail, jobId, at(4)); // retry → in flight
+    expect(rows.find((p) => p.kind === "payout")).toMatchObject({ status: "in_flight", error: null });
+    fake.state.payoutItemStatus = "SUCCESS";
+    rows = await settleJob(db, fake.rail, jobId, at(5)); // sync → settled
+    expect(rows.find((p) => p.kind === "payout")!.status).toBe("succeeded");
+    await settleJob(db, fake.rail, jobId, at(6)); // settled rows are left alone
+    expect(fake.calls.filter((c) => c.op === "payout")).toEqual([{ op: "payout", key: `job-${jobId}-payout`, amountCents: 190_00, to: "PAYERANN0001" }]);
+  });
+
+  it("shows the assignment only to the winner, with the revision request while it's being reworked", async () => {
+    fund();
+    const { bidId } = ok(placeBid(db, alice.agentId, jobId, { priceCents: 240_00, deliveryHours: 24, pitch: "x", sampleHtml: sample }, T0));
+    ok(placeBid(db, bob.agentId, jobId, { priceCents: 200_00, deliveryHours: 24, pitch: "y", sampleHtml: sample }, T0));
+    expect(assignmentFor(db, jobId, alice.agentId)).toBeNull(); // nothing awarded yet
+    ok(await awardBid(db, fake.rail, jobId, bidId, at(1)));
+    expect(assignmentFor(db, jobId, bob.agentId)).toBeNull();
+    ok(submitDelivery(db, alice.agentId, jobId, { html: "<h1>v1</h1>" }, at(2)));
+    ok(requestRevision(db, jobId, "Warmer colours please", at(3)));
+    const a = assignmentFor(db, jobId, alice.agentId)!;
+    expect(a).toMatchObject({ payoutToAgentCents: 228_00, feeCents: 12_00, deliveryCount: 1, latest: { revisionRequest: "Warmer colours please" } });
+    expect(a.job.status).toBe("awarded");
+    expect(a.payout).toBeUndefined();
   });
 });

@@ -405,3 +405,26 @@ export async function cancelJob(db: DB, rail: PaymentRail, jobId: string, now = 
   const refund = step.data.refundId ? await executePayment(db, rail, step.data.refundId, now) : null;
   return { ok: true as const, data: { refundCents: step.data.refundCents, refund } };
 }
+
+// Bring every refund/payout on a job up to date: retry rows PayPal hasn't accepted yet (same idempotency key,
+// so a retry can never pay twice) and ask PayPal about rows still in flight. Safe to call as often as you like.
+export async function settleJob(db: DB, rail: PaymentRail, jobId: string, now = new Date()) {
+  for (const p of paymentsFor(db, jobId)) {
+    if (p.kind !== "refund" && p.kind !== "payout") continue;
+    if (p.status === "pending") await executePayment(db, rail, p.id, now);
+    else if (p.status === "in_flight") await syncPayment(db, rail, p.id, now);
+  }
+  return paymentsFor(db, jobId);
+}
+
+// What the winning agent needs to know about a job it was awarded.
+export function assignmentFor(db: DB, jobId: string, agentId: string) {
+  const job = getJob(db, jobId);
+  if (!job?.awardedBidId) return null;
+  const bid = db.select().from(t.bids).where(eq(t.bids.id, job.awardedBidId)).get();
+  if (!bid || bid.agentId !== agentId) return null;
+  const latest = latestDelivery(db, jobId);
+  const payout = paymentsFor(db, jobId).find((p) => p.kind === "payout");
+  const { payoutToAgentCents, feeCents } = settlementFor(job.budgetCents, bid.priceCents);
+  return { job, bid, latest, payout, payoutToAgentCents, feeCents, deliveryCount: db.select({ id: t.deliveries.id }).from(t.deliveries).where(eq(t.deliveries.jobId, jobId)).all().length };
+}

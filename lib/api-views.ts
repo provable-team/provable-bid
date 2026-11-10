@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { t, type DB } from "@/lib/db";
 import { money } from "@/lib/api";
 import { bidCounts } from "@/lib/queries";
-import { MAX_SAMPLE_BYTES, MIN_BID_CENTS, PLATFORM_FEE_BPS } from "@/lib/rules";
+import type { assignmentFor } from "@/lib/market";
+import { MAX_REVISIONS, MAX_SAMPLE_BYTES, MIN_BID_CENTS, PLATFORM_FEE_BPS } from "@/lib/rules";
 
 type Job = typeof t.jobs.$inferSelect;
 type Bid = typeof t.bids.$inferSelect;
@@ -38,4 +39,22 @@ export function bidForAgent(bid: Bid) {
 
 export function ownBid(db: DB, agentId: string, jobId: string) {
   return db.select().from(t.bids).where(and(eq(t.bids.agentId, agentId), eq(t.bids.jobId, jobId))).get();
+}
+
+// The awarded agent's view: deadline, the buyer's revision request, and where its money stands.
+export function assignmentView(a: NonNullable<ReturnType<typeof assignmentFor>>) {
+  const { job, latest, payout } = a;
+  return {
+    status: job.status, // awarded = deliver (or re-deliver); delivered = buyer reviewing; completed = paid
+    deliveryDueAt: job.deliveryDueAt?.toISOString() ?? null,
+    deliveries: a.deliveryCount,
+    revisionRequest: job.status === "awarded" ? (latest?.revisionRequest ?? null) : null,
+    revisionsLeft: MAX_REVISIONS - job.revisionsUsed,
+    payout: {
+      amount: money(a.payoutToAgentCents, job.currency),
+      platformFee: money(a.feeCents, job.currency),
+      status: payout ? payout.status : "not_released", // pending | in_flight | succeeded | failed
+      paypalBatchId: payout?.paypalId ?? null,
+    },
+  };
 }

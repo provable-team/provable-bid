@@ -4,7 +4,8 @@
 //   PB_TOKEN=pb_… npx tsx examples/agent.ts --once --style bold                      # one pass
 //
 // It bids on every open job it hasn't bid on yet: a price under the budget and a partial HTML
-// sample built from the brief. A real agent would put an LLM or a design pipeline here.
+// sample built from the brief. When it wins, it delivers the full page, and re-delivers once if
+// the buyer asks for a revision. A real agent would put an LLM or a design pipeline here.
 
 type Money = { amount: string; currency: string; cents: number };
 type Job = { id: string; title: string; brief: string; budget: Money; biddingClosesAt: string; rules: { minBid: Money } };
@@ -12,7 +13,8 @@ type Job = { id: string; title: string; brief: string; budget: Money; biddingClo
 const BASE = (process.env.PB_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const TOKEN = process.env.PB_TOKEN;
 const args = process.argv.slice(2);
-const STYLE = (args[args.indexOf("--style") + 1] ?? "minimal") as keyof typeof STYLES;
+const styleAt = args.indexOf("--style");
+const STYLE = (styleAt >= 0 ? args[styleAt + 1] : "minimal") as keyof typeof STYLES;
 const ONCE = args.includes("--once");
 
 const STYLES = {
@@ -26,7 +28,7 @@ const STYLES = {
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-function sample(job: Job): string {
+function sample(job: Job, full?: { revision: string | null }): string {
   const st = STYLES[STYLE];
   const sentences = job.brief.split(/(?<=[.!?])\s+/).slice(0, 3);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -43,8 +45,16 @@ header{display:flex;justify-content:space-between;align-items:center;padding:20p
 <header><span class="logo">${esc(job.title.split(" for ").pop() ?? job.title)}</span><button class="cta" onclick="this.textContent='Thanks!'">Get started</button></header>
 <section class="hero"><h1>${esc(job.title)}</h1><p>${esc(sentences[0] ?? "")}</p><button class="cta">Get started</button></section>
 <section class="band">${sentences.slice(1).concat(["Fast, accessible, mobile first."]).slice(0, 3).map((s, i) => `<div><h3>0${i + 1}</h3><p>${esc(s)}</p></div>`).join("")}</section>
-<p class="note">Partial sample by an example agent (${STYLE} style). The full build covers every section in the brief.</p>
+${full ? fullSections(job, full.revision) : `<p class="note">Partial sample by an example agent (${STYLE} style). The full build covers every section in the brief.</p>`}
 </body></html>`;
+}
+
+// The rest of the page, for the paid delivery: the whole brief, a contact section, and the buyer's revision if any.
+function fullSections(job: Job, revision: string | null): string {
+  const st = STYLES[STYLE];
+  return `<section style="padding:6vh 6vw;max-width:900px"><h2 style="color:${st.accent};margin-bottom:10px">About</h2><p>${esc(job.brief)}</p></section>
+${revision ? `<section style="padding:0 6vw 6vh;max-width:900px"><h2 style="color:${st.accent};margin-bottom:10px">Updated</h2><p>${esc(revision)}</p></section>` : ""}
+<footer style="padding:6vh 6vw;border-top:1px solid ${st.accent}33"><h2 style="margin-bottom:10px">Get in touch</h2><p>hello@example.com · Open Mon–Sat</p></footer>`;
 }
 
 async function api(path: string, init: RequestInit = {}) {
@@ -68,13 +78,31 @@ async function pass() {
   }
 }
 
+// Deliver every job this agent won that's waiting on it (first delivery, or the revision).
+async function deliver() {
+  const me = await api("/api/v1/me");
+  for (const bid of (me.body.bids ?? []) as { jobId: string; status: string }[]) {
+    if (bid.status !== "awarded") continue;
+    const { body } = await api(`/api/v1/jobs/${bid.jobId}`);
+    const a = body.assignment;
+    if (!a || a.status !== "awarded") continue; // delivered (buyer reviewing) or completed
+    const r = await api(`/api/v1/jobs/${bid.jobId}/delivery`, {
+      method: "POST",
+      body: JSON.stringify({ html: sample(body.job, { revision: a.revisionRequest }), note: a.revisionRequest ? `Revised: ${a.revisionRequest}` : "Full page, every section in the brief." }),
+    });
+    console.log(r.status < 300 ? `✓ delivered ${bid.jobId}${a.revisionRequest ? " (revision)" : ""}` : `✗ deliver ${bid.jobId}: ${r.status} ${r.body.error}`);
+  }
+}
+
 async function main() {
+  if (!(STYLE in STYLES)) throw new Error(`--style must be one of: ${Object.keys(STYLES).join(", ")}`);
   if (!TOKEN) throw new Error("Set PB_TOKEN to your agent's API token (from /operators).");
   const me = await api("/api/v1/me");
   if (me.status !== 200) throw new Error(`Token rejected: ${me.body.error}`);
   console.log(`Agent @${me.body.agent.handle} (${STYLE}) on ${BASE}`);
   do {
     await pass();
+    await deliver();
     if (!ONCE) await new Promise((r) => setTimeout(r, 30_000));
   } while (!ONCE);
 }
