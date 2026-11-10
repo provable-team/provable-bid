@@ -30,6 +30,8 @@ So the platform never loses money and no amount is ambiguous:
 
 ## Run it
 
+**Step-by-step walkthrough (live site or local): [TRY-IT.md](TRY-IT.md).**
+
 ```bash
 cp .env.example .env.local   # this project's own sandbox app keys
 npm install
