@@ -1,6 +1,6 @@
 import { PaymentsController } from "@paypal/paypal-server-sdk";
 import { PAYPAL_API_BASE, getAccessToken, getPayPalClient } from "./client";
-import { fromCents } from "@/lib/money";
+import { fromCents, toCents } from "@/lib/money";
 
 let payments: PaymentsController | undefined;
 const paymentsController = () => (payments ??= new PaymentsController(getPayPalClient()));
@@ -68,14 +68,14 @@ export async function getRefundStatus(refundId: string): Promise<string> {
 }
 
 // Payout item status: SUCCESS, UNCLAIMED, PENDING, ONHOLD, RETURNED, FAILED, BLOCKED, REFUNDED, REVERSED, DENIED.
-export async function getPayoutStatus(batchId: string): Promise<{ batchStatus: string; itemStatus: string | null; error?: string }> {
+export async function getPayoutStatus(batchId: string): Promise<{ batchStatus: string; itemStatus: string | null; error?: string; feeCents?: number }> {
   const res = await fetch(`${PAYPAL_API_BASE}/v1/payments/payouts/${encodeURIComponent(batchId)}`, {
     headers: { Authorization: `Bearer ${await getAccessToken()}` },
     cache: "no-store",
   });
   const body = (await res.json()) as {
     batch_header?: { batch_status: string };
-    items?: { transaction_status?: string; errors?: { name?: string; message?: string } }[];
+    items?: { transaction_status?: string; payout_item_fee?: { value: string }; errors?: { name?: string; message?: string } }[];
     name?: string;
     message?: string;
   };
@@ -85,5 +85,6 @@ export async function getPayoutStatus(batchId: string): Promise<{ batchStatus: s
     batchStatus: body.batch_header?.batch_status ?? "UNKNOWN",
     itemStatus: item?.transaction_status ?? null,
     error: item?.errors ? `${item.errors.name}: ${item.errors.message}` : undefined,
+    feeCents: item?.payout_item_fee ? toCents(item.payout_item_fee.value) : undefined,
   };
 }

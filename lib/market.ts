@@ -10,6 +10,7 @@ import {
   escrowBalance,
   MAX_BUDGET_CENTS,
   MIN_BUDGET_CENTS,
+  quoteFor,
   settlementFor,
   statusForPayout,
   statusForRefund,
@@ -23,7 +24,7 @@ export interface PaymentRail {
   refund(o: { captureId: string; amountCents: number; currency: string; note: string; idempotencyKey: string }): Promise<{ refundId: string; status: string }>;
   refundStatus(refundId: string): Promise<string>;
   payout(o: { batchId: string; email: string; amountCents: number; currency: string; subject: string; note: string }): Promise<{ batchId: string; status: string }>;
-  payoutStatus(batchId: string): Promise<{ batchStatus: string; itemStatus: string | null; error?: string }>;
+  payoutStatus(batchId: string): Promise<{ batchStatus: string; itemStatus: string | null; error?: string; feeCents?: number }>;
   describeError(err: unknown): string;
 }
 
@@ -88,6 +89,7 @@ export function createJob(
       title: j.title,
       brief: j.brief,
       budgetCents: j.budgetCents,
+      processingFeeCents: quoteFor(j.budgetCents).processingFeeCents,
       buyerName: j.buyerName,
       buyerEmail: j.buyerEmail,
       buyerKeyHash: hashSecret(buyerKey),
@@ -102,11 +104,12 @@ export function attachOrder(db: DB, jobId: string, paypalOrderId: string) {
   db.update(t.jobs).set({ paypalOrderId }).where(eq(t.jobs.id, jobId)).run();
 }
 
-// Called with a COMPLETED PayPal capture. Idempotent on the capture ID.
+// Called with a COMPLETED PayPal capture of budget + processing fee. Idempotent on the capture ID.
+// Records two ledger lines: the budget (escrow, buyer's money) and the processing fee (platform's).
 export function markFunded(
   db: DB,
   jobId: string,
-  c: { paypalOrderId: string; captureId: string; amountCents: number; currency: string },
+  c: { paypalOrderId: string; captureId: string; amountCents: number; currency: string; paypalFeeCents?: number | null },
   now = new Date(),
 ): Result<{ status: "open" }> {
   return db.transaction((tx) => {
@@ -115,17 +118,19 @@ export function markFunded(
     if (job.captureId === c.captureId) return { ok: true as const, data: { status: "open" as const } };
     const blocked = blockedReason(snapshot(job), "fund", now);
     if (blocked) return fail(blocked);
-    if (c.amountCents !== job.budgetCents || c.currency !== job.currency)
-      return fail(`Captured ${c.amountCents} ${c.currency} but the job's budget is ${job.budgetCents} ${job.currency}.`);
+    const expected = job.budgetCents + job.processingFeeCents;
+    if (c.amountCents !== expected || c.currency !== job.currency)
+      return fail(`Captured ${c.amountCents} ${c.currency} but this job's total is ${expected} ${job.currency}.`);
     tx.update(t.jobs)
       .set({ status: "open", paypalOrderId: c.paypalOrderId, captureId: c.captureId, fundedAt: now })
       .where(eq(t.jobs.id, jobId))
       .run();
+    const base = { jobId, currency: c.currency, status: "succeeded" as const, paypalId: c.captureId, paypalStatus: "COMPLETED", updatedAt: now };
     tx.insert(t.payments)
-      .values({
-        jobId, kind: "escrow_capture", amountCents: c.amountCents, currency: c.currency,
-        idempotencyKey: `job-${jobId}-capture`, status: "succeeded", paypalId: c.captureId, paypalStatus: "COMPLETED", updatedAt: now,
-      })
+      .values([
+        { ...base, kind: "escrow_capture", amountCents: job.budgetCents, idempotencyKey: `job-${jobId}-capture`, paypalFeeCents: c.paypalFeeCents ?? null },
+        { ...base, kind: "processing_fee", amountCents: job.processingFeeCents, idempotencyKey: `job-${jobId}-processing` },
+      ])
       .run();
     logEvent(tx as unknown as DB, jobId, "funded", `capture ${c.captureId}`);
     return { ok: true as const, data: { status: "open" as const } };
@@ -222,7 +227,7 @@ export async function syncPayment(db: DB, rail: PaymentRail, paymentId: number, 
   if (!p) throw new Error(`Payment ${paymentId} not found`);
   if (p.status !== "in_flight" || !p.paypalId) return p;
   try {
-    let status, paypalStatus, error: string | null = null;
+    let status, paypalStatus, error: string | null = null, paypalFeeCents = p.paypalFeeCents;
     if (p.kind === "refund") {
       paypalStatus = await rail.refundStatus(p.paypalId);
       status = statusForRefund(paypalStatus);
@@ -231,9 +236,10 @@ export async function syncPayment(db: DB, rail: PaymentRail, paymentId: number, 
       paypalStatus = r.itemStatus ?? r.batchStatus;
       status = statusForPayout(r.itemStatus, r.batchStatus);
       error = r.error ?? null;
+      paypalFeeCents = r.feeCents ?? paypalFeeCents;
     }
-    if (status !== p.status || paypalStatus !== p.paypalStatus) {
-      db.update(t.payments).set({ status, paypalStatus, error, updatedAt: now }).where(eq(t.payments.id, p.id)).run();
+    if (status !== p.status || paypalStatus !== p.paypalStatus || error !== p.error || paypalFeeCents !== p.paypalFeeCents) {
+      db.update(t.payments).set({ status, paypalStatus, error, paypalFeeCents, updatedAt: now }).where(eq(t.payments.id, p.id)).run();
       if (status !== p.status) logEvent(db, p.jobId, `${p.kind}_${status}`, paypalStatus);
     }
   } catch (err) {

@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { CheckoutPaymentIntent } from "@paypal/paypal-server-sdk";
 import { getDb, t } from "@/lib/db";
-import { escrowLineItem, fundJobFromOrder } from "@/lib/escrow";
+import { escrowLineItems, fundJobFromOrder } from "@/lib/escrow";
 import { createJob, getJob, registerAgent } from "@/lib/market";
 import { buildOrderRequest, describePayPalError, ordersController } from "@/lib/paypal/orders";
 
@@ -37,7 +37,7 @@ const CARD = { number: "4032039317984658", expiry: "2030-12", securityCode: "123
 
 async function fundWithCard(jobId: string, buyerName: string) {
   const job = getJob(getDb(), jobId)!;
-  const body = buildOrderRequest([escrowLineItem(job)]);
+  const body = buildOrderRequest(escrowLineItems(job));
   body.intent = CheckoutPaymentIntent.Capture;
   body.purchaseUnits[0].customId = job.id;
   body.paymentSource = { card: { ...CARD, name: buyerName } };
@@ -74,7 +74,7 @@ async function main() {
     if (!created.ok) throw new Error(created.error);
     try {
       const captureId = await fundWithCard(created.data.jobId, j.buyerName);
-      console.log(`✓ ${created.data.jobId} funded $${j.budgetCents / 100} (capture ${captureId}) · manage key ${created.data.buyerKey}`);
+      console.log(`✓ ${created.data.jobId} funded $${j.budgetCents / 100} + processing (capture ${captureId}) · manage key ${created.data.buyerKey}`);
     } catch (err) {
       console.error(`✗ ${created.data.jobId} not funded: ${describePayPalError(err)}`);
     }

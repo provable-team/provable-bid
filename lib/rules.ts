@@ -4,15 +4,44 @@ import type { JobStatus, PaymentKind, PaymentStatus } from "@/lib/db/schema";
 export const PLATFORM_FEE_BPS = 500; // 5% of the winning price, taken from the agent's payout
 export const MIN_BUDGET_CENTS = 10_00;
 export const MAX_BUDGET_CENTS = 5_000_00;
-export const MIN_BID_CENTS = 5_00;
+export const MIN_BID_CENTS = 10_00; // 5% of $10 = $0.50 > the $0.25 payout fee
 export const MAX_REVISIONS = 1;
 export const MAX_SAMPLE_BYTES = 200_000;
 export const MAX_DELIVERY_BYTES = 1_000_000;
 export const BIDDING_HOURS = [24, 72, 168] as const;
 
-// Round half up, in cents.
-export function feeFor(priceCents: number): number {
-  return Math.floor((priceCents * PLATFORM_FEE_BPS + 5_000) / 10_000);
+// PayPal's US pricing, measured in the sandbox on 2026-11-10 (see README):
+//   PayPal-account checkout 3.49% + $0.49 · card 2.59% + $0.49 · payout $0.25 flat
+//   Refunds return NONE of the capture fee, even a 100% refund.
+// We price processing at the highest US checkout rate, so every US payment leaves at least the budget.
+export const PAYPAL_CHECKOUT_FEE = { bps: 349, fixedCents: 49 };
+export const PAYPAL_PAYOUT_FEE_CENTS = 25;
+export const ACCEPTED_PAYER_COUNTRIES = ["US"]; // cross-border adds 1.5%, which the quote doesn't cover
+
+// Percentage of an amount in cents, rounded half up.
+const pct = (cents: number, bps: number) => Math.floor((cents * bps + 5_000) / 10_000);
+
+export const feeFor = (priceCents: number) => pct(priceCents, PLATFORM_FEE_BPS);
+
+export const paypalCheckoutFeeFor = (totalCents: number) => pct(totalCents, PAYPAL_CHECKOUT_FEE.bps) + PAYPAL_CHECKOUT_FEE.fixedCents;
+
+// The smallest processing fee such that, after PayPal takes its checkout fee from the total, the full budget is left.
+export function processingFeeFor(budgetCents: number): number {
+  let fee = Math.floor((budgetCents * PAYPAL_CHECKOUT_FEE.bps) / (10_000 - PAYPAL_CHECKOUT_FEE.bps)) + PAYPAL_CHECKOUT_FEE.fixedCents - 2;
+  while (budgetCents + fee - paypalCheckoutFeeFor(budgetCents + fee) < budgetCents) fee++;
+  return fee;
+}
+
+// What the buyer sees before paying. Escrow is exactly the budget; processing is non-refundable.
+export function quoteFor(budgetCents: number) {
+  const processingFeeCents = processingFeeFor(budgetCents);
+  return { budgetCents, processingFeeCents, totalCents: budgetCents + processingFeeCents };
+}
+
+// The platform's result on one job once everything has settled. Never negative under the rules above.
+export function platformMargin(o: { processingFeeCents: number; captureFeeCents: number; priceCents: number | null; payoutFeeCents: number }) {
+  const platformFee = o.priceCents === null ? 0 : feeFor(o.priceCents);
+  return o.processingFeeCents - o.captureFeeCents + platformFee - o.payoutFeeCents;
 }
 
 // How the escrowed budget splits once a bid is chosen. Always sums to the budget.
@@ -71,12 +100,13 @@ export function blockedReason(job: JobSnapshot, action: Action, now = new Date()
   }
 }
 
-// Escrow held for a job right now: what was captured minus what has left (or is leaving).
+// Buyer money held in escrow right now: the budget captured minus what has left (or is leaving).
 // Failed movements don't count; pending ones do, because they will be retried, not abandoned.
+// The processing fee is the platform's, not escrow.
 export function escrowBalance(rows: { kind: PaymentKind; status: PaymentStatus; amountCents: number }[]): number {
   let balance = 0;
   for (const r of rows) {
-    if (r.status === "failed") continue;
+    if (r.status === "failed" || r.kind === "processing_fee") continue;
     if (r.kind === "escrow_capture") {
       if (r.status === "succeeded") balance += r.amountCents;
     } else balance -= r.amountCents;

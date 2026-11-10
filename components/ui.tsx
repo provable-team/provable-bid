@@ -38,6 +38,7 @@ export const JOB_STATUS: Record<JobStatus, { label: string; tone: Tone }> = {
 
 export const PAYMENT_KIND: Record<PaymentKind, string> = {
   escrow_capture: "Escrow funded",
+  processing_fee: "Processing (non-refundable)",
   refund: "Refund to buyer",
   payout: "Payout to agent",
 };

@@ -5,10 +5,10 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { isBuyer, rememberBuyer } from "@/lib/buyer";
 import { getDb } from "@/lib/db";
-import { escrowLineItem, fundJobFromOrder } from "@/lib/escrow";
+import { escrowLineItems, fundJobFromOrder, payerProblem } from "@/lib/escrow";
 import { attachOrder, createJob, getJob, type Result } from "@/lib/market";
 import { toCents } from "@/lib/money";
-import { capturePayPalOrder, createPayPalOrder, describePayPalError } from "@/lib/paypal/orders";
+import { capturePayPalOrder, createPayPalOrder, describePayPalError, getPayPalOrder } from "@/lib/paypal/orders";
 import { BIDDING_HOURS, MAX_BUDGET_CENTS, MIN_BUDGET_CENTS } from "@/lib/rules";
 
 // Server Actions are public HTTP endpoints: validate every input and check the buyer key.
@@ -47,7 +47,7 @@ export async function createEscrowOrder(jobId: string): Promise<Result<{ id: str
   const job = getJob(getDb(), jobId)!;
   if (job.status !== "awaiting_payment") return { ok: false, error: "This job is already funded." };
   try {
-    const id = await createPayPalOrder([escrowLineItem(job)], job.id);
+    const id = await createPayPalOrder(escrowLineItems(job), job.id);
     attachOrder(getDb(), jobId, id);
     return { ok: true, data: { id } };
   } catch (err) {
@@ -64,6 +64,8 @@ export async function captureEscrow(jobId: string, orderId: string): Promise<Res
   if (job.captureId) return { ok: true, data: { captureId: job.captureId } }; // already funded (double submit)
   if (job.paypalOrderId !== orderId) return { ok: false, error: "That PayPal order isn't for this job." };
   try {
+    const problem = payerProblem(await getPayPalOrder(orderId));
+    if (problem) return { ok: false, error: problem }; // approved but not captured: no money moves
     const order = await capturePayPalOrder(orderId);
     const r = fundJobFromOrder(getDb(), jobId, order);
     if (r.ok) refresh();

@@ -38,7 +38,8 @@ export const jobs = sqliteTable(
     id: text("id").primaryKey(),
     title: text("title").notNull(),
     brief: text("brief").notNull(),
-    budgetCents: integer("budget_cents").notNull(),
+    budgetCents: integer("budget_cents").notNull(), // held in escrow
+    processingFeeCents: integer("processing_fee_cents").notNull().default(0), // covers PayPal's checkout fee; non-refundable
     currency: text("currency").notNull().default("USD"),
     buyerName: text("buyer_name").notNull(),
     buyerEmail: text("buyer_email").notNull(),
@@ -97,7 +98,7 @@ export const deliveries = sqliteTable(
   (t) => [index("deliveries_job_idx").on(t.jobId)],
 );
 
-export const PAYMENT_KINDS = ["escrow_capture", "refund", "payout"] as const;
+export const PAYMENT_KINDS = ["escrow_capture", "processing_fee", "refund", "payout"] as const;
 export type PaymentKind = (typeof PAYMENT_KINDS)[number];
 // pending: recorded, PayPal not called yet (or the call failed and can be retried)
 // in_flight: PayPal accepted it but it hasn't settled (payout PENDING/UNCLAIMED, refund PENDING)
@@ -119,6 +120,7 @@ export const payments = sqliteTable(
     status: text("status", { enum: PAYMENT_STATUSES }).notNull().default("pending"),
     paypalId: text("paypal_id"), // capture ID, refund ID or payout batch ID
     paypalStatus: text("paypal_status"), // raw status from PayPal
+    paypalFeeCents: integer("paypal_fee_cents"), // what PayPal charged us for this movement, once known
     recipient: text("recipient"), // payout email
     error: text("error"),
     createdAt: createdAt(),

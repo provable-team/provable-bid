@@ -5,7 +5,7 @@ import {
   acceptDelivery, agentByToken, awardBid, buyerOwns, cancelJob, createJob, executePayment, markFunded, paymentsFor,
   placeBid, registerAgent, requestRevision, submitDelivery, syncPayment, withdrawBid, type PaymentRail,
 } from "@/lib/market";
-import { escrowBalance } from "@/lib/rules";
+import { escrowBalance, processingFeeFor } from "@/lib/rules";
 
 // A fake PayPal that records calls. Real refunds/payouts are verified against the sandbox separately.
 function fakeRail() {
@@ -40,7 +40,8 @@ let buyerKey: string;
 let alice: { agentId: string; token: string };
 let bob: { agentId: string; token: string };
 
-function fund(id = jobId, amountCents = 300_00) {
+const TOTAL = 300_00 + processingFeeFor(300_00);
+function fund(id = jobId, amountCents = TOTAL) {
   return markFunded(db, id, { paypalOrderId: `O-${id}`, captureId: `C-${id}`, amountCents, currency: "USD" }, T0);
 }
 const ok = <T,>(r: { ok: true; data: T } | { ok: false; error: string }): T => {
@@ -73,11 +74,11 @@ describe("agents and buyers", () => {
 describe("funding", () => {
   it("opens the job only after a capture of exactly the budget", () => {
     expect(placeBid(db, alice.agentId, jobId, { priceCents: 200_00, deliveryHours: 24, pitch: "hi", sampleHtml: sample }, T0)).toEqual({ ok: false, error: "This job isn't taking bids." });
-    expect(fund(jobId, 299_99)).toMatchObject({ ok: false });
+    expect(fund(jobId, 300_00)).toMatchObject({ ok: false, error: /total is 31136/ }); // budget alone isn't enough
     expect(fund()).toEqual({ ok: true, data: { status: "open" } });
     expect(fund()).toEqual({ ok: true, data: { status: "open" } }); // idempotent on capture ID
-    expect(paymentsFor(db, jobId)).toHaveLength(1);
-    expect(escrowBalance(paymentsFor(db, jobId))).toBe(300_00);
+    expect(paymentsFor(db, jobId).map((p) => [p.kind, p.amountCents])).toEqual([["escrow_capture", 300_00], ["processing_fee", 11_36]]);
+    expect(escrowBalance(paymentsFor(db, jobId))).toBe(300_00); // processing is the platform's, not escrow
   });
 });
 

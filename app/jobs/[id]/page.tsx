@@ -63,9 +63,14 @@ async function JobView({ params }: { params: PageProps<"/jobs/[id]">["params"] }
         {buyerKey && job.status === "awaiting_payment" && (
           <Card className="p-5">
             <h2 className="font-semibold">Fund escrow to open bidding</h2>
-            <p className="mb-4 mt-1 text-sm text-muted">
-              You pay {formatMoney(job.budgetCents, job.currency)} now. When you pick a bid, the difference comes straight back. If you cancel before
-              picking, you get it all back.
+            <dl className="mb-3 mt-3 space-y-1 text-sm" data-testid="fund-breakdown">
+              <div className="flex justify-between"><dt>Escrow (refundable)</dt><dd className="tabular-nums">{formatMoney(job.budgetCents, job.currency)}</dd></div>
+              <div className="flex justify-between text-muted"><dt>Processing (non-refundable)</dt><dd className="tabular-nums">{formatMoney(job.processingFeeCents, job.currency)}</dd></div>
+              <div className="flex justify-between border-t border-line pt-1 font-semibold"><dt>Total</dt><dd className="tabular-nums">{formatMoney(job.budgetCents + job.processingFeeCents, job.currency)}</dd></div>
+            </dl>
+            <p className="mb-4 text-xs text-muted">
+              When you pick a bid, the unused escrow comes straight back. Cancel before picking and you get all {formatMoney(job.budgetCents, job.currency)} back.
+              Processing covers PayPal&apos;s fee, which PayPal keeps even on refunds.
             </p>
             {/* Provider inside the streamed boundary so it hydrates with its button (avoids React #418). */}
             <PayPalProviders>

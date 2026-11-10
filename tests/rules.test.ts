@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { blockedReason, checkBidPrice, escrowBalance, feeFor, settlementFor, statusForPayout, statusForRefund, type JobSnapshot } from "@/lib/rules";
+import {
+  blockedReason, checkBidPrice, escrowBalance, feeFor, MAX_BUDGET_CENTS, MIN_BID_CENTS, MIN_BUDGET_CENTS, PAYPAL_PAYOUT_FEE_CENTS,
+  paypalCheckoutFeeFor, platformMargin, processingFeeFor, quoteFor, settlementFor, statusForPayout, statusForRefund, type JobSnapshot,
+} from "@/lib/rules";
 
 describe("settlementFor", () => {
   it("splits the escrow into buyer refund, agent payout and a 5% fee", () => {
@@ -7,7 +10,7 @@ describe("settlementFor", () => {
   });
 
   it("always adds back up to the budget", () => {
-    for (const [budget, price] of [[10_00, 5_00], [99_99, 33_33], [5_000_00, 4_999_99], [17_01, 17_01], [12_34, 5_09]]) {
+    for (const [budget, price] of [[10_00, 10_00], [99_99, 33_33], [5_000_00, 4_999_99], [17_01, 17_01], [12_34, 10_09]]) {
       const s = settlementFor(budget, price);
       expect(s.refundToBuyerCents + s.payoutToAgentCents + s.feeCents).toBe(budget);
       expect(s.payoutToAgentCents).toBeGreaterThan(0);
@@ -27,7 +30,7 @@ describe("settlementFor", () => {
 
 describe("checkBidPrice", () => {
   it("enforces the minimum and the budget", () => {
-    expect(checkBidPrice(100_00, 4_99)).toMatch(/Minimum/);
+    expect(checkBidPrice(100_00, 9_99)).toMatch(/Minimum/);
     expect(checkBidPrice(100_00, 100_01)).toMatch(/budget/);
     expect(checkBidPrice(100_00, 12.5)).toMatch(/cents/);
     expect(checkBidPrice(100_00, 100_00)).toBeNull();
@@ -86,5 +89,39 @@ describe("PayPal status mapping", () => {
     expect(statusForPayout(null, "PENDING")).toBe("in_flight");
     expect(statusForPayout("UNCLAIMED", "SUCCESS")).toBe("in_flight");
     expect(statusForPayout("RETURNED", "SUCCESS")).toBe("failed");
+  });
+});
+
+describe("processing fee (PayPal checkout fee passed to the buyer)", () => {
+  // Card 2.59% + $0.49 is cheaper than the PayPal-account rate the quote is built on.
+  const cardFee = (total: number) => Math.floor((total * 259 + 5_000) / 10_000) + 49;
+
+  it("matches the sandbox: PayPal kept $10.96 on a $300.00 PayPal-account capture", () => {
+    expect(paypalCheckoutFeeFor(300_00)).toBe(10_96);
+  });
+
+  it("quotes $300 as $300.00 escrow + $11.36 processing", () => {
+    expect(quoteFor(300_00)).toEqual({ budgetCents: 300_00, processingFeeCents: 11_36, totalCents: 311_36 });
+  });
+
+  it("always leaves at least the full budget after PayPal's fee, and is the smallest fee that does", () => {
+    for (let budget = MIN_BUDGET_CENTS; budget <= MAX_BUDGET_CENTS; budget += 1_37) {
+      const p = processingFeeFor(budget);
+      expect(budget + p - paypalCheckoutFeeFor(budget + p)).toBeGreaterThanOrEqual(budget);
+      expect(budget + p - cardFee(budget + p)).toBeGreaterThanOrEqual(budget);
+      expect(budget + p - 1 - paypalCheckoutFeeFor(budget + p - 1)).toBeLessThan(budget);
+    }
+  });
+
+  it("never loses money on a job, whatever the winning price or outcome", () => {
+    for (let budget = MIN_BUDGET_CENTS; budget <= MAX_BUDGET_CENTS; budget += 9_73) {
+      const processingFeeCents = processingFeeFor(budget);
+      const captureFeeCents = paypalCheckoutFeeFor(budget + processingFeeCents);
+      // cancelled (full refund, PayPal keeps its fee)
+      expect(platformMargin({ processingFeeCents, captureFeeCents, priceCents: null, payoutFeeCents: 0 })).toBeGreaterThanOrEqual(0);
+      for (const price of [MIN_BID_CENTS, Math.floor(budget / 3), budget].filter((p) => p >= MIN_BID_CENTS && p <= budget)) {
+        expect(platformMargin({ processingFeeCents, captureFeeCents, priceCents: price, payoutFeeCents: PAYPAL_PAYOUT_FEE_CENTS })).toBeGreaterThan(0);
+      }
+    }
   });
 });

@@ -48,6 +48,10 @@ export async function createPayPalOrder(items: LineItem[], customId?: string): P
   return result.id;
 }
 
+export async function getPayPalOrder(orderId: string): Promise<Order> {
+  return (await ordersController().getOrder({ id: orderId })).result;
+}
+
 // Returns the full order (items, payer, shipping, capture) so we can record the sale.
 export async function capturePayPalOrder(orderId: string): Promise<Order> {
   const { result } = await ordersController().captureOrder({
