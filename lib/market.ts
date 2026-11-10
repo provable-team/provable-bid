@@ -23,7 +23,7 @@ const fail = (error: string) => ({ ok: false as const, error });
 export interface PaymentRail {
   refund(o: { captureId: string; amountCents: number; currency: string; note: string; idempotencyKey: string }): Promise<{ refundId: string; status: string }>;
   refundStatus(refundId: string): Promise<string>;
-  payout(o: { batchId: string; email: string; amountCents: number; currency: string; subject: string; note: string }): Promise<{ batchId: string; status: string }>;
+  payout(o: { batchId: string; payerId: string; amountCents: number; currency: string; subject: string; note: string }): Promise<{ batchId: string; status: string }>;
   payoutStatus(batchId: string): Promise<{ batchStatus: string; itemStatus: string | null; error?: string; feeCents?: number }>;
   describeError(err: unknown): string;
 }
@@ -50,11 +50,47 @@ export function buyerOwns(db: DB, jobId: string, buyerKey: string | undefined): 
   return getJob(db, jobId)?.buyerKeyHash === hashSecret(buyerKey);
 }
 
-// ---------------------------------------------------------------- agents
+// ---------------------------------------------------------------- operators and agents
+
+const SESSION_DAYS = 30;
+
+// Called after "Log in with PayPal". The payer ID is PayPal-verified, so it's the identity and the payout target.
+export function upsertOperator(db: DB, o: { paypalPayerId: string; paypalEmail: string | null; name: string }) {
+  const existing = db.select().from(t.operators).where(eq(t.operators.paypalPayerId, o.paypalPayerId)).get();
+  if (existing) {
+    db.update(t.operators).set({ paypalEmail: o.paypalEmail, name: o.name }).where(eq(t.operators.id, existing.id)).run();
+    return { ...existing, ...o };
+  }
+  const row = { id: newId("o"), ...o };
+  db.insert(t.operators).values(row).run();
+  return row;
+}
+
+export function createOperatorSession(db: DB, operatorId: string, now = new Date()) {
+  const token = newSecret("os");
+  db.insert(t.operatorSessions).values({ tokenHash: hashSecret(token), operatorId, expiresAt: new Date(now.getTime() + SESSION_DAYS * 24 * HOUR) }).run();
+  return token;
+}
+
+export function operatorBySession(db: DB, token: string | undefined, now = new Date()) {
+  if (!token) return undefined;
+  const row = db
+    .select({ op: t.operators, expiresAt: t.operatorSessions.expiresAt })
+    .from(t.operatorSessions)
+    .innerJoin(t.operators, eq(t.operators.id, t.operatorSessions.operatorId))
+    .where(eq(t.operatorSessions.tokenHash, hashSecret(token)))
+    .get();
+  return row && row.expiresAt > now ? row.op : undefined;
+}
+
+export function endOperatorSession(db: DB, token: string) {
+  db.delete(t.operatorSessions).where(eq(t.operatorSessions.tokenHash, hashSecret(token))).run();
+}
 
 export function registerAgent(
   db: DB,
-  a: { handle: string; name: string; bio?: string; homepageUrl?: string | null; paypalEmail: string },
+  operatorId: string,
+  a: { handle: string; name: string; bio?: string; homepageUrl?: string | null },
   fixedToken?: string, // only for the seeded demo agent, whose DB is wiped on every Render restart
 ): Result<{ agentId: string; token: string }> {
   if (db.select({ id: t.agents.id }).from(t.agents).where(eq(t.agents.handle, a.handle)).get())
@@ -62,9 +98,18 @@ export function registerAgent(
   const token = fixedToken ?? newSecret("pb");
   const agentId = newId("a");
   db.insert(t.agents)
-    .values({ id: agentId, handle: a.handle, name: a.name, bio: a.bio ?? "", homepageUrl: a.homepageUrl ?? null, paypalEmail: a.paypalEmail, tokenHash: hashSecret(token) })
+    .values({ id: agentId, operatorId, handle: a.handle, name: a.name, bio: a.bio ?? "", homepageUrl: a.homepageUrl ?? null, tokenHash: hashSecret(token) })
     .run();
   return { ok: true, data: { agentId, token } };
+}
+
+// New token for an agent; the old one stops working immediately.
+export function rotateAgentToken(db: DB, operatorId: string, agentId: string): Result<{ token: string }> {
+  const agent = db.select().from(t.agents).where(and(eq(t.agents.id, agentId), eq(t.agents.operatorId, operatorId))).get();
+  if (!agent) return fail("Agent not found.");
+  const token = newSecret("pb");
+  db.update(t.agents).set({ tokenHash: hashSecret(token) }).where(eq(t.agents.id, agentId)).run();
+  return { ok: true, data: { token } };
 }
 
 export function agentByToken(db: DB, token: string | null | undefined) {
@@ -203,7 +248,7 @@ export async function executePayment(db: DB, rail: PaymentRail, paymentId: numbe
         .where(eq(t.payments.id, p.id)).run();
     } else if (p.kind === "payout") {
       const r = await rail.payout({
-        batchId: p.idempotencyKey, email: p.recipient!, amountCents: p.amountCents, currency: p.currency,
+        batchId: p.idempotencyKey, payerId: p.recipient!, amountCents: p.amountCents, currency: p.currency,
         subject: `You were paid for "${job.title}"`,
         note: `The buyer accepted your delivery on provable.bid. Job ${job.id}.`,
       });
@@ -319,13 +364,18 @@ export async function acceptDelivery(db: DB, rail: PaymentRail, jobId: string, n
     const blocked = blockedReason(snapshot(job), "accept", now);
     if (blocked) return fail(blocked);
     const bid = d.select().from(t.bids).where(eq(t.bids.id, job.awardedBidId!)).get()!;
-    const agent = d.select().from(t.agents).where(eq(t.agents.id, bid.agentId)).get()!;
+    const operator = d
+      .select({ payerId: t.operators.paypalPayerId })
+      .from(t.agents)
+      .innerJoin(t.operators, eq(t.operators.id, t.agents.operatorId))
+      .where(eq(t.agents.id, bid.agentId))
+      .get()!;
     const { payoutToAgentCents, feeCents } = settlementFor(job.budgetCents, bid.priceCents);
     d.update(t.jobs).set({ status: "completed", completedAt: now }).where(eq(t.jobs.id, jobId)).run();
     logEvent(d, jobId, "accepted", `payout ${payoutToAgentCents}, fee ${feeCents}`);
     const payoutId = recordPayment(d, {
       jobId, kind: "payout", amountCents: payoutToAgentCents, currency: job.currency,
-      idempotencyKey: `job-${jobId}-payout`, recipient: agent.paypalEmail,
+      idempotencyKey: `job-${jobId}-payout`, recipient: operator.payerId,
     });
     return { ok: true as const, data: { payoutId, payoutToAgentCents, feeCents } };
   });

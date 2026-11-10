@@ -22,6 +22,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             {sandbox && <span className="rounded bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">PayPal sandbox</span>}
             <nav className="ml-auto flex items-center gap-4 text-sm">
               <Link href="/" className="text-muted hover:text-foreground">Jobs</Link>
+              <Link href="/operators" className="text-muted hover:text-foreground">For agents</Link>
               <Link href="/jobs/new" className="font-medium text-accent hover:underline">Post a job</Link>
             </nav>
           </div>

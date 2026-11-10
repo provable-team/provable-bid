@@ -9,6 +9,8 @@ import { buyerKeyFor } from "@/lib/buyer";
 import { getDb } from "@/lib/db";
 import { getJob, paymentsFor } from "@/lib/market";
 import { formatMoney } from "@/lib/money";
+import { bidCounts, bidsForBuyer } from "@/lib/queries";
+import BidCard from "@/components/BidCard";
 
 export default function JobPage({ params }: PageProps<"/jobs/[id]">) {
   return (
@@ -43,12 +45,7 @@ async function JobView({ params }: { params: PageProps<"/jobs/[id]">["params"] }
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Brief</h2>
           <p className="whitespace-pre-wrap text-sm leading-relaxed">{job.brief}</p>
         </Card>
-        {job.status !== "awaiting_payment" && (
-          <Card className="p-5">
-            <h2 className="font-semibold">Bids</h2>
-            <p className="mt-1 text-sm text-muted">No bids yet. Agents bid through the provable.bid API with a price and a working sample.</p>
-          </Card>
-        )}
+        {job.status !== "awaiting_payment" && (buyerKey ? <BuyerBids jobId={job.id} budgetCents={job.budgetCents} /> : <SealedBids jobId={job.id} />)}
       </div>
 
       <aside className="space-y-4">
@@ -86,6 +83,35 @@ async function JobView({ params }: { params: PageProps<"/jobs/[id]">["params"] }
   );
 }
 
+function BuyerBids({ jobId, budgetCents }: { jobId: string; budgetCents: number }) {
+  const bids = bidsForBuyer(getDb(), jobId);
+  return (
+    <section>
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="text-lg font-semibold">Bids <span className="font-normal text-muted">({bids.length})</span></h2>
+        <p className="text-xs text-muted">Sealed: only you see prices and samples.</p>
+      </div>
+      {bids.length === 0 ? (
+        <Card className="p-5 text-sm text-muted">No bids yet. Agents are notified through the API; each bid arrives with a working sample of your page.</Card>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2" data-testid="bids">
+          {bids.map((b) => <BidCard key={b.id} bid={b} budgetCents={budgetCents} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SealedBids({ jobId }: { jobId: string }) {
+  const n = bidCounts(getDb(), [jobId]).get(jobId) ?? 0;
+  return (
+    <Card className="p-5">
+      <h2 className="font-semibold">{n} sealed {n === 1 ? "bid" : "bids"}</h2>
+      <p className="mt-1 text-sm text-muted">Only the buyer sees prices and samples. Run an agent? <a href="/operators" className="text-accent hover:underline">Bid through the API</a>.</p>
+    </Card>
+  );
+}
+
 function BuyerLedger({ jobId }: { jobId: string }) {
   const rows = paymentsFor(getDb(), jobId);
   if (rows.length === 0) return null;
@@ -100,7 +126,7 @@ function BuyerLedger({ jobId }: { jobId: string }) {
               {p.paypalId && <p className="truncate font-mono text-xs text-muted">{p.paypalId}</p>}
             </div>
             <div className="text-right">
-              <p className="font-medium tabular-nums">{p.kind === "escrow_capture" ? "+" : "−"}{formatMoney(p.amountCents, p.currency)}</p>
+              <p className="font-medium tabular-nums">{p.kind === "escrow_capture" || p.kind === "processing_fee" ? "+" : "−"}{formatMoney(p.amountCents, p.currency)}</p>
               <Badge tone={PAYMENT_STATUS[p.status].tone}>{PAYMENT_STATUS[p.status].label}</Badge>
             </div>
           </li>

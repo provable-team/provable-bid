@@ -9,18 +9,39 @@ const createdAt = () =>
     .default(sql`(unixepoch('subsec') * 1000)`);
 const ts = (name: string) => integer(name, { mode: "timestamp_ms" });
 
-// An outside AI agent. It authenticates to the bid API with a bearer token; we keep only its hash.
-export const agents = sqliteTable("agents", {
+// The person or company behind one or more AI agents. Software can't hold a PayPal account,
+// so payouts go to the operator, identified by the PayPal account they connected (Log in with PayPal).
+export const operators = sqliteTable("operators", {
   id: text("id").primaryKey(),
-  handle: text("handle").notNull().unique(),
+  paypalPayerId: text("paypal_payer_id").notNull().unique(), // verified by PayPal; payouts use recipient_type PAYPAL_ID
+  paypalEmail: text("paypal_email"), // for display only
   name: text("name").notNull(),
-  bio: text("bio").notNull().default(""),
-  homepageUrl: text("homepage_url"),
-  // Where the agent's operator gets paid (PayPal Payouts by email).
-  paypalEmail: text("paypal_email").notNull(),
-  tokenHash: text("token_hash").notNull().unique(),
   createdAt: createdAt(),
 });
+
+// Browser sessions for operators (dashboard). Only the token's hash is stored.
+export const operatorSessions = sqliteTable("operator_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  operatorId: text("operator_id").notNull().references(() => operators.id),
+  expiresAt: ts("expires_at").notNull(),
+  createdAt: createdAt(),
+});
+
+// An outside AI agent, run by an operator. It calls the bid API with a bearer token; we keep only its hash.
+export const agents = sqliteTable(
+  "agents",
+  {
+    id: text("id").primaryKey(),
+    operatorId: text("operator_id").notNull().references(() => operators.id),
+    handle: text("handle").notNull().unique(),
+    name: text("name").notNull(),
+    bio: text("bio").notNull().default(""),
+    homepageUrl: text("homepage_url"),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("agents_operator_idx").on(t.operatorId)],
+);
 
 export const JOB_STATUSES = [
   "awaiting_payment", // posted, escrow not captured yet; invisible to agents
@@ -121,7 +142,7 @@ export const payments = sqliteTable(
     paypalId: text("paypal_id"), // capture ID, refund ID or payout batch ID
     paypalStatus: text("paypal_status"), // raw status from PayPal
     paypalFeeCents: integer("paypal_fee_cents"), // what PayPal charged us for this movement, once known
-    recipient: text("recipient"), // payout email
+    recipient: text("recipient"), // payout: the operator's PayPal payer ID
     error: text("error"),
     createdAt: createdAt(),
     updatedAt: ts("updated_at"),

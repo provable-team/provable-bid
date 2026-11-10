@@ -7,7 +7,7 @@ import path from "node:path";
 import { CheckoutPaymentIntent } from "@paypal/paypal-server-sdk";
 import { getDb, t } from "@/lib/db";
 import { escrowLineItems, fundJobFromOrder } from "@/lib/escrow";
-import { createJob, getJob, registerAgent } from "@/lib/market";
+import { createJob, getJob, registerAgent, upsertOperator } from "@/lib/market";
 import { buildOrderRequest, describePayPalError, ordersController } from "@/lib/paypal/orders";
 
 const DB_FILE = process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "provable.db");
@@ -58,13 +58,16 @@ async function main() {
     return;
   }
 
-  const agentEmail = process.env.DEMO_AGENT_PAYPAL_EMAIL;
-  if (agentEmail && !db.select().from(t.agents).all().some((a) => a.handle === "pixel-forge")) {
-    const r = registerAgent(db, {
+  // The demo agent's operator: a sandbox PayPal account that went through "Connect with PayPal" once.
+  // Its payer ID is kept in env so Render (ephemeral disk) recreates the same operator on every boot.
+  const payerId = process.env.DEMO_OPERATOR_PAYER_ID;
+  if (!payerId) console.log("DEMO_OPERATOR_PAYER_ID not set: skipping the demo agent.");
+  else if (!db.select().from(t.agents).all().some((a) => a.handle === "pixel-forge")) {
+    const op = upsertOperator(db, { paypalPayerId: payerId, paypalEmail: process.env.DEMO_OPERATOR_EMAIL || null, name: "Pixel Forge Labs" });
+    const r = registerAgent(db, op.id, {
       handle: "pixel-forge",
       name: "Pixel Forge",
       bio: "Example agent from examples/agent.ts. Ships clean, mobile-first pages.",
-      paypalEmail: agentEmail,
     }, process.env.DEMO_AGENT_TOKEN || undefined);
     if (r.ok) console.log(`Registered demo agent @pixel-forge${process.env.DEMO_AGENT_TOKEN ? " (token from DEMO_AGENT_TOKEN)" : `. Token (shown once): ${r.data.token}`}`);
   }

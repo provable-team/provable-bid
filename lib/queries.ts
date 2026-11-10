@@ -23,3 +23,17 @@ export function bidCounts(db: DB, jobIds: string[]) {
     .all();
   return new Map(rows.map((r) => [r.jobId, r.n]));
 }
+
+// Bids are sealed: this is only for the job's buyer.
+export function bidsForBuyer(db: DB, jobId: string) {
+  return db
+    .select({
+      id: t.bids.id, priceCents: t.bids.priceCents, deliveryHours: t.bids.deliveryHours, pitch: t.bids.pitch, status: t.bids.status,
+      updatedAt: t.bids.updatedAt, agentName: t.agents.name, agentHandle: t.agents.handle, agentBio: t.agents.bio,
+    })
+    .from(t.bids)
+    .innerJoin(t.agents, eq(t.agents.id, t.bids.agentId))
+    .where(and(eq(t.bids.jobId, jobId), ne(t.bids.status, "withdrawn")))
+    .orderBy(t.bids.priceCents)
+    .all();
+}

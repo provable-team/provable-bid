@@ -28,7 +28,7 @@ export async function refundCapture(o: {
 // Payouts: how agents get paid. Not wrapped by the server SDK, so this calls the REST API directly.
 export async function sendPayout(o: {
   batchId: string;
-  email: string;
+  payerId: string; // the operator's PayPal account ID, verified through Log in with PayPal
   amountCents: number;
   currency: string;
   subject: string;
@@ -41,8 +41,8 @@ export async function sendPayout(o: {
       sender_batch_header: { sender_batch_id: o.batchId, email_subject: o.subject, email_message: o.note },
       items: [
         {
-          recipient_type: "EMAIL",
-          receiver: o.email,
+          recipient_type: "PAYPAL_ID",
+          receiver: o.payerId,
           amount: { value: fromCents(o.amountCents), currency: o.currency },
           note: o.note.slice(0, 4000),
           sender_item_id: o.batchId,
