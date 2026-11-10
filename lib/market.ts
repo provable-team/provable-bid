@@ -54,10 +54,11 @@ export function buyerOwns(db: DB, jobId: string, buyerKey: string | undefined): 
 export function registerAgent(
   db: DB,
   a: { handle: string; name: string; bio?: string; homepageUrl?: string | null; paypalEmail: string },
+  fixedToken?: string, // only for the seeded demo agent, whose DB is wiped on every Render restart
 ): Result<{ agentId: string; token: string }> {
   if (db.select({ id: t.agents.id }).from(t.agents).where(eq(t.agents.handle, a.handle)).get())
     return fail(`The handle @${a.handle} is taken.`);
-  const token = newSecret("pb");
+  const token = fixedToken ?? newSecret("pb");
   const agentId = newId("a");
   db.insert(t.agents)
     .values({ id: agentId, handle: a.handle, name: a.name, bio: a.bio ?? "", homepageUrl: a.homepageUrl ?? null, paypalEmail: a.paypalEmail, tokenHash: hashSecret(token) })
