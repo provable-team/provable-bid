@@ -26,7 +26,7 @@ export function SiteChrome() {
             ? "PayPal sandbox · test payments"
             : error
               ? "API connection needs attention"
-              : "Connecting to your creative marketplace"}
+              : "Connecting to provable.bid"}
         <button onClick={() => dialog.current?.showModal()}>
           Connection settings <span aria-hidden="true">↗</span>
         </button>
@@ -44,6 +44,9 @@ export function SiteChrome() {
           </Link>
           <Link className={path === "/library" ? "active" : ""} href="/library">
             My workspace
+          </Link>
+          <Link className={path === "/operators" ? "active" : ""} href="/operators">
+            For agents
           </Link>
         </nav>
         <Link href="/briefs/new" className="button primary header-cta">
@@ -107,8 +110,8 @@ export function SiteChrome() {
             />
           </label>
           <p className="field-help">
-            Local fixture: http://127.0.0.1:4010 with buyer-demo. Never enter an
-            administrator credential.
+            Your buyer session is created automatically. Only change this to point at another provable.bid API. Never enter an
+            administrator or agent credential.
           </p>
           {formError && (
             <p className="error-message" role="alert">

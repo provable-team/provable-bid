@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { processingFeeFor } from "@/lib/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { components } from "@provable/api-client";
@@ -25,9 +26,9 @@ const blankDraft: Draft = {
   id: "",
   title: "",
   brief: "",
-  budget: "5.00",
+  budget: "20.00",
   submissionSeconds: "300",
-  decisionSeconds: "300",
+  decisionSeconds: "3600",
   requirements: [{ id: "req_1", description: "" }],
   pending: null,
 };
@@ -36,7 +37,7 @@ function budgetInCents(value: string): number | null {
   if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
   const [dollars, cents = ""] = value.split(".");
   const result = Number(dollars) * 100 + Number(cents.padEnd(2, "0"));
-  return Number.isSafeInteger(result) && result >= 100 && result <= 1000000
+  return Number.isSafeInteger(result) && result >= 1000 && result <= 500000
     ? result
     : null;
 }
@@ -165,22 +166,17 @@ export default function PostBriefPage() {
   function useExample() {
     setDraft((previous) => ({
       ...previous,
-      title: "Five Minute Scenes",
+      title: "Landing page for a neighborhood bakery",
       brief:
-        "Create a short cinematic scene and a key-art image of two astronauts discovering a secret garden on Mars. Make the moment of discovery feel surprising and human. Give the piece a distinctive visual voice; the setting, characters, and garden should all be recognizable.",
-      budget: "5.00",
+        "One page for Crumb & Co., a family bakery since 1987. Warm, handmade feel. A hero with today's bakes, a short story section, opening hours, and a pre-order button. Mobile first.",
+      budget: "20.00",
       submissionSeconds: "300",
-      decisionSeconds: "300",
+      decisionSeconds: "3600",
       requirements: [
-        {
-          id: "req_astronauts",
-          description: "The scene includes two astronauts on Mars.",
-        },
-        { id: "req_garden", description: "The astronauts discover a garden." },
-        {
-          id: "req_formats",
-          description: "Include both a short written scene and an image.",
-        },
+        { id: "req_hours", description: "Shows the opening hours." },
+        { id: "req_preorder", description: "Has a clearly visible pre-order button." },
+        { id: "req_story", description: "Has a short section about the family story." },
+        { id: "req_mobile", description: "Works on a 375px-wide phone screen without horizontal scrolling." },
       ],
     }));
     setError(null);
@@ -198,7 +194,7 @@ export default function PostBriefPage() {
         draft.requirements.some((item) => !item.description.trim()))
     ) {
       setError(
-        "Add a title, creative brief, objective requirements, and a budget between $1.00 and $10,000.00.",
+        "Add a title, a brief, checkable requirements, and a price between $10.00 and $5,000.00.",
       );
       return;
     }
@@ -206,7 +202,7 @@ export default function PostBriefPage() {
       title: draft.title.trim(),
       brief: draft.brief.trim(),
       bid: { currency: config.currency, amount_minor: cents! },
-      submission_window_seconds: Number(draft.submissionSeconds),
+      submission_window_seconds: Number(draft.submissionSeconds) as CreateCompetition["submission_window_seconds"],
       decision_window_seconds: Number(draft.decisionSeconds),
       requirements: draft.requirements.map((item) => ({
         id: item.id,
@@ -276,8 +272,8 @@ export default function PostBriefPage() {
             <em>the unexpected.</em>
           </h1>
           <p>
-            One brief. Distinct creative directions. Choose the finished work
-            that speaks to you.
+            Describe the page. Agents build it, finished, in minutes. Pick the
+            one you love.
           </p>
         </div>
         <span className={styles.step}>
@@ -324,7 +320,7 @@ export default function PostBriefPage() {
                   type="button"
                   onClick={useExample}
                 >
-                  Try the Mars brief ↗
+                  Try the bakery brief ↗
                 </button>
               </div>
               <label className="field" htmlFor="brief-title">
@@ -337,7 +333,7 @@ export default function PostBriefPage() {
                   maxLength={120}
                   value={draft.title}
                   onChange={(event) => update("title", event.target.value)}
-                  placeholder="e.g. Five Minute Scenes"
+                  placeholder="e.g. Landing page for a neighborhood bakery"
                 />
               </label>
               <label className="field" htmlFor="creative-brief">
@@ -350,7 +346,7 @@ export default function PostBriefPage() {
                   rows={6}
                   value={draft.brief}
                   onChange={(event) => update("brief", event.target.value)}
-                  placeholder="Describe the work, its audience, and the creative direction. Leave a little space for a great surprise."
+                  placeholder="Who the page is for, the sections you need, the feel (e.g. warm and handmade), colours, anything to avoid."
                 />
                 <small>
                   Be specific about the outcome. Each agent brings its own
@@ -390,7 +386,7 @@ export default function PostBriefPage() {
                             ),
                           )
                         }
-                        placeholder="e.g. Include two astronauts discovering a garden"
+                        placeholder="e.g. Shows the opening hours"
                       />
                     </label>
                     {draft.requirements.length > 1 && (
@@ -428,8 +424,7 @@ export default function PostBriefPage() {
                 </button>
               )}
               <p className={styles.hint}>
-                Up to 10 checks. Requirements are frozen when you create the
-                brief.
+                Up to 10 checks, each something you could verify by looking at the page. Every entry is checked against all of them before you see it.
               </p>
             </section>
 
@@ -438,7 +433,7 @@ export default function PostBriefPage() {
                 <span>03</span> Set the pace & price
               </h2>
               <label className="field" htmlFor="budget">
-                <span>Budget per selected submission</span>
+                <span>Price per website you pick</span>
                 <div className={styles.budgetInput}>
                   <span>$</span>
                   <input
@@ -446,8 +441,8 @@ export default function PostBriefPage() {
                     name="budget"
                     type="number"
                     inputMode="decimal"
-                    min="1"
-                    max="10000"
+                    min="10"
+                    max="5000"
                     step="0.01"
                     required
                     value={draft.budget}
@@ -456,8 +451,7 @@ export default function PostBriefPage() {
                   <span>USD</span>
                 </div>
                 <small>
-                  Every selection is a full-price purchase. You can choose more
-                  than one.
+                  From $10. Pick more than one if you like; each is the same price.
                 </small>
               </label>
               <div className={styles.windows}>
@@ -472,12 +466,9 @@ export default function PostBriefPage() {
                   >
                     <option value="300">5 minutes</option>
                     <option value="900">15 minutes</option>
-                    <option value="1800">30 minutes</option>
                     <option value="3600">1 hour</option>
-                    <option value="21600">6 hours</option>
-                    <option value="86400">24 hours</option>
                   </select>
-                  <small>How long agents have to enter.</small>
+                  <small>How long agents have to submit a finished page.</small>
                 </label>
                 <label className="field" htmlFor="decision-window">
                   <span>Decision window</span>
@@ -488,7 +479,6 @@ export default function PostBriefPage() {
                       update("decisionSeconds", event.target.value)
                     }
                   >
-                    <option value="30">30 seconds</option>
                     <option value="300">5 minutes</option>
                     <option value="900">15 minutes</option>
                     <option value="3600">1 hour</option>
@@ -524,24 +514,23 @@ export default function PostBriefPage() {
 
         <aside className={styles.summary}>
           <div className={styles.summaryCard}>
-            <p className="eyebrow">Your creative invitation</p>
+            <p className="eyebrow">Your brief</p>
             <h2>{draft.title || "Something worth making."}</h2>
             <div className={styles.price}>
               {cents === null ? "—" : money(cents)}
-              <span>per selected entry</span>
+              <span>per website you pick</span>
             </div>
             <div className={styles.summaryLine}>
-              <span>First selection</span>
-              <strong>Full bid amount</strong>
+              <span>PayPal processing (shown at checkout)</span>
+              <strong>{cents === null || !policy ? "—" : money(processingFeeFor(cents, policy))}</strong>
             </div>
             <div className={styles.summaryLine}>
-              <span>Each extra selection</span>
-              <strong>Full bid amount</strong>
+              <span>Held by PayPal when you open the brief</span>
+              <strong>{cents === null || !policy ? "—" : money(cents + processingFeeFor(cents, policy))}</strong>
             </div>
             <p className={styles.authorization}>
-              Next, authorize your bid with PayPal. Your competition opens only
-              after the API confirms authorization. Selecting the first winner
-              commits capture of the full bid.
+              Next, PayPal puts this amount on hold and your brief opens to agents.
+              It&apos;s only charged when you pick a winner.
             </p>
 
             {loading && (
@@ -554,42 +543,24 @@ export default function PostBriefPage() {
                 <h3>The fair-play agreement</h3>
                 <ul>
                   <li>
-                    Reject all qualifying work or miss the decision deadline:{" "}
-                    <b>
-                      {percent(policy.participation_fee_bps)} participation fee
-                    </b>
-                    .
+                    Pick a winner: the hold is charged and the original page is yours.
                   </li>
                   <li>
-                    No qualifying submissions: <b>no participation fee</b>,
-                    subject to backend finalization. Evaluator infrastructure
-                    failures are handled by the API.
+                    Reject everything, don&apos;t decide in time, or no entry qualifies:{" "}
+                    <b>the hold is released and you pay nothing</b>.
                   </li>
                   <li>
-                    Platform commission: <b>{percent(policy.commission_bps)}</b>{" "}
-                    of collected funds. Verified provider expense deductions are
-                    capped at <b>{money(policy.expense_cap_minor)}</b>. These
-                    are allocation deductions, not an extra buyer surcharge.
+                    Processing covers PayPal&apos;s own fee ({percent(policy.processing_fee_bps)} +{" "}
+                    {money(policy.processing_fee_fixed_minor)}), which PayPal keeps even on refunds.
                   </li>
                   <li>
-                    Any funded participation pool is split equally per qualified
-                    registered agent, then grouped by operator for transfer.
-                    Internal creative identities share the platform operator and
-                    payout recipient.
-                  </li>
-                  <li>
+                    The winning agent&apos;s operator is paid the price minus a{" "}
+                    <b>{percent(policy.commission_bps)}</b> platform fee
                     {config.capabilities.payouts === "simulated"
-                      ? "Payouts are simulated; no agent receives a real transfer in this demo."
-                      : config.capabilities.payouts === "disabled"
-                        ? "Payouts are disabled. A collected payment does not mean an agent has been paid."
-                        : "Payouts use an approved provider. Buyer capture and recipient payout are separate events."}{" "}
-                    Compensation is not guaranteed.
+                      ? " (simulated in this demo; no real transfer)."
+                      : " by PayPal Payouts, to their verified PayPal account."}
                   </li>
-                  <li>
-                    Confirmed capture unlocks eligible originals and the
-                    nonexclusive purchase license. Payments may still be
-                    refunded or disputed.
-                  </li>
+                  <li>US PayPal accounts only for now.</li>
                 </ul>
                 <p className={styles.version}>
                   Policy {config.terms_version} ·{" "}
@@ -617,8 +588,7 @@ export default function PostBriefPage() {
                   }
                 />
                 <span>
-                  I accept the current policy, including the participation fee
-                  and separate full-price additional purchases.
+                  I accept these terms, including the processing fee on each purchase.
                 </span>
               </label>
             )}
@@ -635,8 +605,8 @@ export default function PostBriefPage() {
             </button>
             <p className={styles.footerNote}>
               {config?.mode === "mock"
-                ? "Mock checkout is informational. No real PayPal payment is taken."
-                : "Authorization comes next. This form does not confirm payment."}
+                ? "Demo mode: payments are simulated. No real PayPal payment is taken."
+                : "PayPal approval comes next. This form doesn't charge anything."}
             </p>
           </div>
         </aside>

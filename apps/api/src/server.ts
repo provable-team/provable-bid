@@ -25,7 +25,7 @@ const usePayPal = (env.PAYMENTS ?? (clientId && env.PAYPAL_CLIENT_SECRET ? 'payp
 
 const provider = usePayPal
   ? paypalProvider({ clientId: clientId!, clientSecret: env.PAYPAL_CLIENT_SECRET!, webhookId: env.PAYPAL_WEBHOOK_ID ?? null, testCardCheckout: env.PAYPAL_TEST_CARD_CHECKOUT === '1' })
-  : fakeProvider({ webOrigin, autoApprove: false }).provider;
+  : fakeProvider({ webOrigin, autoApprove: true }).provider;
 const anthropic = env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 const store = new Store(env.DATABASE_PATH ?? 'data/api.db');
 

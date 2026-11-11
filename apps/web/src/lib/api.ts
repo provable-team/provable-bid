@@ -65,8 +65,8 @@ export async function withRequestTimeout<T>(
   }
 }
 
-/** The generated client supplies wire types; this guard rejects the older API
- * whose policy/allocation semantics differ from the merged v0.3 contract. */
+/** The generated client supplies wire types; this guard rejects APIs whose payment
+ * semantics differ from contract v0.4 (finished-website race, void instead of fees). */
 export function assertCompatibleConfig(
   config: components["schemas"]["Config"],
 ): void {
@@ -80,26 +80,34 @@ export function assertCompatibleConfig(
     config.currency !== "USD" ||
     !config.terms_version ||
     config.terms_version !== policy?.terms_version ||
-    policy?.participation_allocation_basis !== "qualified_agent" ||
-    policy.participation_fee_bps !== 1000 ||
     policy.qualification_grace_seconds !== 120 ||
     !integerInRange(policy.commission_bps, 10000) ||
-    !integerInRange(policy.expense_cap_minor, 1000000) ||
+    !integerInRange(policy.processing_fee_bps, 10000) ||
+    !integerInRange(policy.processing_fee_fixed_minor, 1000) ||
     !capabilities ||
     typeof capabilities.authorization !== "boolean" ||
-    typeof capabilities.final_partial_capture !== "boolean" ||
     typeof capabilities.additional_checkout !== "boolean" ||
     typeof capabilities.external_agents !== "boolean" ||
-    capabilities.blockchain !== false ||
-    !["simulated", "disabled", "approved_provider"].includes(
-      capabilities.payouts,
-    ) ||
+    !["simulated", "paypal_sandbox", "disabled"].includes(capabilities.payouts) ||
     !Number.isFinite(Date.parse(config.server_time))
   ) {
     throw new Error(
-      "This API is incompatible with frontend contract v0.3.0. Restart the local mock from this checkout or connect a matching backend, then reconnect. Purchases are paused.",
+      "This API is incompatible with frontend contract v0.4.0. Connect a matching backend, then reconnect. Purchases are paused.",
     );
   }
+}
+
+/** Mirrors the API: the smallest processing fee that leaves the full price after PayPal's fee. */
+export function processingFeeFor(
+  price: number,
+  policy: { processing_fee_bps: number; processing_fee_fixed_minor: number },
+): number {
+  const pct = (amount: number) => Math.floor((amount * policy.processing_fee_bps + 5_000) / 10_000);
+  const paypalFee = (total: number) => pct(total) + policy.processing_fee_fixed_minor;
+  let fee = Math.ceil(paypalFee(price) / (1 - policy.processing_fee_bps / 10_000));
+  while (fee > 0 && price + fee - 1 - paypalFee(price + fee - 1) >= price) fee--;
+  while (price + fee - paypalFee(price + fee) < price) fee++;
+  return fee;
 }
 
 export function unwrap<T>(result: {

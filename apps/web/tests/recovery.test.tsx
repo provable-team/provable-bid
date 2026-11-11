@@ -4,21 +4,19 @@ import { test, type TestContext } from "node:test";
 import { act, Suspense } from "react";
 import { JSDOM } from "jsdom";
 import { createApiClient } from "@provable/api-client";
-import { createMock } from "../../mock-api/src/app.js";
+import { bakeryBrief, startApi } from "./live-api.js";
 
 async function mountCompetition(
   t: TestContext,
   intercept: (request: Request) => Promise<Response> | undefined,
 ) {
   const nativeFetch = globalThis.fetch;
-  const { app } = await createMock();
-  await app.listen({ host: "127.0.0.1", port: 0 });
-  const address = app.server.address();
-  assert.ok(address && typeof address === "object");
-  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const live = await startApi();
+  const baseUrl = live.baseUrl;
+  const buyerToken = await live.buyer();
   const api = createApiClient({
     baseUrl,
-    token: "buyer-demo",
+    token: buyerToken,
     fetch: nativeFetch,
   });
   const configResult = await api.GET("/v1/config");
@@ -26,15 +24,7 @@ async function mountCompetition(
   const config = configResult.data;
   const created = await api.POST("/v1/competitions", {
     params: { header: { "Idempotency-Key": randomUUID() } },
-    body: {
-      title: "Recovery on Mars",
-      brief: "Two astronauts discover a garden on Mars.",
-      bid: { currency: "USD", amount_minor: 500 },
-      submission_window_seconds: 300,
-      decision_window_seconds: 300,
-      requirements: [{ id: "req_mars", description: "A garden on Mars." }],
-      accepted_terms_version: config.terms_version,
-    },
+    body: bakeryBrief(config.terms_version),
   });
   assert.ok(created.data);
   const competition = created.data;
@@ -64,7 +54,7 @@ async function mountCompetition(
   }
   dom.window.sessionStorage.setItem(
     "provable.connection",
-    JSON.stringify({ baseUrl, token: "buyer-demo" }),
+    JSON.stringify({ baseUrl, token: buyerToken }),
   );
   const requests: { method: string; path: string }[] = [];
   globalThis.fetch = async (input, init) => {
@@ -89,7 +79,7 @@ async function mountCompetition(
   t.after(async () => {
     await act(async () => root.unmount());
     globalThis.fetch = nativeFetch;
-    await app.close();
+    await live.close();
     for (const [key, descriptor] of saved) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else Reflect.deleteProperty(globalThis, key);
@@ -136,7 +126,7 @@ test(
           const actual = await fetchNative(request);
           const config = await actual.json();
           config.terms_version = config.policy.terms_version = "sandbox-v1";
-          delete config.policy.participation_allocation_basis;
+          delete config.policy.processing_fee_bps;
           return Response.json(config);
         })();
     });
@@ -144,7 +134,7 @@ test(
       () =>
         Boolean(
           view.container.textContent?.includes(
-            "incompatible with frontend contract v0.3.0",
+            "incompatible with frontend contract v0.4.0",
           ),
         ),
       "legacy API is rejected",
@@ -153,7 +143,7 @@ test(
       view.requests.every((request) => request.path === "/v1/config"),
       "no legacy buyer data or financial commands are requested",
     );
-    assert.equal(view.button("Authorize"), undefined);
+    assert.equal(view.button("Hold $"), undefined);
     legacy = false;
     const retry = view.button("Try again");
     assert.ok(retry);
@@ -161,8 +151,8 @@ test(
     await view.eventually(
       () =>
         Boolean(
-          view.button("Authorize $5.00") &&
-            !view.button("Authorize $5.00")!.disabled,
+          view.button("Hold $21.23 with PayPal") &&
+            !view.button("Hold $21.23 with PayPal")!.disabled,
         ),
       "reconnect accepts the current contract",
     );
@@ -195,8 +185,8 @@ test(
     await view.eventually(
       () =>
         Boolean(
-          view.button("Authorize $5.00") &&
-            !view.button("Authorize $5.00")!.disabled,
+          view.button("Hold $21.23 with PayPal") &&
+            !view.button("Hold $21.23 with PayPal")!.disabled,
         ),
       "initial snapshot is available",
     );
@@ -212,12 +202,12 @@ test(
     );
     assert.equal(stalledRequest?.signal.aborted, true);
     assert.equal(
-      view.button("Authorize $5.00")?.disabled,
+      view.button("Hold $21.23 with PayPal")?.disabled,
       true,
       "stale payment controls are paused",
     );
     assert.ok(
-      view.container.textContent?.includes("Recovery on Mars"),
+      view.container.textContent?.includes("Landing page for a neighborhood bakery"),
       "last confirmed data remains visible",
     );
     stall = false;
@@ -227,8 +217,8 @@ test(
     await view.eventually(
       () =>
         Boolean(
-          view.button("Authorize $5.00") &&
-            !view.button("Authorize $5.00")!.disabled,
+          view.button("Hold $21.23 with PayPal") &&
+            !view.button("Hold $21.23 with PayPal")!.disabled,
         ),
       "refresh can resume after timeout",
     );
@@ -243,7 +233,7 @@ test(
     });
     assert.equal(
       view.container.querySelector("h1")?.textContent,
-      "Recovery on Mars",
+      "Landing page for a neighborhood bakery",
       "late requests cannot replace a newer snapshot",
     );
     assert.equal(view.container.querySelector('[role="alert"]'), null);

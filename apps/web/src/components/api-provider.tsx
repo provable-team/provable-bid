@@ -25,11 +25,10 @@ function defaults(): Settings {
   const local = ["127.0.0.1", "localhost", "[::1]"].includes(
     new URL(defaultUrl).hostname,
   );
-  return {
-    baseUrl: defaultUrl.replace(/\/$/, ""),
-    token: local ? "buyer-demo" : "",
-  };
+  void local;
+  return { baseUrl: defaultUrl.replace(/\/$/, ""), token: "" };
 }
+const buyerKey = (baseUrl: string) => `provable.buyer.${baseUrl}`;
 function validateSettings(next: Settings): Settings {
   const url = new URL(next.baseUrl);
   if (
@@ -43,7 +42,7 @@ function validateSettings(next: Settings): Settings {
       "Enter an HTTP or HTTPS API URL without credentials or a query string.",
     );
   const token = next.token.trim();
-  if (token === "admin-demo" || token.startsWith("agent-"))
+  if (token.startsWith("pba_") || token.startsWith("pbo_"))
     throw new Error("Use a buyer credential in the buyer application.");
   return { baseUrl: next.baseUrl.replace(/\/$/, ""), token };
 }
@@ -74,13 +73,36 @@ export function ApiProvider({
   const [revision, setRevision] = useState(0);
   const [connectionVersion, setConnectionVersion] = useState(0);
   useEffect(() => {
+    let next = defaults();
     try {
       const stored = sessionStorage.getItem("provable.connection");
-      if (stored) setSettings(validateSettings(JSON.parse(stored) as Settings));
+      if (stored) next = validateSettings(JSON.parse(stored) as Settings);
+      if (!next.token) next.token = localStorage.getItem(buyerKey(next.baseUrl)) ?? "";
     } catch {
       /* A session without storage can browse; commands require storage. */
     }
-    setReady(true);
+    if (next.token) {
+      setSettings(next);
+      setReady(true);
+      return;
+    }
+    // First visit: the API issues an anonymous buyer session. PayPal identifies the payer at checkout.
+    fetch(`${next.baseUrl}/v1/buyer-sessions`, {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      cache: "no-store",
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((session: { token: string }) => {
+        try {
+          localStorage.setItem(buyerKey(next.baseUrl), session.token);
+        } catch {
+          /* Without storage the session lasts for this page only. */
+        }
+        setSettings({ ...next, token: session.token });
+      })
+      .catch(() => setSettings(next))
+      .finally(() => setReady(true));
   }, []);
   const api = useMemo(() => {
     setCommandNamespace(`${settings.baseUrl}\n${settings.token}`);

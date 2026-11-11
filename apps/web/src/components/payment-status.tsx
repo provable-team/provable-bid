@@ -17,13 +17,13 @@ export function PaymentStatus({
     "The competition opens after the backend confirms the authorization.";
   let tone = "neutral";
   if (payment.authorization_state === "authorized") {
-    title = `${money(payment.amount.amount_minor)} authorized`;
+    title = `${money(payment.amount.amount_minor)} on hold`;
     description =
-      "Your bid is authorized. Choosing the first winner commits the full capture.";
+      "PayPal is holding your payment. Nothing is charged until you pick a winner; reject everything and the hold is released.";
   }
   if (payment.authorization_state === "voided") {
-    title = "Authorization released";
-    description = "The backend reports the authorization was voided.";
+    title = "Hold released · you paid nothing";
+    description = "PayPal confirmed the authorization was voided.";
   }
   if (payment.authorization_state === "void_pending") {
     title = "Releasing authorization";
@@ -45,8 +45,6 @@ export function PaymentStatus({
   }
   if (payment.capture_state === "completed") {
     title = `${mock === true ? "Simulated payment" : mock === false ? "Payment" : "Capture"} confirmed · ${money(payment.captured_minor)}`;
-    if (payment.purpose === "participation_fee")
-      title = `${mock ? "Simulated participation fee" : "Participation fee"} confirmed · ${money(payment.captured_minor)}`;
     description = purchase?.delivery_unlocked
       ? "The backend confirms delivery access for this purchase."
       : "Capture is confirmed. Delivery depends on the current backend entitlement.";
@@ -68,7 +66,7 @@ export function PaymentStatus({
         ? "Authorization expired"
         : "Payment failed";
     description =
-      "Originals remain locked. This selection cannot switch to another winner or a participation fee. Contact the operator for recovery.";
+      "Originals remain locked. This selection cannot switch to another winner. Contact the operator for recovery.";
     tone = "danger";
   }
   if (payment.refund_state !== "none" || payment.refunded_minor > 0) {
@@ -134,14 +132,13 @@ export function CheckoutActions({
 }) {
   let approval: string | null = null;
   try {
-    const url = new URL(checkout.approval_url);
-    if (
+    const url = new URL(checkout.approval_url, window.location.href);
+    const paypal =
       url.protocol === "https:" &&
-      ["www.sandbox.paypal.com", "sandbox.paypal.com"].includes(url.hostname) &&
-      !url.username &&
-      !url.password
-    )
-      approval = url.href;
+      ["www.sandbox.paypal.com", "sandbox.paypal.com"].includes(url.hostname);
+    // Fake-provider mode approves on this app's own clearly labelled simulator page, never elsewhere.
+    const simulator = mode === "mock" && url.origin === window.location.origin && url.pathname === "/checkout/fake";
+    if ((paypal || simulator) && !url.username && !url.password) approval = url.href;
   } catch {
     /* Invalid approval targets are never linked. */
   }
@@ -149,38 +146,30 @@ export function CheckoutActions({
     <div className="checkout-actions">
       <p>
         {mode === "mock"
-          ? "Simulated checkout. The fixture approval URL is informational; no PayPal payment page is involved."
-          : "PayPal approval is followed by backend verification. Approval alone does not confirm payment."}
+          ? "Demo mode: a simulated PayPal approval, no real payment."
+          : "You'll approve on PayPal and come straight back here; we verify with PayPal before anything changes."}
       </p>
-      {mode === "paypal_sandbox" && approval && !expired && (
-        <a
-          href={approval}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="button primary"
-        >
-          Approve with PayPal <Icon name="external" size={15} />
+      {approval && !expired && (
+        <a href={approval} className="button primary">
+          {mode === "mock" ? "Approve (simulated)" : "Continue to PayPal"}{" "}
+          <Icon name="external" size={15} />
         </a>
       )}
-      {mode === "paypal_sandbox" && !approval && (
+      {!approval && (
         <div className="error-message">
-          The API did not return a supported PayPal sandbox approval URL.
+          The API did not return a supported PayPal approval URL.
         </div>
       )}
       <button
-        className={`button ${mode === "mock" ? "primary" : "secondary"}`}
-        disabled={busy || expired || (mode === "paypal_sandbox" && !approval)}
+        className="button secondary"
+        disabled={busy || expired || !approval}
         onClick={verify}
       >
         {busy
-          ? "Verifying…"
-          : mode === "mock"
-            ? initial
-              ? "Simulate approval & authorize"
-              : "Simulate approval & submit capture"
-            : initial
-              ? "Verify authorization after approval"
-              : "Verify approval & submit capture"}
+          ? "Checking with PayPal…"
+          : initial
+            ? "I approved it · open my brief"
+            : "I approved it · complete purchase"}
         <Icon name="arrow" size={16} />
       </button>
       {expired && (

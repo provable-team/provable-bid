@@ -4,7 +4,7 @@ import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type {
   Agent,
-  AgentRun,
+  Allocation,
   Competition,
   Payment,
   Purchase,
@@ -34,7 +34,7 @@ type Snapshot = {
   competition: Competition;
   owner: boolean;
   agents: Agent[];
-  runs: AgentRun[];
+  allocations: Allocation[];
   gallery: Submission[];
   purchases: Purchase[];
   payments: Record<string, Payment>;
@@ -65,7 +65,7 @@ export default function CompetitionPage({
   const [stale, setStale] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<Checkout | null>(null);
-  const [tab, setTab] = useState<"work" | "brief" | "activity">("work");
+  const [tab, setTab] = useState<"work" | "brief" | "agents">("work");
   const [decision, setDecision] = useState<Decision | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const currentApi = useRef(api);
@@ -165,15 +165,15 @@ export default function CompetitionPage({
               }
             }
             let gallery: Submission[] = [];
-            let runs: AgentRun[] = [];
+            let allocations: Allocation[] = [];
             const payments: Record<string, Payment> = {};
             let canonicalPurchases: Purchase[] = [];
             if (owner) {
               const results = await Promise.all([
                 readGallery(api, id, signal),
                 api
-                  .GET("/v1/competitions/{competition_id}/agent-runs", {
-                    params: { path, query: { limit: 100 } },
+                  .GET("/v1/competitions/{competition_id}/settlement", {
+                    params: { path },
                     signal,
                   })
                   .then(unwrap),
@@ -206,7 +206,7 @@ export default function CompetitionPage({
                 ),
               ]);
               gallery = results[0];
-              runs = results[1].items;
+              allocations = results[1].allocations;
               canonicalPurchases = results[2];
               for (const payment of results[3]) payments[payment.id] = payment;
             }
@@ -214,7 +214,7 @@ export default function CompetitionPage({
               competition: comp,
               owner,
               agents: registry.items,
-              runs,
+              allocations,
               gallery,
               purchases: canonicalPurchases,
               payments,
@@ -298,6 +298,44 @@ export default function CompetitionPage({
     });
   }
 
+  // Back from PayPal (?paypal=return&kind=authorize|purchase&payment_id=…): verify once, then tidy the URL.
+  const returned = useRef(false);
+  useEffect(() => {
+    if (returned.current || !snapshot?.owner || !config || stale || busy) return;
+    const query = new URLSearchParams(window.location.search);
+    if (query.get("paypal") !== "return") return;
+    returned.current = true;
+    window.history.replaceState(null, "", window.location.pathname);
+    const kind = query.get("kind");
+    const paymentId = query.get("payment_id");
+    if (kind === "authorize" && ["draft", "awaiting_authorization"].includes(snapshot.competition.state)) void verifyAuthorization();
+    if (kind === "purchase") {
+      const purchase = snapshot.purchases.find((p) => p.payment_id === paymentId);
+      if (purchase && purchase.status === "awaiting_approval") void verifyPurchase(purchase.id);
+    }
+  });
+
+  function verifyAuthorization() {
+    return act("authorize", () =>
+      command(`authorize:${id}`, null, (key, signal) =>
+        api.POST("/v1/competitions/{competition_id}/authorize", {
+          signal,
+          params: { path: { competition_id: id }, header: { "Idempotency-Key": key } },
+        }),
+      ),
+    );
+  }
+  function verifyPurchase(purchaseId: string) {
+    return act(`capture:${purchaseId}`, () =>
+      command(`capture:${purchaseId}`, null, (key, signal) =>
+        api.POST("/v1/purchases/{purchase_id}/capture", {
+          signal,
+          params: { path: { purchase_id: purchaseId }, header: { "Idempotency-Key": key } },
+        }),
+      ),
+    );
+  }
+
   async function confirmDecision() {
     if (!decision) return;
     const selected = decision;
@@ -361,13 +399,13 @@ export default function CompetitionPage({
           <>
             <div className="skeleton loading-block" />
             <p className="muted">
-              Loading the brief, agent progress, and qualified work…
+              Loading the brief and qualified work…
             </p>
           </>
         )}
       </div>
     );
-  const { owner, agents, runs, gallery, purchases, payments } = snapshot;
+  const { owner, agents, allocations, gallery, purchases, payments } = snapshot;
   const comp = snapshot.competition;
   const blocked = stale || !config || !!connectionError;
   const first = purchases.find((p) => p.id === comp.first_purchase_id);
@@ -393,22 +431,14 @@ export default function CompetitionPage({
     first.delivery_unlocked &&
     decisionOpen &&
     !!config?.capabilities.additional_checkout;
-  const available = agents
-    .filter(
-      (agent) =>
-        agent.internal &&
-        agent.status === "available" &&
-        !runs.some((run) => run.agent_id === agent.id),
-    )
-    .slice(0, 3);
-  const canRun =
+  const canReject =
     owner &&
     !blocked &&
     !busy &&
-    comp.state === "open" &&
-    !!comp.submission_deadline &&
-    now < Date.parse(comp.submission_deadline) &&
-    available.length > 0;
+    !comp.first_purchase_id &&
+    comp.outcome === "undecided" &&
+    ["open", "qualifying", "deciding"].includes(comp.state) &&
+    decisionOpen;
   const mock = config?.mode === "mock";
   const activePayment = firstPayment || initialPayment;
 
@@ -427,20 +457,20 @@ export default function CompetitionPage({
               className={`status-dot ${comp.state === "open" ? "" : "offline"}`}
             />
             {comp.state.replaceAll("_", " ")}
-            <span className="eyebrow-separator">/</span>Scene + image
+            <span className="eyebrow-separator">/</span>Single-page website
           </div>
           <h1>{comp.title}</h1>
           <p className="competition-deck">
-            One brief. Different worlds. Choose the work that moves you.
+            One brief. Finished websites. Pay only for the one you pick.
           </p>
         </div>
-        <div className="agent-stack" aria-label="Registered creative agents">
-          {agents.slice(0, 3).map((agent) => (
+        <div className="agent-stack" aria-label="Registered agents">
+          {agents.filter((a) => a.status === "available").slice(0, 3).map((agent) => (
             <AgentAvatar key={agent.id} agent={agent} size={44} />
           ))}
           <span>
-            {agents.length} creative{" "}
-            {agents.length === 1 ? "identity" : "identities"}
+            {agents.filter((a) => a.status === "available").length}{" "}
+            {agents.filter((a) => a.status === "available").length === 1 ? "agent" : "agents"} notified
           </span>
         </div>
       </div>
@@ -463,54 +493,43 @@ export default function CompetitionPage({
         <div className="notice">
           <Icon name="lock" size={17} />
           <span>
-            This is a published brief. Its work, agent activity, purchases, and
-            delivery are private to the buyer.
+            This is a published brief. Its entries, purchases and delivery are
+            private to the buyer.
           </span>
         </div>
       )}
-      {comp.outcome === "no_qualifiers" && (
+      {["rejected", "no_decision", "no_qualifiers", "infrastructure_failure", "cancelled"].includes(comp.outcome) && (
         <div className="notice">
-          No submissions qualified. The backend finalized this competition
-          without a participation fee. Authorization release is shown in the
-          funding status.
-        </div>
-      )}
-      {comp.outcome === "infrastructure_failure" && (
-        <div className="notice">
-          Qualification could not be completed reliably. The backend cancelled
-          this undecided competition without a participation fee. Check the
-          funding status for authorization release.
-        </div>
-      )}
-      {comp.outcome === "participation_fee" && (
-        <div className="notice">
-          The backend committed the agreed{" "}
-          {comp.policy.participation_fee_bps / 100}% participation fee after
-          rejection or the decision deadline. Its capture status is shown
-          separately. No originals or purchase license are included.
-        </div>
-      )}
-      {comp.outcome === "cancelled" && (
-        <div className="notice">
-          The backend cancelled this competition. Funding status shows the
-          current authorization and capture outcome.
+          <Icon name="check" size={17} />
+          <span>
+            {comp.outcome === "rejected"
+              ? "You rejected every entry."
+              : comp.outcome === "no_decision"
+                ? "The decision window ended without a pick."
+                : comp.outcome === "no_qualifiers"
+                  ? "No entry met every requirement."
+                  : comp.outcome === "infrastructure_failure"
+                    ? "Entries couldn't be checked reliably, so the brief was closed."
+                    : "This brief was cancelled."}{" "}
+            Your PayPal hold is released and you paid nothing. The payment status shows PayPal&apos;s confirmation.
+          </span>
         </div>
       )}
       <div className="competition-layout">
         <div className="competition-main">
           <section className="brief-intro">
-            <span className="eyebrow">The creative challenge</span>
+            <span className="eyebrow">The brief</span>
             <p>{comp.brief}</p>
             <div className="brief-tags">
-              <span>Original perspectives</span>
-              <span>Text + image</span>
-              <span>Objective qualification</span>
+              <span>Finished work, not pitches</span>
+              <span>Single-page website</span>
+              <span>Checked against every requirement</span>
             </div>
           </section>
           {owner && (
             <>
               <div className="competition-tabs" aria-label="Competition views">
-                {(["work", "brief", "activity"] as const).map((key) => (
+                {(["work", "brief", "agents"] as const).map((key) => (
                   <button
                     key={key}
                     aria-pressed={tab === key}
@@ -524,7 +543,7 @@ export default function CompetitionPage({
                       "The brief & checks"
                     ) : (
                       <>
-                        Agent activity <span>{runs.length}</span>
+                        Agents <span>{agents.length}</span>
                       </>
                     )}
                   </button>
@@ -543,13 +562,13 @@ export default function CompetitionPage({
                     <div>
                       <h2>
                         {gallery.length
-                          ? "Same brief. A different point of view."
-                          : "Great work starts with an invitation."}
+                          ? "Same brief. Different finished sites."
+                          : "Agents are building right now."}
                       </h2>
                       <p>
-                        Only entries that pass qualification appear here.
-                        Previews are protected; originals are purchased
-                        separately.
+                        Only entries that pass every requirement appear here.
+                        Previews are watermarked and sandboxed; the original
+                        file is yours when you buy it.
                       </p>
                     </div>
                   </div>
@@ -573,11 +592,9 @@ export default function CompetitionPage({
                         const agent = agents.find(
                           (a) => a.id === submission.agent_id,
                         );
-                        const image = submission.artifacts.find(
-                          (a) => a.type === "image",
-                        );
-                        const text = submission.artifacts.find(
-                          (a) => a.type === "text",
+                        const site = submission.artifacts[0];
+                        const allocation = allocations.find((a) =>
+                          a.agent_shares.some((x) => x.agent_id === submission.agent_id),
                         );
                         const purchase = purchases.find(
                           (p) => p.submission_id === submission.id,
@@ -591,13 +608,11 @@ export default function CompetitionPage({
                             key={submission.id}
                           >
                             <div className="submission-art">
-                              {image ? (
+                              {site && (
                                 <AssetPreview
-                                  artifact={image}
+                                  artifact={site}
                                   alt={`${agent?.name || "Agent"} — ${submission.title}`}
                                 />
-                              ) : (
-                                text && <AssetPreview artifact={text} />
                               )}
                               <span className="preview-badge">
                                 Preview · watermarked
@@ -618,8 +633,8 @@ export default function CompetitionPage({
                                   </strong>
                                   <span>
                                     {agent?.internal
-                                      ? `By ${agent.operator_name}`
-                                      : "Registered creative identity"}
+                                      ? "House agent · provable.bid"
+                                      : `Outside agent · ${agent?.operator_name ?? "independent operator"}`}
                                   </span>
                                 </div>
                                 <span className="entry-number">
@@ -631,23 +646,33 @@ export default function CompetitionPage({
                               <div className="qualified-line">
                                 <span>
                                   <Icon name="check" size={14} />
-                                  Qualified
+                                  Meets all {comp.requirements.length} requirements
                                 </span>
-                                <span>
-                                  {submission.artifacts.length}{" "}
-                                  {submission.artifacts.length === 1
-                                    ? "artifact"
-                                    : "artifacts"}{" "}
-                                  · {money(comp.bid.amount_minor)}
-                                </span>
+                                <span>{money(comp.bid.amount_minor)}</span>
                               </div>
-                              {text && image && (
+                              {submission.qualification && (
                                 <details className="scene-detail">
                                   <summary>
-                                    Read scene excerpt{" "}
+                                    How it was checked{" "}
                                     <span aria-hidden="true">+</span>
                                   </summary>
-                                  <AssetPreview artifact={text} />
+                                  <ul className="check-list">
+                                    {submission.qualification.checks.map((check) => (
+                                      <li key={check.requirement_id}>
+                                        <Icon name="check" size={13} />
+                                        <span>
+                                          <b>
+                                            {comp.requirements.find((r) => r.id === check.requirement_id)?.description}
+                                          </b>{" "}
+                                          {check.reason}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                  <p className="field-help">
+                                    Judge: {submission.qualification.evaluator_version.startsWith("claude") ? "Claude (AI)" : "keyword check"} · fingerprint{" "}
+                                    <code>{site?.sha256.slice(0, 12)}</code>, matched on delivery
+                                  </p>
                                 </details>
                               )}
                               {purchase && payment ? (
@@ -670,33 +695,7 @@ export default function CompetitionPage({
                                               purchase.checkout.expires_at,
                                             ) || !decisionOpen
                                         }
-                                        verify={() =>
-                                          void act(
-                                            `capture:${purchase.id}`,
-                                            () =>
-                                              command(
-                                                `capture:${purchase.id}`,
-                                                null,
-                                                (key, signal) =>
-                                                  api.POST(
-                                                    "/v1/purchases/{purchase_id}/capture",
-                                                    {
-                                                      signal,
-                                                      params: {
-                                                        path: {
-                                                          purchase_id:
-                                                            purchase.id,
-                                                        },
-                                                        header: {
-                                                          "Idempotency-Key":
-                                                            key,
-                                                        },
-                                                      },
-                                                    },
-                                                  ),
-                                              ),
-                                          )
-                                        }
+                                        verify={() => void verifyPurchase(purchase.id)}
                                       />
                                     )}
                                   <PurchaseDelivery
@@ -704,6 +703,18 @@ export default function CompetitionPage({
                                     disabled={blocked || !!busy}
                                     onRefresh={refresh}
                                   />
+                                  {allocation && (
+                                    <p className="payout-line">
+                                      <Icon name={allocation.payout_state === "paid" ? "check" : "clock"} size={14} />
+                                      {allocation.payout_state === "paid"
+                                        ? `${agent?.name ?? "The agent"} was paid ${money(allocation.amount.amount_minor)} by PayPal Payouts`
+                                        : allocation.payout_state === "simulated"
+                                          ? `Simulated payout of ${money(allocation.amount.amount_minor)} (demo mode)`
+                                          : allocation.payout_state === "blocked"
+                                            ? "Agent payout on hold while the payment is reviewed"
+                                            : `Paying ${agent?.name ?? "the agent"} ${money(allocation.amount.amount_minor)} via PayPal…`}
+                                    </p>
+                                  )}
                                 </div>
                               ) : (
                                 <button
@@ -744,62 +755,28 @@ export default function CompetitionPage({
                         <Icon name="spark" size={38} />
                       </div>
                       <h3>
-                        {comp.state === "draft" ||
-                        comp.state === "awaiting_authorization"
-                          ? "Your brief is ready for its first act."
+                        {comp.state === "draft" || comp.state === "awaiting_authorization"
+                          ? "Put the price on hold to open your brief."
                           : ["closed", "cancelled"].includes(comp.state)
                             ? "No qualified entries to show."
-                            : runs.length
-                              ? "The work is in. Qualification comes next."
-                              : "Invite a few different perspectives."}
+                            : "Agents are building. Entries appear as they pass."}
                       </h3>
                       <p>
-                        {runs.length
-                          ? "Submitted agent runs do not establish qualification. This gallery will update when the API confirms eligible entries."
-                          : "Once your brief is open, invite registered agents. Qualified work will appear here as it is confirmed."}
+                        {comp.state === "draft" || comp.state === "awaiting_authorization"
+                          ? "Nothing is charged until you pick a winner."
+                          : "Every registered agent was notified the moment your brief opened. Each finished page is checked against your requirements before you see it."}
                       </p>
-                      {canRun && (
-                        <button
-                          className="button primary"
-                          onClick={() =>
-                            void act("agents", () => {
-                              const body = {
-                                agent_ids: available.map((a) => a.id),
-                              };
-                              return command(
-                                `runs:${id}:${body.agent_ids.join(",")}`,
-                                body,
-                                (key, signal) =>
-                                  api.POST(
-                                    "/v1/competitions/{competition_id}/agent-runs",
-                                    {
-                                      signal,
-                                      params: {
-                                        path: { competition_id: id },
-                                        header: { "Idempotency-Key": key },
-                                      },
-                                      body,
-                                    },
-                                  ),
-                              );
-                            })
-                          }
-                        >
-                          Invite {available.length} creative agents{" "}
-                          <Icon name="arrow" size={17} />
-                        </button>
-                      )}
                     </div>
                   )}
                 </section>
               )}
               {tab === "brief" && (
                 <section className="brief-details">
-                  <h2>The essentials, in black and white.</h2>
+                  <h2>What every entry must do.</h2>
                   <p>
                     These requirements were frozen when the brief was created.
-                    They determine eligibility; your taste determines your
-                    selection.
+                    Each entry is checked against every one; your taste picks
+                    the winner.
                   </p>
                   {comp.requirements.map((requirement, index) => (
                     <div className="requirement-row" key={requirement.id}>
@@ -808,87 +785,53 @@ export default function CompetitionPage({
                     </div>
                   ))}
                   <div className="notice">
-                    Qualification gets {comp.policy.qualification_grace_seconds}{" "}
-                    seconds after submissions close. Your separate decision
-                    window is {comp.decision_window_seconds} seconds. The
-                    backend finalizes eligibility and fees.
+                    Checks finish within {comp.policy.qualification_grace_seconds}{" "}
+                    seconds after submissions close. You then have{" "}
+                    {Math.round(comp.decision_window_seconds / 3600) || 1} hour(s) to
+                    pick; you can also pick as soon as an entry qualifies.
                   </div>
                 </section>
               )}
-              {tab === "activity" && (
+              {tab === "agents" && (
                 <section className="agent-activity">
                   <div className="section-heading">
                     <div>
-                      <h2>Creative minds, at work.</h2>
+                      <h2>Who&apos;s competing.</h2>
                       <p className="muted">
-                        Run progress is separate from qualification.
+                        Every registered agent is notified when a brief opens and decides for itself whether to enter.
                       </p>
                     </div>
-                    {canRun && (
-                      <button
-                        className="button secondary small"
-                        onClick={() =>
-                          void act("agents", () => {
-                            const body = {
-                              agent_ids: available.map((a) => a.id),
-                            };
-                            return command(
-                              `runs:${id}:${body.agent_ids.join(",")}`,
-                              body,
-                              (key, signal) =>
-                                api.POST(
-                                  "/v1/competitions/{competition_id}/agent-runs",
-                                  {
-                                    signal,
-                                    params: {
-                                      path: { competition_id: id },
-                                      header: { "Idempotency-Key": key },
-                                    },
-                                    body,
-                                  },
-                                ),
-                            );
-                          })
-                        }
-                      >
-                        Invite agents <Icon name="plus" size={16} />
-                      </button>
-                    )}
                   </div>
-                  {agents.map((agent) => {
-                    const run = runs.find((r) => r.agent_id === agent.id);
-                    return (
-                      <div className="agent-run" key={agent.id}>
-                        <AgentAvatar agent={agent} size={44} />
-                        <div>
-                          <strong>{agent.name}</strong>
-                          <p>{agent.style}</p>
-                          <small>Operated by {agent.operator_name}</small>
-                        </div>
-                        <span
-                          className={`run-status ${run?.status === "submitted" ? "submitted" : ""}`}
-                        >
-                          {run?.status === "submitted"
-                            ? gallery.some((s) => s.agent_id === agent.id)
-                              ? "Submitted · qualified"
-                              : "Submitted · awaiting qualification"
-                            : run?.status.replaceAll("_", " ") || "Not invited"}
-                        </span>
+                  {agents.map((agent) => (
+                    <div className="agent-run" key={agent.id}>
+                      <AgentAvatar agent={agent} size={44} />
+                      <div>
+                        <strong>{agent.name}</strong>
+                        <p>{agent.style}</p>
+                        <small>
+                          {agent.internal ? "House agent run by provable.bid" : `Outside agent · ${agent.operator_name}`}
+                        </small>
                       </div>
-                    );
-                  })}
+                      <span className={`run-status ${gallery.some((s) => s.agent_id === agent.id) ? "submitted" : ""}`}>
+                        {gallery.some((s) => s.agent_id === agent.id)
+                          ? "Entered · qualified"
+                          : agent.status === "available"
+                            ? "Notified"
+                            : "Offline"}
+                      </span>
+                    </div>
+                  ))}
                   <p className="field-help">
-                    Internal creative identities share the platform operator and
-                    economic payout recipient. Run completion does not guarantee
-                    qualification or compensation.
+                    House agents are labelled and use the same public API as outside agents. Winners are paid by PayPal Payouts
+                    to their operator&apos;s verified PayPal account.
                   </p>
                 </section>
               )}
               <div className="gallery-footnote">
                 <Icon name="lock" size={15} />
                 <span>
-                  Protected previews. Backend-confirmed payment and entitlement
-                  unlock originals and the nonexclusive purchase license.
+                  Protected previews. The original file unlocks once PayPal
+                  confirms your payment.
                 </span>
               </div>
             </>
@@ -896,12 +839,15 @@ export default function CompetitionPage({
         </div>
         <aside className="competition-sidebar">
           <div className="bid-card">
-            <div className="eyebrow">A good idea, at your price</div>
+            <div className="eyebrow">Your price</div>
             <div className="bid-price">
               {money(comp.bid.amount_minor)}
               <span>USD</span>
             </div>
-            <p className="bid-caption">per selected entry</p>
+            <p className="bid-caption">
+              per entry you pick · + {money(comp.processing_fee.amount_minor)} PayPal processing ={" "}
+              {money(comp.total.amount_minor)}
+            </p>
             <div className="sidebar-divider" />
             <div className="deadline-label">Submission deadline</div>
             <Countdown
@@ -930,7 +876,7 @@ export default function CompetitionPage({
                   />
                 ) : (
                   <p className="muted">
-                    Authorize the bid to open your competition.
+                    Put {money(comp.total.amount_minor)} on hold with PayPal to open your brief. Nothing is charged until you pick.
                   </p>
                 )}
                 {["draft", "awaiting_authorization"].includes(comp.state) && (
@@ -942,8 +888,7 @@ export default function CompetitionPage({
                           !!busy ||
                           stale ||
                           !config ||
-                          !config.capabilities.authorization ||
-                          !config.capabilities.final_partial_capture
+                          !config.capabilities.authorization
                         }
                         onClick={() => void initialCheckout()}
                       >
@@ -951,7 +896,7 @@ export default function CompetitionPage({
                           ? "Preparing checkout…"
                           : checkout
                             ? "Renew expired checkout"
-                            : `Authorize ${money(comp.bid.amount_minor)}`}
+                            : `Hold ${money(comp.total.amount_minor)} with PayPal`}
                         <Icon name="arrow" size={16} />
                       </button>
                     ) : (
@@ -962,45 +907,18 @@ export default function CompetitionPage({
                           initial
                           busy={!!busy || blocked}
                           expired={now >= Date.parse(checkout.expires_at)}
-                          verify={() =>
-                            void act("authorize", () =>
-                              command(
-                                `authorize:${id}:${checkout.provider_order_id}`,
-                                null,
-                                (key, signal) =>
-                                  api.POST(
-                                    "/v1/competitions/{competition_id}/authorize",
-                                    {
-                                      signal,
-                                      params: {
-                                        path: { competition_id: id },
-                                        header: { "Idempotency-Key": key },
-                                      },
-                                    },
-                                  ),
-                              ),
-                            )
-                          }
+                          verify={() => void verifyAuthorization()}
                         />
                       )
                     )}
                   </>
                 )}
-                {comp.state === "deciding" && !comp.first_purchase_id && (
+                {canReject && (
                   <button
                     className="text-button reject-button"
-                    disabled={!!busy || blocked || !decisionOpen}
                     onClick={() => setDecision({ kind: "reject" })}
                   >
-                    Reject all ·{" "}
-                    {money(
-                      Math.floor(
-                        (comp.bid.amount_minor *
-                          comp.policy.participation_fee_bps) /
-                          10000,
-                      ),
-                    )}{" "}
-                    fee
+                    None of these · release my hold
                   </button>
                 )}
               </>
@@ -1008,21 +926,20 @@ export default function CompetitionPage({
             <div className="sidebar-policy">
               <span>
                 <Icon name="check" size={14} />
-                First choice: full bid capture
+                Pick a winner: the hold is charged
               </span>
               <span>
                 <Icon name="plus" size={14} />
-                Extra choices: full price each
+                Want more? Extra entries at the same price
               </span>
               <span>
                 <Icon name="clock" size={14} />
-                {comp.policy.participation_fee_bps / 100}% fee if you reject or
-                miss the decision
+                Reject all or don&apos;t decide: you pay nothing
               </span>
             </div>
             <p className="field-help">
-              No qualifying work: no participation fee, subject to finalization.
-              No compensation is guaranteed.
+              The winning agent is paid {money(comp.bid.amount_minor - Math.floor((comp.bid.amount_minor * comp.policy.commission_bps + 5000) / 10000))}{" "}
+              ({100 - comp.policy.commission_bps / 100}%) by PayPal Payouts.
             </p>
             <span className="terms-label">
               Frozen policy · {comp.policy.terms_version}
@@ -1030,10 +947,9 @@ export default function CompetitionPage({
           </div>
           {mock && (
             <div className="mock-note">
-              <strong>Demo, clearly marked.</strong>
+              <strong>Demo mode, clearly marked.</strong>
               <p>
-                Images and scenes are deterministic fixtures. Qualification and
-                capture confirmations require the separate local fixture runner.
+                Payments are simulated by the API&apos;s fake PayPal provider. No real money moves.
               </p>
             </div>
           )}
@@ -1062,17 +978,17 @@ export default function CompetitionPage({
         </div>
         <h2>
           {decision?.kind === "reject"
-            ? "Reject all qualifying work?"
+            ? "None of these work for you?"
             : decision?.kind === "additional"
               ? "Make this one yours, too."
               : "Found your favorite?"}
         </h2>
         <p>
           {decision?.kind === "reject"
-            ? `This commits the agreed ${money(Math.floor((comp.bid.amount_minor * comp.policy.participation_fee_bps) / 10000))} participation fee and ends your decision. It does not license any originals.`
+            ? "This closes your brief and releases your PayPal hold. You pay nothing, and no originals are delivered."
             : decision?.kind === "additional"
-              ? `This creates a separate ${money(comp.bid.amount_minor)} PayPal capture checkout. Approve it and wait for confirmed payment before accessing originals.`
-              : `Choosing “${decision?.submission.title || ""}” commits capture of the full ${money(comp.bid.amount_minor)} authorization. This first selection is final, including if payment later fails.`}
+              ? `This starts a separate ${money(comp.total.amount_minor)} PayPal checkout (price + processing). The original unlocks once PayPal confirms it.`
+              : `Choosing “${decision?.submission.title || ""}” charges your ${money(comp.total.amount_minor)} hold and pays its agent. This choice is final.`}
         </p>
         {decision?.kind === "first" && (
           <p className="field-help">
@@ -1090,10 +1006,10 @@ export default function CompetitionPage({
             onClick={() => void confirmDecision()}
           >
             {decision?.kind === "reject"
-              ? "Confirm rejection & fee"
+              ? "Release my hold"
               : decision?.kind === "additional"
-                ? "Create additional checkout"
-                : `Select & capture ${money(comp.bid.amount_minor)}`}
+                ? "Continue to checkout"
+                : `Pick it · pay ${money(comp.total.amount_minor)}`}
             <Icon name="arrow" size={17} />
           </button>
           <button

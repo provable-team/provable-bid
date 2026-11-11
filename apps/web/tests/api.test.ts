@@ -3,6 +3,7 @@ import { test, type TestContext } from "node:test";
 import {
   ApiError,
   assertCompatibleConfig,
+  processingFeeFor,
   command,
   fetchProtected,
   protectedUrl,
@@ -66,40 +67,45 @@ const accepted = <T>(data: T) => ({
   response: new Response(null, { status: 202 }),
 });
 
-test("incompatible allocation policies are rejected before buyer data is used", () => {
+test("incompatible payment policies are rejected before buyer data is used", () => {
   const config: components["schemas"]["Config"] = {
     mode: "mock",
     currency: "USD",
-    terms_version: "sandbox-v2",
+    terms_version: "race-v1",
     policy: {
-      terms_version: "sandbox-v2",
-      participation_fee_bps: 1000,
-      commission_bps: 1000,
-      expense_cap_minor: 0,
+      terms_version: "race-v1",
+      commission_bps: 500,
+      processing_fee_bps: 349,
+      processing_fee_fixed_minor: 49,
+      payout_fee_minor: 25,
       qualification_grace_seconds: 120,
-      participation_allocation_basis: "qualified_agent",
     },
     capabilities: {
       authorization: true,
-      final_partial_capture: true,
       additional_checkout: true,
       external_agents: true,
       payouts: "simulated",
-      blockchain: false,
+      ai_evaluation: false,
+      house_agents: false,
+      operator_onboarding: "paypal_login",
     },
     server_time: "2026-11-10T18:00:00.000Z",
   };
   assert.doesNotThrow(() => assertCompatibleConfig(config));
   const legacy = structuredClone(config);
-  Reflect.deleteProperty(legacy.policy, "participation_allocation_basis");
-  legacy.terms_version = legacy.policy.terms_version = "sandbox-v1";
-  assert.throws(() => assertCompatibleConfig(legacy), /incompatible.*v0\.3\.0/);
+  Reflect.deleteProperty(legacy.policy, "processing_fee_bps");
+  assert.throws(() => assertCompatibleConfig(legacy), /incompatible.*v0\.4\.0/);
   const mismatchedTerms = structuredClone(config);
   mismatchedTerms.policy.terms_version = "other-policy";
   assert.throws(() => assertCompatibleConfig(mismatchedTerms), /incompatible/);
   const invalidFees = structuredClone(config);
   invalidFees.policy.commission_bps = -1;
   assert.throws(() => assertCompatibleConfig(invalidFees), /incompatible/);
+});
+
+test("the displayed processing fee matches the API's: $20.00 → $1.23", () => {
+  assert.equal(processingFeeFor(2000, { processing_fee_bps: 349, processing_fee_fixed_minor: 49 }), 123);
+  assert.equal(processingFeeFor(1000, { processing_fee_bps: 349, processing_fee_fixed_minor: 49 }), 87);
 });
 
 test("request deadlines release an unresponsive transport and ignore late results", async () => {

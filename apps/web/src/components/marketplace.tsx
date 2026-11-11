@@ -211,10 +211,10 @@ export function CompetitionCard({
 }) {
   const { competition, submissions, purchases, owned } = entry;
   const submission = submissions.find((item) =>
-    item.artifacts.some((artifact) => artifact.type === "image"),
+    item.artifacts.some((artifact) => artifact.type === "html"),
   );
   const image = submission?.artifacts.find(
-    (artifact) => artifact.type === "image",
+    (artifact) => artifact.type === "html",
   );
   const agent = agents.find((item) => item.id === submission?.agent_id);
   const delivered = purchases.filter((purchase) => purchase.delivery_unlocked);

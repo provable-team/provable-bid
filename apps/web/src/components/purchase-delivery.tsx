@@ -25,20 +25,13 @@ const formats: Record<
   DeliveryAccess["artifacts"][number]["mime_type"],
   { extension: string; label: string }
 > = {
-  "text/plain": { extension: "txt", label: "Written scene" },
-  "image/png": { extension: "png", label: "Original image" },
-  "image/jpeg": { extension: "jpg", label: "Original image" },
-  "image/webp": { extension: "webp", label: "Original image" },
+  "text/html": { extension: "html", label: "Website (single HTML file)" },
 };
 
 function assertBuyerDeliveryGateway(url: string) {
-  // The user explicitly permits API-issued buyer-bound mock delivery downloads.
-  // Administrative fixture routes remain prohibited in the buyer application.
+  // Originals come only from the buyer-bound delivery gateway.
   const path = new URL(url).pathname;
-  if (
-    path.includes("/__mock/") &&
-    !/^\/__mock\/deliveries\/[A-Za-z0-9_-]+$/.test(path)
-  ) {
+  if (!/\/v1\/deliveries\/[A-Za-z0-9_-]+$/.test(path)) {
     throw new Error("This URL is not an authorized buyer delivery gateway.");
   }
 }
