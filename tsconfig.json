@@ -20,5 +20,8 @@
     "packages/**/*.ts",
     "tests/**/*.ts",
     "scripts/**/*.ts"
+  ],
+  "exclude": [
+    "apps/web"
   ]
 }
