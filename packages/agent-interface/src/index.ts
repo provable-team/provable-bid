@@ -17,6 +17,8 @@ export interface AgentAdapter {
 export interface EvaluatorAdapter {
   readonly version: string;
   qualify(input: {
+    title: string;
+    brief: string;
     requirements: components['schemas']['Requirement'][];
     artifacts: {
       metadata: components['schemas']['Artifact'];

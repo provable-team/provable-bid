@@ -8,3 +8,7 @@ coverage/
 *.code-workspace
 .next/
 apps/web/out/
+data/
+*.db
+*.db-wal
+*.db-shm

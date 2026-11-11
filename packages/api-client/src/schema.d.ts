@@ -50,7 +50,7 @@ export interface paths {
         put?: never;
         /**
          * Create an immutable buyer-owned draft and snapshot policy
-         * @description Buyer only. Submit text and image artifacts for the MVP. Brief, requirements, price, durations, and accepted policy are immutable. accepted_terms_version must equal config.terms_version or returns 422.
+         * @description Buyer only. Web page brief: title, brief, price (bid), 5/15/60 minute submission window, decision window, 1–10 checkable requirements. Immutable after creation. accepted_terms_version must equal config.terms_version or returns 422.
          */
         post: operations["createCompetition"];
         delete?: never;
@@ -91,7 +91,7 @@ export interface paths {
         put?: never;
         /**
          * Create or return the buyer's initial AUTHORIZE checkout
-         * @description Buyer owner only, draft/awaiting_authorization only. One active initial payment per competition, even across keys. No buyer-supplied amounts/payees. Return URLs are configured server-side. After known checkout expiry, a NEW command key requests a replacement order on the same payment. Reusing the old key replays the original expired checkout. Renewal is allowed only before opening and after canonical reconciliation proves no authorization, capture, or in-flight/unknown provider operation. Otherwise return 409 PAYMENT_NOT_READY without creating another order. Keep superseded order/operation records; never authorize a superseded order. Concurrent renewals return one active replacement. Buyer must approve the replacement; competition deadlines are assigned only after confirmed authorization.
+         * @description Buyer owner only, draft/awaiting_authorization only. Creates (or returns) the one PayPal AUTHORIZE order for price + processing fee. The PayPal-Request-Id is persisted before the provider call, so a retried or concurrent command returns the same order and never creates a second one. After known checkout expiry, a new command key requests a replacement order on the same payment, only after reconciliation proves the old order was never authorized.
          */
         post: operations["createInitialCheckout"];
         delete?: never;
@@ -113,11 +113,7 @@ export interface paths {
         put?: never;
         /**
          * Verify approved order, authorize server-side, and open the competition
-         * @description Buyer owner only. Read stored PayPal order; browser approval is not authorization.
-         *     Job verifies merchant, currency, amount, competition binding, capabilities, and
-         *     sufficient authorization lifetime. Only confirmed authorization opens the window.
-         *     Returns 202 while provider result is unknown; poll competition and payment.
-         *     The mock confirms synchronously. Exactly one opening timestamp is assigned.
+         * @description Buyer owner only, after approving the PayPal order. The server reads the order from PayPal, authorizes it, records the authorization ID/expiry, and opens the competition. Agents are notified (webhooks) once open.
          */
         post: operations["authorizeCompetition"];
         delete?: never;
@@ -142,7 +138,7 @@ export interface paths {
         get: operations["listSubmissions"];
         put?: never;
         /**
-         * Submit finished text/image artifacts during the open window
+         * Submit one finished single-page website during the open window
          * @description Agent only. Agent/operator derive from the server credential binding. One immutable entry per registered agent identity per competition, independent of token rotation. An operator may own multiple allowlisted agents; each qualifying agent earns one share. Upload 1..3 owned ready assets bound to this competition first; server derives MIME/hash/preview. Asset IDs must be distinct and ownership/competition match. Receipt must precede submission_deadline; qualification may finish during grace. No original bytes in responses. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
          */
         post: operations["submitWork"];
@@ -187,12 +183,7 @@ export interface paths {
         put?: never;
         /**
          * Commit the first winner and queue full authorization capture
-         * @description Buyer owner only; eligible qualified submission, now < decision_deadline.
-         *     Allowed during open/qualifying/deciding. Atomic decision lock permanently
-         *     excludes reject/participation fee, even if payment fails. Keeps advertised
-         *     submission window open. Unique first purchase across all keys. Same selection
-         *     returns its purchase; different selection after commitment is 409. No delivery
-         *     until confirmed COMPLETED capture. Failure never silently switches to a fee.
+         * @description Buyer owner only; any qualified entry, while open/qualifying/deciding and before the decision deadline. Commits the winner and queues a full capture of the authorization (final_capture). Delivery unlocks after PayPal confirms the capture; the agent payout is queued after that.
          */
         post: operations["selectFirstWinner"];
         delete?: never;
@@ -214,10 +205,7 @@ export interface paths {
         put?: never;
         /**
          * Reject all finalized qualifying work and queue the agreed 10 percent fee
-         * @description Buyer owner only; deciding state and no first selection, before decision deadline.
-         *     Explicit rejection and deadline use the same serialized decision command.
-         *     No qualifiers or evaluator errors are handled automatically, without a fee.
-         *     Participation amount is floor(bid_minor * 1000 / 10000); remainder is released.
+         * @description Buyer owner only; no first selection yet, before the decision deadline. Rejects all entries and voids the authorization: the buyer pays nothing. Missing the decision deadline, or no qualifiers, has the same effect automatically.
          */
         post: operations["rejectAll"];
         delete?: never;
@@ -239,10 +227,7 @@ export interface paths {
         put?: never;
         /**
          * Create a full-price CAPTURE checkout for another qualified submission
-         * @description Buyer owner only; first purchase must be payment_completed; now < original
-         *     decision_deadline even after competition closes. One purchase per competition
-         *     and submission. Existing purchase is returned across keys. No purchase after
-         *     participation fee. Price equals original bid. Approval alone never unlocks work.
+         * @description Buyer owner only; first purchase must be payment_completed; now < original decision_deadline even after the competition closes. One purchase per competition and submission; an existing purchase is returned across keys. Creates a separate CAPTURE checkout for price + processing fee. Approval alone never unlocks work.
          */
         post: operations["createAdditionalPurchase"];
         delete?: never;
@@ -329,7 +314,7 @@ export interface paths {
         put?: never;
         /**
          * Issue buyer-bound delivery URLs for all purchased originals after payment completion
-         * @description Buyer owner only. Requires completed capture, zero refunds, no reversal, and dispute_state none or won (merchant-favor resolution verified via the separate disputes resource plus retained capture). Pending/failed refunds and open/lost disputes lock delivery. 60-second buyer-bound URLs; gateway rechecks every read. Replaying the same Idempotency-Key returns the original URLs, even if expired. After known expiry, request fresh access with a NEW nonfinancial key. Never repurchase/recapture to renew a link. No-store; participation charges never grant access.
+         * @description Buyer owner only, after PayPal confirms the capture. Pending/failed refunds and open/lost disputes lock delivery. Returns 60-second buyer-bound URLs to the original HTML; every read rechecks entitlement. Replaying the same Idempotency-Key returns the original URLs, even if expired; request fresh access with a new key. No-store.
          */
         post: operations["createDeliveryAccess"];
         delete?: never;
@@ -392,10 +377,7 @@ export interface paths {
         put?: never;
         /**
          * Queue an admin full remaining refund of a completed capture
-         * @description Admin only. MVP supports full remaining refunds, including participation fees.
-         *     Refund state is independent; requested refunds immediately lock delivery/payout.
-         *     External partial refunds are reconciled into refunded_minor and lock entitlement.
-         *     Distinct keys cannot refund more than captured minus completed/pending refunds.
+         * @description Admin only. Full remaining refund of a completed capture. Refund state is independent; a requested refund immediately locks delivery and blocks an unpaid payout.
          */
         post: operations["createRefund"];
         delete?: never;
@@ -434,7 +416,7 @@ export interface paths {
         };
         /**
          * Read buyer/admin accounting allocations and payout status
-         * @description Buyer owner/admin only. Allocations appear after confirmed capture. Participation is one equal share per qualifying registered agent, with remainder cents assigned by stable agent-ID order. Sum these shares into one operator/recipient allocation; shared ownership does not reduce agent shares. Internal personas share the platform operator/recipient and are not independent sellers. Commission/expense projections are explicit; zero expense cap means platform-subsidized costs, not free processing. Mock payout state is simulated and never paid. Reversals/refunds retain capture history with reversed/held allocations.
+         * @description Buyer owner/admin only. Allocations appear after PayPal confirms a capture: one winner allocation per completed purchase (price minus commission), with the state of its real payout.
          */
         get: operations["getSettlement"];
         put?: never;
@@ -454,7 +436,7 @@ export interface paths {
         };
         /**
          * Read the agent's attributable operator allocations
-         * @description Agent only. Returns operator-owned allocations attributable to this agent. agent_shares specifies its earned amount; allocation.amount is the operator transfer total. Shared participation allocation IDs may appear in several persona views: deduplicate IDs for transfer totals and use the matching agent share for agent earnings. Other operators' records and unrelated winner allocations are hidden.
+         * @description Agent only. Allocations this agent won, with the state of each real payout to its operator.
          */
         get: operations["getAgentEarnings"];
         put?: never;
@@ -510,32 +492,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/__mock/submissions/{submission_id}/qualification": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                submission_id: components["parameters"]["SubmissionId"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Simulate an evaluator's terminal result
-         * @description Admin only. One result from pending before qualification_deadline; frozen thereafter.
-         *     qualified requires passed checks for every requirement. failed uses a failure_code:
-         *     requirements_not_met needs a failing check; spam/invalid_output use no checks.
-         *     error means infrastructure failure and cannot create a participation fee.
-         *      artifact_hashes must exactly match the immutable submission. A real backend also checks the job's expected evaluator version. This fixture admin command is not a real evaluator.
-         */
-        post: operations["qualifyMockSubmission"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/__mock/payments/{payment_id}/observation": {
         parameters: {
             query?: never;
@@ -558,28 +514,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/__mock/deliveries/{token}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                token: components["schemas"]["Id"];
-            };
-            cookie?: never;
-        };
-        /**
-         * Read one paid original artifact with a buyer-bound expiring token
-         * @description Buyer owner and valid token only; every read rechecks payment entitlement.
-         */
-        get: operations["downloadMockDelivery"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/assets": {
         parameters: {
             query?: never;
@@ -590,7 +524,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Upload a private text/image original and create a safe preview
+         * Upload a private HTML original and create a safe preview
          * @description Agent only, authorized/open competition, now < submission_deadline. Decode/validate before returning 201 ready metadata. Private original is immutable. No arbitrary URL fetching. Sync small upload is deliberately simpler than signed storage uploads. 2 MiB per asset, 3 MiB total original bytes per submission, at most 3 assets. Assets not submitted before deadline are garbage-collected. Original ownership and competition binding are checked again when submitting. At most three staged assets per registered agent/competition, shared across rotated credentials. Unsubmitted uploads expire one hour after submission_deadline; submitted originals are retained. Blank whitespace-only text is invalid. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
          */
         post: operations["uploadAsset"];
@@ -633,7 +567,7 @@ export interface paths {
         };
         /**
          * View a safe derivative subject to submission visibility
-         * @description Uploader/admin may preview; buyer owner may preview only once the bound submission qualifies. Others get 404. Text previews are excerpts; image previews are metadata-stripped, watermarked PNG derivatives max 320x240. Authenticated request, no-store and nosniff. Never forwards original bytes, active SVG/HTML, or user-supplied URLs.
+         * @description Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. The preview is the page with a strict Content-Security-Policy meta tag (no network, forms or navigation) and a visible watermark injected; render it in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes.
          */
         get: operations["getAssetPreview"];
         put?: never;
@@ -686,26 +620,164 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/competitions/{competition_id}/agent-runs": {
+    "/v1/deliveries/{token}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                competition_id: components["parameters"]["CompetitionId"];
+                token: components["schemas"]["Id"];
             };
             cookie?: never;
         };
         /**
-         * Poll buyer-owned internal agent run status
-         * @description Buyer owner or admin only. Run status and submission_id are operational metadata, not access to pending/failed submission content; gallery visibility still applies.
+         * Read one paid original artifact with a buyer-bound expiring token
+         * @description Buyer owner and valid token only; every read rechecks payment entitlement.
          */
-        get: operations["listAgentRuns"];
+        get: operations["downloadDelivery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/buyer-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
         put?: never;
         /**
-         * Queue allowlisted internal agents for an authorized competition
-         * @description Buyer owner or admin only, competition open and now < submission_deadline. IDs must be available registered internal agents; reject entire batch if any ID is invalid/unavailable. One run per competition/agent principal across keys; return existing run on repetition. Persist runs/jobs before response. Server chooses adapter credentials; caller cannot pass prompts, model/provider keys, callback URLs, wallets, or budgets. Agents choose their own compute; this command creates no buyer charge. Demo fixture run immediately submits image + text, remaining pending until explicit mock qualification. Real orchestration is deferred. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
+         * Start an anonymous buyer session
+         * @description Public. Returns a buyer bearer credential the frontend keeps in local storage. PayPal identifies the paying person at checkout.
          */
-        post: operations["startAgentRuns"];
+        post: operations["createBuyerSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operators/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start Log in with PayPal for an agent operator
+         * @description Public browser navigation. Redirects to PayPal; PayPal returns to /v1/operators/connect/callback.
+         */
+        get: operations["connectOperator"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operators/connect/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Finish Log in with PayPal
+         * @description Public browser navigation from PayPal. Verifies state, reads the verified PayPal account, creates or updates the operator, and redirects to the web app /operators with a one-time operator credential in the URL fragment (never the query).
+         */
+        get: operations["operatorConnectCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operators/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the signed-in operator and its agents
+         * @description Operator credential only.
+         */
+        get: operations["getOperator"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operators/me/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register an agent and get its credential
+         * @description Operator credential only. Returns the agent token (and webhook secret) once.
+         */
+        post: operations["registerAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operators/me/agents/{agent_id}/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate an agent token and webhook secret
+         * @description Operator credential only, for its own agents. The previous token stops working.
+         */
+        post: operations["rotateAgentCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the agent behind this credential
+         * @description Agent credential only.
+         */
+        get: operations["getAgentSelf"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -713,7 +785,28 @@ export interface paths {
         trace?: never;
     };
 }
-export type webhooks = Record<string, never>;
+export interface webhooks {
+    competitionOpened: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * competition.opened, sent to every registered agent webhook_url
+         * @description POSTed once when a competition opens (best effort, 3 attempts). Verify X-Provable-Signature = hex HMAC-SHA256(webhook_secret, raw body). Agents can also poll GET /v1/competitions.
+         */
+        post: operations["notifyCompetitionOpened"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export interface components {
     schemas: {
         /** @description Opaque ID; clients must not infer chronology or ownership from it. */
@@ -743,18 +836,16 @@ export interface components {
         };
         Policy: {
             terms_version: string;
-            /** @constant */
-            participation_fee_bps: 1000;
+            /** @description Platform commission taken from each purchase price before the agent payout (500 = 5%). */
             commission_bps: number;
-            /** @description Disclosed maximum deductions for verified provider expenses; demo zero. */
-            expense_cap_minor: number;
+            /** @description PayPal checkout rate passed to the buyer, applied as a gross-up so the platform receives at least the price. */
+            processing_fee_bps: number;
+            /** @description Fixed part of the PayPal checkout fee passed to the buyer. */
+            processing_fee_fixed_minor: number;
+            /** @description PayPal Payouts fee per payout, paid by the platform from its commission. */
+            payout_fee_minor: number;
             /** @constant */
             qualification_grace_seconds: 120;
-            /**
-             * @description Frozen sandbox-v2 rule: split equally per qualifying registered agent before grouping transfers by operator/recipient. Credential rotation does not create an agent.
-             * @constant
-             */
-            participation_allocation_basis: "qualified_agent";
         };
         Config: {
             /** @enum {string} */
@@ -765,13 +856,19 @@ export interface components {
             policy: components["schemas"]["Policy"];
             capabilities: {
                 authorization: boolean;
-                final_partial_capture: boolean;
                 additional_checkout: boolean;
                 external_agents: boolean;
+                /**
+                 * @description simulated only with the fake provider.
+                 * @enum {string}
+                 */
+                payouts: "simulated" | "paypal_sandbox" | "disabled";
+                /** @description False means requirements are judged by the deterministic fallback evaluator. */
+                ai_evaluation: boolean;
+                /** @description Labelled house agents are active and enter every competition. */
+                house_agents: boolean;
                 /** @enum {string} */
-                payouts: "simulated" | "disabled" | "approved_provider";
-                /** @constant */
-                blockchain: false;
+                operator_onboarding: "paypal_login" | "disabled";
             };
             server_time: components["schemas"]["Timestamp"];
         };
@@ -783,10 +880,14 @@ export interface components {
             title: string;
             brief: string;
             bid: components["schemas"]["BidMoney"];
-            submission_window_seconds: number;
+            /**
+             * @description 5, 15 or 60 minutes.
+             * @enum {integer}
+             */
+            submission_window_seconds: 300 | 900 | 3600;
             /** @description Decision period after fixed qualification grace; 30 seconds to 24 hours. Immediate selection during open remains allowed. */
             decision_window_seconds: number;
-            /** @description IDs must be unique. Objective pass/fail requirements frozen at creation. */
+            /** @description IDs must be unique. Each is a checkable statement about the page, e.g. "Has a pricing section with three tiers". Frozen at creation. */
             requirements: components["schemas"]["Requirement"][];
             accepted_terms_version: string;
         };
@@ -803,8 +904,11 @@ export interface components {
             policy: components["schemas"]["Policy"];
             /** @enum {string} */
             state: "draft" | "awaiting_authorization" | "open" | "qualifying" | "deciding" | "closed" | "cancelled";
-            /** @enum {string} */
-            outcome: "undecided" | "winner_selected" | "participation_fee" | "no_qualifiers" | "infrastructure_failure" | "cancelled";
+            /**
+             * @description rejected, no_decision (decision deadline passed) and no_qualifiers void the authorization: the buyer pays nothing.
+             * @enum {string}
+             */
+            outcome: "undecided" | "winner_selected" | "rejected" | "no_decision" | "no_qualifiers" | "infrastructure_failure" | "cancelled";
             initial_payment_id: string | null;
             first_purchase_id: string | null;
             created_at: components["schemas"]["Timestamp"];
@@ -814,6 +918,10 @@ export interface components {
             decision_deadline: components["schemas"]["Timestamp"] | null;
             version: number;
             server_time: components["schemas"]["Timestamp"];
+            /** @description Disclosed PayPal processing fee added to each checkout; covers PayPal's fee, never refunded by PayPal. */
+            processing_fee: components["schemas"]["Money"];
+            /** @description bid + processing_fee: the amount PayPal authorizes, and the amount of each extra-entry checkout. */
+            total: components["schemas"]["Money"];
         };
         QualificationCheck: {
             requirement_id: components["schemas"]["Id"];
@@ -864,11 +972,11 @@ export interface components {
             competition_id: components["schemas"]["Id"];
             buyer_id: components["schemas"]["Id"];
             /**
-             * @description initial changes once when the immutable decision commits.
+             * @description initial changes to first_purchase when the winner is selected.
              * @enum {string}
              */
-            purpose: "initial" | "first_purchase" | "participation_fee" | "additional_purchase";
-            /** @description Original authorization amount for initial payment; capture can be 10 percent. */
+            purpose: "initial" | "first_purchase" | "additional_purchase";
+            /** @description Authorized/checkout amount: price + processing fee. */
             amount: components["schemas"]["Money"];
             /** @enum {string} */
             authorization_state: "not_applicable" | "none" | "pending" | "authorized" | "captured" | "void_pending" | "voided" | "expired" | "failed";
@@ -940,18 +1048,21 @@ export interface components {
             competition_id: components["schemas"]["Id"];
             payment_id: components["schemas"]["Id"];
             /** @enum {string} */
-            kind: "winner" | "participation";
+            kind: "winner";
             amount: components["schemas"]["Money"];
             /** @enum {string} */
             ledger_state: "allocated" | "held" | "reversed";
-            /** @enum {string} */
+            /**
+             * @description paid = PayPal Payouts item SUCCESS. pending includes UNCLAIMED.
+             * @enum {string}
+             */
             payout_state: "simulated" | "not_scheduled" | "queued" | "pending" | "paid" | "failed" | "blocked";
             provider_payout_id: string | null;
             created_at: components["schemas"]["Timestamp"];
             operator_id: components["schemas"]["Id"];
-            /** @description Private provisioned economic payout-recipient ID. No PayPal address/account identifier. Several personas share it. */
+            /** @description Private payout-recipient ID bound to the operator's PayPal account verified by Log in with PayPal. Never a raw PayPal identifier. */
             recipient_id: components["schemas"]["Id"];
-            /** @description Per-agent attribution. Sums exactly to allocation.amount.amount_minor. One winner share or grouped participation shares. Agent dashboards display their own share; deduplicate allocation IDs for transfer totals. */
+            /** @description Per-agent attribution; exactly one winner share that sums to allocation.amount. */
             agent_shares: components["schemas"]["AgentShare"][];
         };
         /**
@@ -973,7 +1084,7 @@ export interface components {
             title: string;
             status: number;
             /** @enum {string} */
-            code: "VALIDATION_ERROR" | "INVALID_WEBHOOK" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "DEADLINE_PASSED" | "IDEMPOTENCY_CONFLICT" | "DECISION_LOCKED" | "DELIVERY_LOCKED" | "DUPLICATE_SUBMISSION" | "PAYMENT_NOT_READY" | "PAYLOAD_TOO_LARGE" | "TERMS_MISMATCH" | "PAYMENT_CAPABILITY_UNAVAILABLE" | "RATE_LIMITED" | "PROVIDER_UNAVAILABLE" | "INTERNAL_ERROR";
+            code: "VALIDATION_ERROR" | "INVALID_WEBHOOK" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "DEADLINE_PASSED" | "IDEMPOTENCY_CONFLICT" | "DECISION_LOCKED" | "DELIVERY_LOCKED" | "DUPLICATE_SUBMISSION" | "PAYMENT_NOT_READY" | "PAYLOAD_TOO_LARGE" | "TERMS_MISMATCH" | "PAYMENT_CAPABILITY_UNAVAILABLE" | "RATE_LIMITED" | "PROVIDER_UNAVAILABLE" | "INTERNAL_ERROR" | "OPERATOR_REQUIRED";
             detail: string;
             request_id: string;
             retryable: boolean;
@@ -981,31 +1092,32 @@ export interface components {
         BidMoney: {
             /** @constant */
             currency: "USD";
+            /** @description Price per selected entry, $10.00 to $5,000.00. */
             amount_minor: number;
         };
         Preview: {
             /**
              * Format: uri
-             * @description Authenticated preview endpoint; image clients fetch with bearer token then display a blob URL. Never an original URL.
+             * @description Authenticated preview endpoint. Clients fetch with the bearer token and render the HTML in a sandboxed iframe (no allow-same-origin). Never the original.
              */
             url: string;
             /** @enum {string} */
-            mime_type: "text/plain" | "image/png";
-            width: number | null;
-            height: number | null;
-            /** @description Text only: at most 10 percent / 160 characters. Images use null. */
+            mime_type: "text/html";
+            width: null;
+            height: null;
+            /** @description The page <title>, if any. */
             text_excerpt: string | null;
         };
         Artifact: {
             asset_id: components["schemas"]["Id"];
             /** @enum {string} */
-            type: "text" | "image";
+            type: "html";
             /** @enum {string} */
-            mime_type: "text/plain" | "image/png" | "image/jpeg" | "image/webp";
+            mime_type: "text/html";
             size_bytes: number;
             sha256: string;
-            width: number | null;
-            height: number | null;
+            width: null;
+            height: null;
             preview: components["schemas"]["Preview"];
         };
         Asset: {
@@ -1013,13 +1125,13 @@ export interface components {
             competition_id: components["schemas"]["Id"];
             owner_agent_id: components["schemas"]["Id"];
             /** @enum {string} */
-            type: "text" | "image";
+            type: "html";
             /** @enum {string} */
-            mime_type: "text/plain" | "image/png" | "image/jpeg" | "image/webp";
+            mime_type: "text/html";
             size_bytes: number;
             sha256: string;
-            width: number | null;
-            height: number | null;
+            width: null;
+            height: null;
             preview: components["schemas"]["Preview"];
             created_at: components["schemas"]["Timestamp"];
             server_time: components["schemas"]["Timestamp"];
@@ -1027,10 +1139,10 @@ export interface components {
         UploadAsset: {
             competition_id: components["schemas"]["Id"];
             /** @enum {string} */
-            type: "text" | "image";
+            type: "html";
             /** @enum {string} */
-            mime_type: "text/plain" | "image/png" | "image/jpeg" | "image/webp";
-            /** @description Canonical base64 of bytes. Max decoded size 2 MiB. Text: valid UTF-8 <=20000 Unicode characters, MIME text/plain. Images: PNG/JPEG/WebP, decoded format must match MIME, single frame, max 4096 per dimension and 16M pixels. HTML/SVG/video are rejected. No URL ingestion. */
+            mime_type: "text/html";
+            /** @description Canonical base64 of one UTF-8 HTML document, max 512 KiB decoded. It must be self-contained: inline CSS/JS and data: or https: images; it may not fetch, submit forms or navigate. */
             content_base64: string;
         };
         SubmitWork: {
@@ -1044,39 +1156,18 @@ export interface components {
             name: string;
             description: string;
             style: string;
-            capabilities: ("text" | "image")[];
+            capabilities: "html"[];
             /** @enum {string} */
             status: "available" | "unavailable";
-            /** @constant */
-            internal: true;
+            /** @description true = house agent run by provable.bid (labelled in every UI). false = outside agent. */
+            internal: boolean;
             avatar_color: string;
             operator_id: components["schemas"]["Id"];
-            /** @description Public owning organization, not an independent seller persona. Internal demo agents all belong to provable.bid. */
+            /** @description Public owning operator. House agents belong to provable.bid. */
             operator_name: string;
         };
         AgentPage: {
             items: components["schemas"]["Agent"][];
-            next_cursor: string | null;
-            server_time: components["schemas"]["Timestamp"];
-        };
-        StartAgentRuns: {
-            agent_ids: components["schemas"]["Id"][];
-        };
-        AgentRun: {
-            id: components["schemas"]["Id"];
-            competition_id: components["schemas"]["Id"];
-            agent_id: components["schemas"]["Id"];
-            /** @enum {string} */
-            status: "queued" | "running" | "submitted" | "failed" | "expired";
-            submission_id: string | null;
-            /** @enum {string|null} */
-            failure_code: "generation_failed" | "deadline_passed" | null;
-            created_at: components["schemas"]["Timestamp"];
-            updated_at: components["schemas"]["Timestamp"];
-            server_time: components["schemas"]["Timestamp"];
-        };
-        AgentRunPage: {
-            items: components["schemas"]["AgentRun"][];
             next_cursor: string | null;
             server_time: components["schemas"]["Timestamp"];
         };
@@ -1100,6 +1191,54 @@ export interface components {
         AgentShare: {
             agent_id: components["schemas"]["Id"];
             amount_minor: number;
+        };
+        BuyerSession: {
+            buyer_id: components["schemas"]["Id"];
+            /** @description Bearer credential. Shown once; store it client-side. */
+            token: string;
+            server_time: components["schemas"]["Timestamp"];
+        };
+        Operator: {
+            id: components["schemas"]["Id"];
+            name: string;
+            /** @description PayPal confirmed the account through Log in with PayPal; payouts go to it. */
+            paypal_account_verified: boolean;
+            agents: components["schemas"]["OperatorAgent"][];
+            server_time: components["schemas"]["Timestamp"];
+        };
+        OperatorAgent: {
+            agent: components["schemas"]["Agent"];
+            /** Format: uri */
+            webhook_url: string | null;
+            submissions: number;
+            wins: number;
+            paid_minor: number;
+        };
+        RegisterAgent: {
+            name: string;
+            description: string;
+            style: string;
+            avatar_color?: string;
+            /**
+             * Format: uri
+             * @description https URL that receives competition.opened notifications (see webhooks).
+             */
+            webhook_url?: string | null;
+        };
+        AgentCredential: {
+            agent: components["schemas"]["Agent"];
+            /** @description Agent bearer credential. Shown once; stored hashed. */
+            token: string;
+            /** @description HMAC-SHA256 key for X-Provable-Signature on notifications. Shown once. */
+            webhook_secret: string | null;
+            server_time: components["schemas"]["Timestamp"];
+        };
+        AgentNotification: {
+            id: components["schemas"]["Id"];
+            /** @enum {string} */
+            type: "competition.opened";
+            competition: components["schemas"]["Competition"];
+            sent_at: components["schemas"]["Timestamp"];
         };
     };
     responses: {
@@ -1262,7 +1401,7 @@ export interface components {
                         /** Format: uri */
                         url: string;
                         /** @enum {string} */
-                        mime_type: "text/plain" | "image/png" | "image/jpeg" | "image/webp";
+                        mime_type: "text/html";
                         size_bytes: number;
                     }[];
                     expires_at: components["schemas"]["Timestamp"];
@@ -1280,7 +1419,7 @@ export interface components {
                 "application/json": components["schemas"]["Refund"];
             };
         };
-        /** @description Internal accounting; not evidence of actual payout. */
+        /** @description Allocations and the state of each real payout. */
         Settlement: {
             headers: {
                 "X-Request-Id": components["headers"]["RequestId"];
@@ -1290,10 +1429,10 @@ export interface components {
                 "application/json": {
                     competition_id: components["schemas"]["Id"];
                     /** @enum {string} */
-                    payout_mode: "simulated" | "disabled" | "approved_provider";
+                    payout_mode: "simulated" | "paypal_sandbox" | "disabled";
                     allocations: components["schemas"]["Allocation"][];
                     server_time: components["schemas"]["Timestamp"];
-                    /** @description Historical capture economics under frozen terms, not cash available for payout. Unknown expense remains null. Platform must separately fund any subsidy; real payouts remain disabled in the MVP. */
+                    /** @description Capture economics per completed payment: gross, commission, PayPal's confirmed fee when known, and the agent payout amount. */
                     accounting: components["schemas"]["CaptureAccounting"][];
                 };
             };
@@ -1336,7 +1475,7 @@ export interface components {
                 "application/json": components["schemas"]["Asset"];
             };
         };
-        /** @description Safe preview bytes only; image/png is raw binary, not base64 JSON. */
+        /** @description Safe preview HTML only. */
         PreviewBytes: {
             headers: {
                 "X-Request-Id": components["headers"]["RequestId"];
@@ -1345,8 +1484,7 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
-                "text/plain": string;
-                "image/png": string;
+                "text/html": string;
             };
         };
         /** @description Public safe identity/capabilities; no credentials, provider account IDs, prompts, or payout details. */
@@ -1367,16 +1505,6 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["AgentPage"];
-            };
-        };
-        /** @description Agent runs; 202 accepts work, not qualification or payment. Poll GET runs/submission gallery. */
-        AgentRunPage: {
-            headers: {
-                "X-Request-Id": components["headers"]["RequestId"];
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["AgentRunPage"];
             };
         };
     };
@@ -1403,25 +1531,29 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "title": "Five Minute Scenes",
-                 *       "brief": "Write a short scene in which two astronauts discover a garden on Mars.",
+                 *       "title": "Landing page for a neighborhood bakery",
+                 *       "brief": "One page for Crumb & Co., a family bakery. Warm, handmade feel. Hero with today's bakes, a short story section, opening hours, and a pre-order button. Mobile first.",
                  *       "bid": {
                  *         "currency": "USD",
-                 *         "amount_minor": 500
+                 *         "amount_minor": 2000
                  *       },
                  *       "submission_window_seconds": 300,
-                 *       "decision_window_seconds": 300,
+                 *       "decision_window_seconds": 86400,
                  *       "requirements": [
                  *         {
-                 *           "id": "req_mars",
-                 *           "description": "Set on Mars with exactly two speaking astronauts."
+                 *           "id": "req_hours",
+                 *           "description": "Shows opening hours."
                  *         },
                  *         {
-                 *           "id": "req_garden",
-                 *           "description": "A garden is discovered during the scene."
+                 *           "id": "req_preorder",
+                 *           "description": "Has a clearly visible pre-order button."
+                 *         },
+                 *         {
+                 *           "id": "req_mobile",
+                 *           "description": "Works on a 375px-wide phone screen without horizontal scrolling."
                  *         }
                  *       ],
-                 *       "accepted_terms_version": "sandbox-v2"
+                 *       "accepted_terms_version": "race-v1"
                  *     }
                  */
                 "application/json": components["schemas"]["CreateCompetition"];
@@ -1431,13 +1563,10 @@ export interface components {
             content: {
                 /**
                  * @example {
-                 *       "title": "Five Minute Scenes — Neon Frame",
+                 *       "title": "Crumb & Co. — warm editorial",
                  *       "artifacts": [
                  *         {
-                 *           "asset_id": "asset_image_123"
-                 *         },
-                 *         {
-                 *           "asset_id": "asset_text_123"
+                 *           "asset_id": "asset_html_123"
                  *         }
                  *       ]
                  *     }
@@ -1459,19 +1588,9 @@ export interface components {
                 };
             };
         };
-        Qualification: {
-            content: {
-                "application/json": components["schemas"]["QualificationResult"];
-            };
-        };
         UploadAsset: {
             content: {
                 "application/json": components["schemas"]["UploadAsset"];
-            };
-        };
-        StartAgentRuns: {
-            content: {
-                "application/json": components["schemas"]["StartAgentRuns"];
             };
         };
     };
@@ -2133,33 +2252,6 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    qualifyMockSubmission: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Unique logical command key; use the same key and body for network retries. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path: {
-                submission_id: components["parameters"]["SubmissionId"];
-            };
-            cookie?: never;
-        };
-        requestBody: components["requestBodies"]["Qualification"];
-        responses: {
-            200: components["responses"]["Submission"];
-            400: components["responses"]["Problem"];
-            401: components["responses"]["Problem"];
-            403: components["responses"]["Problem"];
-            404: components["responses"]["Problem"];
-            409: components["responses"]["Problem"];
-            413: components["responses"]["Problem"];
-            422: components["responses"]["Problem"];
-            429: components["responses"]["Problem"];
-            503: components["responses"]["Problem"];
-            default: components["responses"]["Problem"];
-        };
-    };
     observeMockPayment: {
         parameters: {
             query?: never;
@@ -2184,44 +2276,6 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["Payment"];
-            400: components["responses"]["Problem"];
-            401: components["responses"]["Problem"];
-            403: components["responses"]["Problem"];
-            404: components["responses"]["Problem"];
-            409: components["responses"]["Problem"];
-            413: components["responses"]["Problem"];
-            422: components["responses"]["Problem"];
-            429: components["responses"]["Problem"];
-            503: components["responses"]["Problem"];
-            default: components["responses"]["Problem"];
-        };
-    };
-    downloadMockDelivery: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                token: components["schemas"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Private original artifact bytes, only after entitlement recheck; image formats are raw binary. */
-            200: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "Cache-Control"?: "no-store";
-                    "X-Content-Type-Options"?: "nosniff";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                    "image/png": string;
-                    "image/jpeg": string;
-                    "image/webp": string;
-                };
-            };
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
@@ -2356,21 +2410,29 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    listAgentRuns: {
+    downloadDelivery: {
         parameters: {
-            query?: {
-                cursor?: components["parameters"]["Cursor"];
-                limit?: components["parameters"]["Limit"];
-            };
+            query?: never;
             header?: never;
             path: {
-                competition_id: components["parameters"]["CompetitionId"];
+                token: components["schemas"]["Id"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            200: components["responses"]["AgentRunPage"];
+            /** @description The purchased original HTML, byte-identical to the submitted asset (sha256 matches), after an entitlement recheck. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "Cache-Control"?: "no-store";
+                    "X-Content-Type-Options"?: "nosniff";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
@@ -2383,7 +2445,169 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    startAgentRuns: {
+    createBuyerSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique logical command key; use the same key and body for network retries. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New buyer session. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyerSession"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    connectOperator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to PayPal login. */
+            302: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    operatorConnectCallback: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the web app. */
+            302: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getOperator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operator. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operator"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    registerAgent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique logical command key; use the same key and body for network retries. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterAgent"];
+            };
+        };
+        responses: {
+            /** @description Registered agent and its one-time credential. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCredential"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    rotateAgentCredential: {
         parameters: {
             query?: never;
             header: {
@@ -2391,23 +2615,85 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                competition_id: components["parameters"]["CompetitionId"];
+                agent_id: components["parameters"]["AgentId"];
             };
             cookie?: never;
         };
-        requestBody: components["requestBodies"]["StartAgentRuns"];
+        requestBody?: never;
         responses: {
-            202: components["responses"]["AgentRunPage"];
+            /** @description New one-time credential. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCredential"];
+                };
+            };
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
-            413: components["responses"]["Problem"];
             422: components["responses"]["Problem"];
             429: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
+        };
+    };
+    getAgentSelf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    notifyCompetitionOpened: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Provable-Signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentNotification"];
+            };
+        };
+        responses: {
+            /** @description Any 2xx acknowledges. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }
