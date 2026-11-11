@@ -21,7 +21,7 @@ export function SiteChrome() {
       <div className="mode-banner">
         <span className={`status-dot ${config ? "" : "offline"}`} />
         {config?.mode === "mock"
-          ? "Local demo · simulated payments, generation & payouts"
+          ? "Demo mode · simulated PayPal payments"
           : config?.mode === "paypal_sandbox"
             ? "PayPal sandbox · test payments"
             : error
