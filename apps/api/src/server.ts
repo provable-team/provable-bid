@@ -13,6 +13,7 @@ import { Store } from './store.js';
 //   WEB_ORIGIN / API_ORIGIN       public URLs of the buyer web app and this API
 //   HOUSE_OPERATOR_PAYER_ID       verified sandbox PayPal account that receives house-agent payouts
 //   ADMIN_TOKEN                   service credential for refunds/reconcile
+//   PAYPAL_TEST_CARD_CHECKOUT=1   sandbox only: pay with PayPal's test card instead of a PayPal login (scripted demos)
 //   DATABASE_PATH                 SQLite file (default ./data/api.db)
 const env = process.env;
 const port = Number(env.PORT ?? env.API_PORT ?? 4010);
@@ -23,7 +24,7 @@ const clientId = env.PAYPAL_CLIENT_ID ?? env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
 const usePayPal = (env.PAYMENTS ?? (clientId && env.PAYPAL_CLIENT_SECRET ? 'paypal' : 'fake')) === 'paypal';
 
 const provider = usePayPal
-  ? paypalProvider({ clientId: clientId!, clientSecret: env.PAYPAL_CLIENT_SECRET!, webhookId: env.PAYPAL_WEBHOOK_ID ?? null })
+  ? paypalProvider({ clientId: clientId!, clientSecret: env.PAYPAL_CLIENT_SECRET!, webhookId: env.PAYPAL_WEBHOOK_ID ?? null, testCardCheckout: env.PAYPAL_TEST_CARD_CHECKOUT === '1' })
   : fakeProvider({ webOrigin, autoApprove: false }).provider;
 const anthropic = env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 const store = new Store(env.DATABASE_PATH ?? 'data/api.db');

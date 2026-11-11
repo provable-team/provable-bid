@@ -2,7 +2,12 @@ import { fromMinor, toMinor } from '../money.js';
 import { ProviderError, type AuthorizationView, type CaptureView, type Intent, type OrderView, type PaymentProvider, type PayoutView } from './types.js';
 
 /** Real PayPal REST (sandbox by default). Raw fetch: Orders v2, Payments v2, Payouts v1, webhooks, identity. */
-export function paypalProvider(env: { clientId: string; clientSecret: string; webhookId: string | null; live?: boolean }): PaymentProvider {
+/**
+ * testCardCheckout (sandbox only): pay with PayPal's test Visa instead of a PayPal login, so scripts can run the
+ * whole money flow without a browser. The order is authorized/captured at creation; everything after uses the normal paths.
+ */
+export function paypalProvider(env: { clientId: string; clientSecret: string; webhookId: string | null; live?: boolean; testCardCheckout?: boolean }): PaymentProvider {
+  if (env.live && env.testCardCheckout) throw new Error('testCardCheckout is sandbox-only');
   const base = env.live ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
   const connectBase = env.live ? 'https://www.paypal.com/connect' : 'https://www.sandbox.paypal.com/connect';
   const basic = Buffer.from(`${env.clientId}:${env.clientSecret}`).toString('base64');
@@ -64,11 +69,15 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
           amount: { currency_code: 'USD', value, breakdown: { item_total: { currency_code: 'USD', value } } },
           items: [{ name: o.description.slice(0, 127), sku: o.referenceId.slice(0, 127), quantity: '1', category: 'DIGITAL_GOODS', unit_amount: { currency_code: 'USD', value } }],
         }],
-        payment_source: { paypal: { experience_context: {
-          brand_name: 'provable.bid', shipping_preference: 'NO_SHIPPING', user_action: o.intent === 'AUTHORIZE' ? 'CONTINUE' : 'PAY_NOW',
-          return_url: o.returnUrl, cancel_url: o.cancelUrl,
-        } } },
+        payment_source: env.testCardCheckout
+          ? { card: { number: '4032039317984658', expiry: '2030-12', security_code: '123', name: 'Sandbox Tester',
+              billing_address: { address_line_1: '1 Main St', admin_area_2: 'San Jose', admin_area_1: 'CA', postal_code: '95131', country_code: 'US' } } }
+          : { paypal: { experience_context: {
+              brand_name: 'provable.bid', shipping_preference: 'NO_SHIPPING', user_action: o.intent === 'AUTHORIZE' ? 'CONTINUE' : 'PAY_NOW',
+              return_url: o.returnUrl, cancel_url: o.cancelUrl,
+            } } },
       }, o.requestId);
+      if (env.testCardCheckout) return { orderId: order.id, approvalUrl: o.returnUrl };
       const approval = order.links?.find((l: any) => l.rel === 'payer-action' || l.rel === 'approve')?.href;
       if (!approval) throw new ProviderError('PayPal order has no approval link', 'definitive', 'NO_APPROVAL_LINK');
       return { orderId: order.id, approvalUrl: approval };
@@ -88,6 +97,8 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
       { amount: { currency_code: 'USD', value: fromMinor(amountMinor) }, final_capture: true }, requestId)),
 
     async captureOrder(orderId, requestId) {
+      const existing = orderView(await call('GET', `/v2/checkout/orders/${encodeURIComponent(orderId)}`));
+      if (existing.capture) return existing.capture; // already captured (e.g. test-card checkout, or a lost response)
       const o = orderView(await call('POST', `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {}, requestId));
       if (!o.capture) throw new ProviderError('Capture returned no capture', 'unknown');
       return o.capture;
