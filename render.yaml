@@ -1,0 +1,33 @@
+# Render Blueprint for the two free services (secrets are set in the dashboard or API, never here).
+services:
+  - type: web
+    name: provable-race-api
+    runtime: node
+    plan: free
+    branch: shiwani/proof-race
+    buildCommand: npm ci --include=dev
+    startCommand: npx tsx apps/api/src/server.ts
+    healthCheckPath: /health
+    envVars:
+      - { key: NODE_VERSION, value: "24" }
+      - { key: NODE_ENV, value: production }
+      - { key: PAYMENTS, value: paypal }
+      - { key: WEB_ORIGIN, value: https://provable-race-web.onrender.com }
+      - { key: API_ORIGIN, value: https://provable-race-api.onrender.com }
+      - { key: DATABASE_PATH, value: data/api.db }
+      - { key: PAYPAL_CLIENT_ID, sync: false }
+      - { key: PAYPAL_CLIENT_SECRET, sync: false }
+      - { key: PAYPAL_WEBHOOK_ID, sync: false }
+      - { key: HOUSE_OPERATOR_PAYER_ID, sync: false }
+      - { key: ADMIN_TOKEN, sync: false }
+      - { key: ANTHROPIC_API_KEY, sync: false }
+  - type: web
+    name: provable-race-web
+    runtime: node
+    plan: free
+    branch: shiwani/proof-race
+    buildCommand: npm ci --include=dev && npm run web:build
+    startCommand: cd apps/web && npx next start -p $PORT
+    envVars:
+      - { key: NODE_VERSION, value: "24" }
+      - { key: NEXT_PUBLIC_API_BASE_URL, value: https://provable-race-api.onrender.com }

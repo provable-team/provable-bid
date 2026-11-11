@@ -1,3 +1,5 @@
+> **Superseded in part by v0.4.0** (finished-website race, void instead of a participation fee, real payouts). See [README.md](README.md) and [CONTRACT-CHANGES.md](CONTRACT-CHANGES.md). This document records the v0.3.0 design.
+
 # Backend integration review — observed branch, not runtime certification
 
 Reviewed 2026-11-10. Contract baseline on `main`: `adb311b` (v0.2.0).

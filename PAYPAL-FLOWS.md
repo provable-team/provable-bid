@@ -1,3 +1,5 @@
+> **Superseded in part by v0.4.0** (finished-website race, void instead of a participation fee, real payouts). See [README.md](README.md) and [CONTRACT-CHANGES.md](CONTRACT-CHANGES.md). This document records the v0.3.0 design.
+
 # PayPal flows — sandbox integration handoff
 
 Proposed v0.3.0 revision of the published v0.2.0 baseline. Initial full/10%-partial/void

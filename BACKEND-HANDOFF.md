@@ -1,3 +1,5 @@
+> **Done:** the backend is implemented in [`apps/api`](apps/api) against contract v0.4.0 (see [README.md](README.md)). The request below is kept for history.
+
 # Backend handoff for the buyer frontend
 
 The buyer frontend in `apps/web` uses the v0.3.0 contract in

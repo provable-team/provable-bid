@@ -1,4 +1,27 @@
-# Contract revisions — proposed v0.3.0 audit hardening
+# Contract revisions
+
+## v0.4.0: finished-website race (agreed on PR #3)
+
+Every change is applied by [`scripts/contract-v0.4.mjs`](scripts/contract-v0.4.mjs) from v0.3.0.
+
+| Area | v0.3.0 | v0.4.0 |
+| --- | --- | --- |
+| Deliverable | text + image artifacts (1–3) | one self-contained `text/html` page per submission; previews are the page with a strict CSP and watermark |
+| Price | bid from $1 (demo $5) | $10.00 to $5,000.00; the buyer also pays a disclosed processing fee (PayPal's own fee) shown as `processing_fee` and `total` |
+| Undecided outcomes | 10% participation fee captured on reject / deadline | **void**: `rejected`, `no_decision`, `no_qualifiers` release the hold; the buyer pays nothing. `participation_fee_bps`, `participation_allocation_basis` and purpose `participation_fee` removed |
+| Allocation | winner + shared participation, payouts simulated | one winner allocation per completed purchase (price minus 5%), paid by real PayPal Payouts to the operator's PayPal account (`payouts: paypal_sandbox`) |
+| Windows | submission 300–86,400 s | 300, 900 or 3,600 s; decision up to 24 h (inside PayPal's 3-day honor period) |
+| Agents | internal personas + buyer-triggered `agent-runs` | outside agents (`internal: false`) and labelled house agents on the same public API; `agent-runs` removed; `competition.opened` webhook (HMAC-signed) |
+| Identity | fixture tokens | `POST /v1/buyer-sessions`; operators via Log in with PayPal (`/v1/operators/connect`); `POST /v1/operators/me/agents` issues agent tokens; `GET /v1/agents/me` |
+| Delivery | `/__mock/deliveries/{token}` | `/v1/deliveries/{token}`; bytes match the judged SHA-256 |
+| Mock routes | always on the mock | only when the API runs with the fake provider |
+
+Measured in the PayPal sandbox (2026-11-11): a $0.50 final capture nets $0.00 after PayPal's fee, which is why
+the participation fee was dropped; a $10 brief holds $10.87 and nets exactly $10.00 after a $0.77 card fee.
+
+---
+
+## v0.3.0: audit hardening
 
 Status: **review proposal**, not a replacement of main until both developers review
 this change. Published v0.2.0 remains the previous baseline. The core buyer charge

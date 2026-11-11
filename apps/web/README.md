@@ -7,43 +7,16 @@ implementation is changed by this frontend.
 
 ## Run locally
 
-From the repository root:
+From the repository root, start the API with the fake PayPal provider, then the web app:
 
 ```sh
 npm ci
-npm run mock
+PAYMENTS=fake WEB_ORIGIN=http://127.0.0.1:3000 npm run api:fake
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:4010 npm run web:dev
 ```
 
-In another terminal:
-
-```sh
-npm run web:dev
-```
-
-Open http://127.0.0.1:3000. The loopback fixture defaults to the buyer-demo token.
-Use **Connection settings** to switch API URL and buyer credential. Credentials stay
-in sessionStorage; command identities and unfinished brief drafts survive reloads in
-localStorage, scoped to a SHA-256 fingerprint of the API/account. Account changes
-remount the buyer interface and revoke previous preview object URLs.
-
-To configure the default backend, copy `.env.example` to `.env.local` in this directory
-and set `NEXT_PUBLIC_API_BASE_URL`. Only the URL is public configuration. Never add
-an administrator token, provider secret, or `NEXT_PUBLIC_` bearer credential.
-Non-loopback APIs have no default credential. The backend must allow the frontend's
-origin through CORS.
-
-An already running mock must be restarted after a contract update. For a port conflict:
-
-```sh
-MOCK_API_PORT=4011 npm run mock
-```
-
-Then select http://127.0.0.1:4011 in Connection settings.
-
-The frontend verifies the v0.3 configuration and its `qualified_agent` allocation
-policy before loading buyer resources or enabling payment/consent controls. An older
-mock produces an explicit compatibility error. After restarting it, use **Reconnect**
-in Connection settings (or **Try again** on the competition/discovery page).
+Open http://127.0.0.1:3000. A buyer session is created automatically. In demo mode the PayPal approval step
+is a labelled simulator page; against the sandbox API it redirects to PayPal and verifies on return.
 
 ## Demo flows
 
