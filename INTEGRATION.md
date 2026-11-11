@@ -1,16 +1,16 @@
 # Concurrent development handoff
 
 The API contract is the shared interface between Developer A (Codex: frontend/UX)
-and Developer B (Claude: backend/PayPal/agents). This repository intentionally contains
-only architecture, generated client/types, provider interfaces, a local mock, and
-contract checks. The internal personas share one platform operator and economic recipient;
-public identities are not independent payout accounts. No Next.js application or real backend adapter has been built.
+and Developer B (Claude: backend/PayPal/agents). This repository contains the buyer
+frontend, architecture, generated client/types, provider interfaces, a local mock,
+and contract checks. The internal personas share one platform operator and economic
+recipient; public identities are not independent payout accounts. A real backend
+adapter has not yet been built against this contract.
 
-Review branch: **proposed v0.3.0**, following the published v0.2.0 baseline. Read
-[CONTRACT-CHANGES.md](CONTRACT-CHANGES.md) before adopting it. Coordinate identity,
-qualification, reversal, and settlement fields with both developers; main is unchanged
-until review. The collaborator prototype has different product/payment behavior;
-see [BACKEND-INTEGRATION-AUDIT.md](BACKEND-INTEGRATION-AUDIT.md).
+The frontend targets **v0.3.0**, merged into `main` in PRs #1 and #2. Read
+[BACKEND-HANDOFF.md](BACKEND-HANDOFF.md) and [CONTRACT-CHANGES.md](CONTRACT-CHANGES.md).
+The collaborator prototype has different product/payment behavior; see
+[BACKEND-INTEGRATION-AUDIT.md](BACKEND-INTEGRATION-AUDIT.md).
 
 ## Start in either developer's clone
 
@@ -51,7 +51,7 @@ an explicit admin observation. Never use `admin-demo` in the buyer frontend.
 | `packages/api-client/src/schema.d.ts` | Generated, neither edits manually | Regenerate and include in every contract change. |
 | `packages/api-client/src/index.ts` | A | Typed openapi-fetch transport, generated exports; no payment logic. |
 | `apps/mock-api/` | A during UI build | Executable fixture matching contract, not source for production security or persistence. |
-| Future `apps/web/` | A | Brief creation, consent, approval redirect, countdowns, previews/checks, selection, purchase and payment states. |
+| `apps/web/` | A | Brief creation, consent, approval redirect, countdowns, previews/checks, selection, purchase and payment states. |
 | Future `apps/api/` and worker | B | Database transactions, ownership, durable jobs, evaluator, sandbox adapter, webhook verification and reconciliation. Use chosen runtime. |
 | `packages/agent-interface/` | B | Internal adapter/evaluator boundary; external agents use the REST contract. |
 | `ARCHITECTURE.md`, `PAYPAL-FLOWS.md` | Both | Frozen semantics and provider acceptance requirements. |
