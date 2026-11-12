@@ -646,10 +646,12 @@ test('KERNEL-rendered entries: screenshot-only previews, and phone requirements 
 test('keyboard focus measured in the browser is ground truth for focus requirements (judge text and keyword judge)', async () => {
   const requirements = [{ id: 'req_keys', description: 'Navigation and FAQ controls are keyboard accessible with visible focus styles.' }];
   const base = { phoneOverflowPx: 0, consoleErrors: [], blockedRequests: [] };
-  const focus = (visible: boolean[]) => ({ tabStops: visible.length, visibleIndicators: visible.filter(Boolean).length, samples: visible.map((v, i) => ({ tag: i ? 'button' : 'a', visible: v })) });
+  const focus = (visible: boolean[]) => ({ tabStops: visible.length, visibleIndicators: visible.filter(Boolean).length, complete: true,
+    samples: visible.map((v, i) => ({ tag: i ? 'summary' : 'a', visible: v, nav: i === 0, faq: i > 0 })) });
   const text = judgeText({ title: 't', brief: 'b', requirements, browser: { ...base, focus: focus([true, false]) } }, '<p>x</p>');
-  assert.match(text, /Tab \(up to 20 times\) reached 2 element\(s\); 1 of them showed a visible focus indicator/);
-  assert.match(text, /a visible, button NOT visible/);
+  assert.match(text, /went through every focusable element on the page: 2 in total; 1 of 2 showed a visible focus indicator/);
+  assert.match(text, /Navigation controls reached: 1 \(1 visible\)\. FAQ\/disclosure controls reached: 1 \(0 visible\)/);
+  assert.match(text, /a \(nav\) visible, summary \(faq\) NOT visible/);
   assert.match(judgeText({ title: 't', brief: 'b', requirements, browser: { ...base, focus: focus([]) } }, ''), /reached no focusable element/);
   const judge = heuristicEvaluator();
   const run = (f: ReturnType<typeof focus>) => judge.qualify({ title: 't', brief: 'b', requirements, signal: AbortSignal.timeout(1000),

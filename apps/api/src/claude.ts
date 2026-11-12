@@ -30,7 +30,10 @@ export function judgeText({ title, brief, requirements, browser }: Pick<QualifyI
   const f = browser?.focus;
   const focus = !f ? ''
     : f.tabStops === 0 ? '\nKeyboard focus: pressing Tab reached no focusable element.'
-    : `\nKeyboard focus: pressing Tab (up to 20 times) reached ${f.tabStops} element(s); ${f.visibleIndicators} of them showed a visible focus indicator (computed outline, box-shadow, border, background, underline or colour differs from the unfocused element). Stops: ${f.samples.map(x => `${x.tag} ${x.visible ? 'visible' : 'NOT visible'}`).join(', ')}.`;
+    : `\nKeyboard focus: pressing Tab ${f.complete ? `went through every focusable element on the page: ${f.tabStops} in total` : `reached the first ${f.tabStops} focusable elements (the page has more; measurement stopped at 20 presses)`}; ${f.visibleIndicators} of ${f.tabStops} showed a visible focus indicator (computed outline, box-shadow, border, background, underline or colour differs from the unfocused element). ` +
+      `Navigation controls reached: ${f.samples.filter(x => x.nav).length} (${f.samples.filter(x => x.nav && x.visible).length} visible). FAQ/disclosure controls reached: ${f.samples.filter(x => x.faq).length} (${f.samples.filter(x => x.faq && x.visible).length} visible). ` +
+      `Stops in order: ${f.samples.map(x => `${x.tag}${x.nav ? ' (nav)' : x.faq ? ' (faq)' : ''} ${x.visible ? 'visible' : 'NOT visible'}`).join(', ')}. ` +
+      'If the controls a requirement names were all reached and all show a visible indicator, keyboard access with visible focus is established; do not fail it for lack of evidence.';
   const measured = browser
     ? `<browser_measurements>\nHorizontal overflow at 390px wide: ${browser.phoneOverflowPx}px (0 means it fits a phone without sideways scrolling).\nConsole errors: ${browser.consoleErrors.length ? browser.consoleErrors.join(' | ') : 'none'}\nBlocked outbound requests: ${browser.blockedRequests.length ? browser.blockedRequests.join(' | ') : 'none'}${focus}\n</browser_measurements>\nTreat these measurements as ground truth for layout, phone, keyboard and focus requirements: screenshots cannot show focus, the measurement can.`
     : '';

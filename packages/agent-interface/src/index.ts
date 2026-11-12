@@ -47,7 +47,7 @@ export interface EvaluatorAdapter {
     browser?: {
       phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[];
       /** Keyboard focus measured by pressing Tab (up to 20 stops): tag names and booleans only. */
-      focus?: { tabStops: number; visibleIndicators: number; samples: { tag: string; visible: boolean }[] };
+      focus?: { tabStops: number; visibleIndicators: number; complete: boolean; samples: { tag: string; visible: boolean; nav: boolean; faq: boolean }[] };
     };
     artifacts: {
       metadata: components['schemas']['Artifact'];

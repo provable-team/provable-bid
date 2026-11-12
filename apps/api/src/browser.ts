@@ -5,7 +5,10 @@ import { chromium, type Page } from 'playwright-core';
 export interface FocusMeasurement {
   tabStops: number;           // distinct elements reached with Tab (0 when nothing is focusable)
   visibleIndicators: number;  // of those, how many look different when focused (outline, shadow, border, background, underline, colour)
-  samples: { tag: string; visible: boolean }[]; // tag names and booleans only
+  /** true when Tab went through every focusable element (focus left the page or came back to the first); false at the 20-press cap. */
+  complete: boolean;
+  /** Tag names and booleans only: in the site navigation (nav/header), an FAQ/disclosure control (summary, details, aria-expanded). */
+  samples: { tag: string; visible: boolean; nav: boolean; faq: boolean }[];
 }
 
 /** What a real browser saw when it loaded a submitted page. */
@@ -27,7 +30,7 @@ const FOCUS_PROBE = `(() => {
   const el = document.activeElement;
   if (!el || el === document.body || el === document.documentElement) return null;
   window.__pbSeen = window.__pbSeen || new Set();
-  if (window.__pbSeen.has(el)) return { repeat: true, tag: '', visible: false };
+  if (window.__pbSeen.has(el)) return { repeat: true, tag: '', visible: false, nav: false, faq: false };
   window.__pbSeen.add(el);
   const look = function () {
     const c = getComputedStyle(el);
@@ -38,7 +41,9 @@ const FOCUS_PROBE = `(() => {
   el.blur();
   const plain = look();
   el.focus({ preventScroll: true }); // keyboard modality is kept, so :focus-visible still applies
-  return { repeat: false, tag: el.tagName.toLowerCase(), visible: focused !== plain };
+  const nav = !!el.closest('nav, header');
+  const faq = el.tagName === 'SUMMARY' || !!el.closest('details') || el.hasAttribute('aria-expanded');
+  return { repeat: false, tag: el.tagName.toLowerCase(), visible: focused !== plain, nav: nav, faq: faq };
 })()`;
 
 /**
@@ -50,13 +55,14 @@ export async function measureFocus(page: Page): Promise<FocusMeasurement> {
   await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation:none!important}' });
   await page.evaluate('document.activeElement && document.activeElement.blur && document.activeElement.blur(); window.scrollTo(0, 0);');
   const samples: FocusMeasurement['samples'] = [];
+  let complete = false;
   for (let i = 0; i < MAX_TABS; i++) {
     await page.keyboard.press('Tab');
-    const r = await page.evaluate(FOCUS_PROBE) as { repeat: boolean; tag: string; visible: boolean } | null;
-    if (!r || r.repeat) break;
-    samples.push({ tag: r.tag.slice(0, 20), visible: r.visible });
+    const r = await page.evaluate(FOCUS_PROBE) as { repeat: boolean; tag: string; visible: boolean; nav: boolean; faq: boolean } | null;
+    if (!r || r.repeat) { complete = true; break; }
+    samples.push({ tag: r.tag.slice(0, 20), visible: !!r.visible, nav: !!r.nav, faq: !!r.faq });
   }
-  return { tabStops: samples.length, visibleIndicators: samples.filter(x => x.visible).length, samples };
+  return { tabStops: samples.length, visibleIndicators: samples.filter(x => x.visible).length, complete, samples };
 }
 
 export interface PageRenderer {
@@ -109,7 +115,7 @@ export function kernelRenderer(apiKey: string): PageRenderer {
         // Keyboard focus, measured at desktop size on a fresh load.
         await page.setViewportSize({ width: 1280, height: 800 });
         await page.setContent(html, { waitUntil: 'load', timeout: 20_000 });
-        const focus = await measureFocus(page).catch(() => ({ tabStops: 0, visibleIndicators: 0, samples: [] }));
+        const focus = await measureFocus(page).catch(() => undefined);
         return {
           desktop: shots.desktop.jpeg, phone: shots.phone.jpeg, desktopHeight: shots.desktop.height, phoneHeight: shots.phone.height,
           phoneOverflowPx: Math.max(0, shots.phone.overflow), consoleErrors, blockedRequests, focus,
