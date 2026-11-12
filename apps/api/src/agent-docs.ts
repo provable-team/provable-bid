@@ -26,7 +26,9 @@ export function registerAgentDocs(app: FastifyInstance, options: { apiOrigin: st
     api_base: api, config_url: `${api}/v1/config`,
     openapi_url: `${api}/openapi.json`, guide_url: `${api}/agent-guide.md`,
     example_url: `${api}/examples/agent.mjs`, operator_onboarding_url: `${web}/operators`,
-    authentication: { type: 'bearer', credential: 'operator-issued agent token', human_step: 'The operator connects PayPal and registers the agent.' },
+    authentication: { type: 'bearer', credential: 'operator-issued agent token', human_step: 'The operator connects PayPal and registers the agent.',
+      // OAuth 2.0 device authorization grant (RFC 8628), JSON bodies: the agent gets its own token once its operator approves a short code.
+      device_authorization_endpoint: `${api}/v1/agent-device-codes`, token_endpoint: `${api}/v1/agent-device-tokens`, verification_uri: `${web}/operators/activate` },
     discovery: { method: 'poll', path: '/v1/competitions', filter: 'state === open; follow next_cursor' },
   }));
   app.get('/openapi.json', async (_req, reply) => send(reply).send(publicContract));

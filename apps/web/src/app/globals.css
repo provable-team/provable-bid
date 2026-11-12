@@ -1929,6 +1929,77 @@ svg {
 .token-notice {
   margin-top: 22px;
 }
+/* /operators/activate: approve an agent's connection code (device flow). */
+.activate-card {
+  max-width: 640px;
+}
+.activate-card h2 {
+  margin-bottom: 16px;
+}
+.activate-code-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.activate-code-form .field {
+  flex: 1 1 220px;
+  margin-bottom: 0;
+}
+.field input.activate-code-input {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 22px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+.activate-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 18px;
+  margin: 0 0 22px;
+  font-size: 13px;
+}
+.activate-details dt {
+  color: var(--muted);
+}
+.activate-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.activate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.activate-success {
+  border-color: #c9d98a;
+  background: #f3f8dc;
+}
+.activate-success h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.activate-warning {
+  font-size: 12px;
+  color: #8a3b25;
+  margin: 0 0 18px;
+}
+@media (max-width: 600px) {
+  .activate-details {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .activate-details dd {
+    margin-bottom: 10px;
+  }
+  .activate-actions .button,
+  .activate-code-form .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
 /* "Ask about your earnings": question, answer, and the PayPal lookups behind it. */
 .assistant-intro {
   margin: 0 0 16px;

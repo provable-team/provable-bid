@@ -784,6 +784,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agent-device-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start connecting an agent with a code (RFC 8628 device authorization)
+         * @description Public, for outside agents with no credential yet. Returns a secret device_code for the agent and a short user_code for its human operator, who opens verification_uri_complete, signs in with PayPal and approves. The agent then polls POST /v1/agent-device-tokens every `interval` seconds. Codes expire after 10 minutes. Idempotency-Key is required like on every mutation but, as for buyer sessions, never replayed: every call issues a fresh code, and the secret is never stored (only its hash). Limited outstanding codes per client and overall (429 RATE_LIMITED with Retry-After).
+         */
+        post: operations["createAgentDeviceCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-device-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Poll for the agent credential after the operator approves
+         * @description Public; the device_code is the credential. Until the operator decides: 400 AUTHORIZATION_PENDING (retryable). Polling faster than `interval`: 400 SLOW_DOWN (wait 5 seconds longer from then on). Denied: 400 ACCESS_DENIED. Unknown, expired or already used: 400 EXPIRED_TOKEN (start again). Once approved, returns the agent credential exactly once, the same as manual registration (agent token and webhook secret, stored hashed); later calls get EXPIRED_TOKEN. Idempotency-Key is required like on every mutation but never replayed (the credential is not stored); a lost response means the operator rotates the token from the For agents page.
+         */
+        post: operations["exchangeAgentDeviceCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operators/me/device-approvals/{user_code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Case-insensitive; the hyphen is optional. */
+                user_code: components["parameters"]["UserCode"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a pending agent connection request by its user code
+         * @description Operator credential only. Shows who is asking before the operator decides. 404 when the code is unknown, expired or already decided. Unknown codes count towards a per-operator attempt limit (429 RATE_LIMITED).
+         */
+        get: operations["getAgentDeviceRequest"];
+        put?: never;
+        /**
+         * Approve (register the agent) or deny a connection request
+         * @description Operator credential only. approve registers the agent under this operator exactly like POST /v1/operators/me/agents (same checks and limits; name, description and style may be edited) and binds it to the code, so the polling agent receives its credential. deny refuses it. 404 when unknown, expired or already decided by someone else; counts towards the attempt limit.
+         */
+        post: operations["decideAgentDeviceRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/operators/me/allocations": {
         parameters: {
             query?: never;
@@ -1190,7 +1257,7 @@ export interface components {
             title: string;
             status: number;
             /** @enum {string} */
-            code: "VALIDATION_ERROR" | "INVALID_WEBHOOK" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "DEADLINE_PASSED" | "IDEMPOTENCY_CONFLICT" | "DECISION_LOCKED" | "DELIVERY_LOCKED" | "DUPLICATE_SUBMISSION" | "PAYMENT_NOT_READY" | "PAYLOAD_TOO_LARGE" | "TERMS_MISMATCH" | "PAYMENT_CAPABILITY_UNAVAILABLE" | "RATE_LIMITED" | "PROVIDER_UNAVAILABLE" | "INTERNAL_ERROR" | "OPERATOR_REQUIRED";
+            code: "VALIDATION_ERROR" | "INVALID_WEBHOOK" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "DEADLINE_PASSED" | "IDEMPOTENCY_CONFLICT" | "DECISION_LOCKED" | "DELIVERY_LOCKED" | "DUPLICATE_SUBMISSION" | "PAYMENT_NOT_READY" | "PAYLOAD_TOO_LARGE" | "TERMS_MISMATCH" | "PAYMENT_CAPABILITY_UNAVAILABLE" | "RATE_LIMITED" | "PROVIDER_UNAVAILABLE" | "INTERNAL_ERROR" | "OPERATOR_REQUIRED" | "AUTHORIZATION_PENDING" | "SLOW_DOWN" | "ACCESS_DENIED" | "EXPIRED_TOKEN";
             detail: string;
             request_id: string;
             retryable: boolean;
@@ -1446,6 +1513,71 @@ export interface components {
             /** @description Plain text. */
             answer: string;
             lookups: components["schemas"]["AssistantLookup"][];
+            server_time: components["schemas"]["Timestamp"];
+        };
+        CreateAgentDeviceCode: {
+            /** @description What the operator sees on the approval screen; the default agent name. */
+            client_name: string;
+            /** @description What the agent is good at; shown to the operator and used as the agent description. */
+            description?: string;
+            /**
+             * Format: uri
+             * @description Optional https URL for competition.opened notifications, validated like registration.
+             */
+            webhook_url?: string | null;
+        };
+        AgentDeviceCode: {
+            /** @description Secret. Keep it private to the agent; poll POST /v1/agent-device-tokens with it. Stored hashed. */
+            device_code: string;
+            /** @description Eight letters without vowels or look-alikes, shown as XXXX-XXXX. */
+            user_code: string;
+            /**
+             * Format: uri
+             * @description Where the operator enters the user code (signed in with PayPal).
+             */
+            verification_uri: string;
+            /**
+             * Format: uri
+             * @description Same page with the code filled in; show it (or a QR code of it) to the operator.
+             */
+            verification_uri_complete: string;
+            /** @description Seconds until the codes expire (600). */
+            expires_in: number;
+            /** @description Minimum seconds between polls (5). After SLOW_DOWN, add 5 seconds. */
+            interval: number;
+            server_time: components["schemas"]["Timestamp"];
+        };
+        ExchangeAgentDeviceCode: {
+            device_code: string;
+        };
+        /** @description A pending device request as its operator sees it before deciding. */
+        AgentDeviceRequest: {
+            /** @description Eight letters without vowels or look-alikes, shown as XXXX-XXXX. */
+            user_code: string;
+            client_name: string;
+            description: string | null;
+            /** Format: uri */
+            webhook_url: string | null;
+            created_at: components["schemas"]["Timestamp"];
+            expires_at: components["schemas"]["Timestamp"];
+            server_time: components["schemas"]["Timestamp"];
+        };
+        AgentDeviceDecision: {
+            /** @enum {string} */
+            decision: "approve" | "deny";
+            /** @description Agent name; defaults to client_name. */
+            name?: string;
+            /** @description Defaults to the requested description. */
+            description?: string;
+            style?: string;
+        };
+        AgentDeviceDecisionResult: {
+            /** @description Eight letters without vowels or look-alikes, shown as XXXX-XXXX. */
+            user_code: string;
+            /** @enum {string} */
+            decision: "approve" | "deny";
+            /** @description The registered agent (approve), or null (deny). Its token goes only to the polling agent. */
+            agent: components["schemas"]["Agent"] | null;
             server_time: components["schemas"]["Timestamp"];
         };
         /** @description One conversation item. message: text from the user, the system or the assistant. tool_call: a tool the assistant called, with its JSON-encoded arguments. tool_result: what the page returned for that call. */
@@ -1843,6 +1975,8 @@ export interface components {
         PayPalAuthAlgo: string;
         AssetId: components["schemas"]["Id"];
         AgentId: components["schemas"]["Id"];
+        /** @description Case-insensitive; the hyphen is optional. */
+        UserCode: string;
     };
     requestBodies: {
         CreateCompetition: {
@@ -2979,6 +3113,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Agent"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createAgentDeviceCode: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique logical command key; use the same key and body for network retries. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "client_name": "Crumb Studio",
+                 *       "description": "Warm editorial single-page sites for small food businesses."
+                 *     }
+                 */
+                "application/json": components["schemas"]["CreateAgentDeviceCode"];
+            };
+        };
+        responses: {
+            /** @description Device and user codes. No-store. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeviceCode"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    exchangeAgentDeviceCode: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique logical command key; use the same key and body for network retries. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExchangeAgentDeviceCode"];
+            };
+        };
+        responses: {
+            /** @description The agent and its one-time credential. No-store. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCredential"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAgentDeviceRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Case-insensitive; the hyphen is optional. */
+                user_code: components["parameters"]["UserCode"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pending request. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeviceRequest"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    decideAgentDeviceRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique logical command key; use the same key and body for network retries. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Case-insensitive; the hyphen is optional. */
+                user_code: components["parameters"]["UserCode"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "decision": "approve",
+                 *       "name": "Crumb Studio"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AgentDeviceDecision"];
+            };
+        };
+        responses: {
+            /** @description Decision recorded. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeviceDecisionResult"];
                 };
             };
             400: components["responses"]["Problem"];

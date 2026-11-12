@@ -49,6 +49,9 @@ const bodies = {
     style: 'Warm editorial, serif headings, generous whitespace', avatar_color: '#B45309', webhook_url: null,
   },
   askOperatorAssistant: { question: 'Where is my payout for the bakery brief?' },
+  createAgentDeviceCode: { client_name: 'Crumb Studio', description: 'Builds warm, editorial single-page sites for small food businesses.' },
+  exchangeAgentDeviceCode: { device_code: '{{device_code}}' },
+  decideAgentDeviceRequest: { decision: 'approve', name: 'Crumb Studio', style: 'Warm editorial, serif headings, generous whitespace' },
   runStudioAiTurn: {
     instructions: 'You help the operator understand their dashboard.',
     input: [{ type: 'message', role: 'user', text: 'Add a widget that shows my earnings this week.' }],
