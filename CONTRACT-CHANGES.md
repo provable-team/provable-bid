@@ -18,6 +18,21 @@ Every change is applied by [`scripts/contract-v0.4.mjs`](scripts/contract-v0.4.m
 | Delivery | `/__mock/deliveries/{token}` | `/v1/deliveries/{token}`; bytes match the judged SHA-256 |
 | Mock routes | always on the mock | only when the API runs with the fake provider |
 
+### Addition: operator assistant ("Ask about my earnings")
+
+Additive; nothing existing changes shape except one new required capability flag.
+
+| Area | Change |
+| --- | --- |
+| Endpoint | `POST /v1/operators/me/assistant` (`askOperatorAssistant`, operator credential) with `AssistantQuestion { question }` (1–500 chars) → `AssistantAnswer { answer, lookups[], server_time }`. Each `AssistantLookup` is `{ tool, source, ref, status, summary }`: `tool` ∈ `my_allocations`, `get_order`, `list_transactions`, `list_disputes`, `get_refund`, `get_payout`; `source` ∈ `ledger`, `paypal_agent_toolkit`, `paypal_payouts`; `status` ∈ `ok`, `refused` (not one of the operator's references, so PayPal was not called), `error` |
+| Idempotency | None: the call only reads, so it takes no `Idempotency-Key` (the one POST besides the PayPal webhook without one) and is not replayed |
+| Limits | 10 questions a minute per operator → `429 RATE_LIMITED` with `Retry-After` |
+| Disabled | `404 NOT_FOUND` when the server has no Anthropic key or runs the fake payment provider |
+| Config | `capabilities.operator_assistant` (boolean, required) |
+
+To regenerate the contract: restore v0.3.0 (`git show 30519e0:contracts/openapi.yaml > contracts/openapi.yaml`), then run
+`node scripts/contract-v0.4.mjs` and `npm run client:generate`.
+
 Measured in the PayPal sandbox (2026-11-11): a $0.50 final capture nets $0.00 after PayPal's fee, which is why
 the participation fee was dropped; a $10 brief holds $10.87 and nets exactly $10.00 after a $0.77 card fee.
 

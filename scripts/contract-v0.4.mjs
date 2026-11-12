@@ -79,7 +79,7 @@ set([...S, 'Policy'], {
 set([...S, 'Config', 'properties', 'mode', 'enum'], ['mock', 'paypal_sandbox']);
 set([...S, 'Config', 'properties', 'capabilities'], {
   type: 'object', additionalProperties: false,
-  required: ['authorization', 'additional_checkout', 'external_agents', 'payouts', 'ai_evaluation', 'house_agents', 'operator_onboarding', 'browser_previews'],
+  required: ['authorization', 'additional_checkout', 'external_agents', 'payouts', 'ai_evaluation', 'house_agents', 'operator_onboarding', 'browser_previews', 'operator_assistant'],
   properties: {
     authorization: { type: 'boolean' },
     additional_checkout: { type: 'boolean' },
@@ -89,6 +89,7 @@ set([...S, 'Config', 'properties', 'capabilities'], {
     house_agents: { type: 'boolean', description: 'Labelled house agents are active and enter every competition.' },
     operator_onboarding: { type: 'string', enum: ['paypal_login', 'disabled'] },
     browser_previews: { type: 'boolean', description: 'Entries are rendered in a real browser (KERNEL): screenshot-only previews, plus measured phone overflow and console errors for the judge.' },
+    operator_assistant: { type: 'boolean', description: 'POST /v1/operators/me/assistant is enabled (Claude + PayPal Agent Toolkit; needs an Anthropic key and the PayPal provider).' },
   },
 });
 set([...S, 'BidMoney', 'properties', 'amount_minor'], { type: 'integer', minimum: 1000, maximum: 500000, description: 'Price per selected entry, $10.00 to $5,000.00.' });
@@ -227,6 +228,30 @@ set([...S, 'AgentNotification'], {
   properties: { id: ref('Id'), type: { type: 'string', enum: ['competition.opened'] }, competition: ref('Competition'), sent_at: ref('Timestamp') },
 });
 
+set([...S, 'AssistantQuestion'], {
+  type: 'object', additionalProperties: false, required: ['question'],
+  properties: { question: { type: 'string', minLength: 1, maxLength: 500, description: 'A question about the operator\'s own earnings, payments or payouts.' } },
+});
+set([...S, 'AssistantLookup'], {
+  type: 'object', additionalProperties: false, required: ['tool', 'source', 'ref', 'status', 'summary'],
+  description: 'One lookup the assistant made while answering, in order.',
+  properties: {
+    tool: { type: 'string', enum: ['my_allocations', 'get_order', 'list_transactions', 'list_disputes', 'get_refund', 'get_payout'] },
+    source: { type: 'string', enum: ['ledger', 'paypal_agent_toolkit', 'paypal_payouts'], description: 'ledger: the operator\'s allocations here. paypal_agent_toolkit: a read-only PayPal Agent Toolkit tool. paypal_payouts: PayPal Payouts.' },
+    ref: { type: ['string', 'null'], maxLength: 64, description: 'The PayPal order, capture, refund or payout batch ID looked up, when there is one.' },
+    status: { type: 'string', enum: ['ok', 'refused', 'error'], description: 'refused: the ID is not one of this operator\'s references, so PayPal was not called.' },
+    summary: { type: 'string', maxLength: 300 },
+  },
+});
+set([...S, 'AssistantAnswer'], {
+  type: 'object', additionalProperties: false, required: ['answer', 'lookups', 'server_time'],
+  properties: {
+    answer: { type: 'string', maxLength: 4000, description: 'Plain text.' },
+    lookups: { type: 'array', maxItems: 20, items: ref('AssistantLookup') },
+    server_time: ref('Timestamp'),
+  },
+});
+
 // ---------------------------------------------------------------- responses / request bodies / params
 const R = ['components', 'responses'];
 set([...R, 'Settlement', 'description'], 'Allocations and the state of each real payout.');
@@ -306,6 +331,13 @@ set(P('/v1/operators/me/allocations'), { get: {
   description: 'Operator credential only. One page of the operator\'s winner allocations across all its agents, in stable (created_at, id) order, with payout state and payment/agent identifiers. For an earnings ledger without collecting agent tokens.',
   parameters: [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' }],
   responses: { '200': { $ref: '#/components/responses/AllocationPage' }, ...problems },
+} });
+
+set(P('/v1/operators/me/assistant'), { post: {
+  operationId: 'askOperatorAssistant', tags: ['Settlement'], summary: 'Ask about my earnings (Claude + PayPal Agent Toolkit)',
+  description: 'Operator credential only. Claude answers a question about the operator\'s own earnings from their allocations and live PayPal data: orders, transactions, disputes and refunds through PayPal\'s Agent Toolkit (read-only tools), and payout status through PayPal Payouts. Every PayPal lookup is limited to the operator\'s own order, capture, refund and payout references (another ID is refused without calling PayPal), list results are filtered to them, and buyer identity is never returned. Read-only, so no Idempotency-Key: each call is a new question. At most 10 questions a minute per operator (429 RATE_LIMITED with Retry-After). 404 when the server has no Anthropic key or no PayPal provider (config.capabilities.operator_assistant is false).',
+  requestBody: { required: true, content: { 'application/json': { schema: ref('AssistantQuestion'), example: { question: 'Where is my payout for the bakery brief?' } } } },
+  responses: { '200': json('The answer and the lookups behind it.', ref('AssistantAnswer')), ...problems },
 } });
 
 // Agent notifications (OpenAPI 3.1 webhooks).

@@ -4,6 +4,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 import type { AgentAdapter, EvaluatorAdapter } from '../../../packages/agent-interface/src/index.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
 import { operations, resolve, validator, validateResponse } from '../../../scripts/contract.js';
+import type { LedgerEntry, OperatorAssistant, OperatorLedger } from './assistant.js';
 import type { PageRenderer, RenderResult } from './browser.js';
 import { gateHtml, prepareHtml } from './html.js';
 import { safeColors, safeLabel, safeStructure, STEP } from './progress.js';
@@ -18,7 +19,7 @@ import { Store } from './store.js';
 type S = components['schemas'];
 
 export class Fault extends Error {
-  constructor(public status: number, public code: S['Problem']['code'], message: string, public retryable = false) { super(message); }
+  constructor(public status: number, public code: S['Problem']['code'], message: string, public retryable = false, public retryAfterSeconds = 1) { super(message); }
 }
 function demand(ok: unknown, code: S['Problem']['code'] = 'INVALID_STATE', message = 'Command is not valid in the current state.', status = 409): asserts ok {
   if (!ok) throw new Fault(status, code, message);
@@ -75,7 +76,14 @@ export interface ApiOptions {
   simulatePayouts?: boolean;
   log?: (msg: string, extra?: unknown) => void;
   notify?: (url: string, body: string, signature: string) => Promise<void>;
+  /** "Ask about my earnings" for operators (Claude + PayPal Agent Toolkit). Null: the endpoint is disabled. */
+  operatorAssistant?: OperatorAssistant | null;
+  /** Questions per operator per minute (default 10). */
+  assistantRateLimit?: number;
 }
+
+/** Operations that only read and may take seconds (a model and PayPal round trips): they run outside the command queue. */
+const OUTSIDE_QUEUE = new Set(['askOperatorAssistant']);
 
 export async function createApi(o: ApiOptions) {
   const log = o.log ?? ((m: string, x?: unknown) => console.log(`[api] ${m}`, x ?? ''));
@@ -396,6 +404,35 @@ export async function createApi(o: ApiOptions) {
     return { items: slice, next_cursor: start + limit < items.length ? Buffer.from(slice.at(-1).id).toString('base64url') : null, server_time: stamp() };
   }
 
+  // ---------------------------------------------------------------- operator assistant
+  /** Everything one operator owns, read synchronously (so consistent) when a question arrives. */
+  function operatorLedger(operatorId: string): OperatorLedger {
+    const op = fetchOne(operators, operatorId);
+    const mine = [...allocations.values()].filter(a => a.operator_id === operatorId).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+    return { operator_name: op.name, now: stamp(), allocations: mine.map((a): LedgerEntry => {
+      const p = payments.get(a.payment_id);
+      return {
+        allocation_id: a.id, brief_title: competitions.get(a.competition_id)?.title ?? a.competition_id,
+        agents: a.agent_shares.map(s => agents.get(s.agent_id)?.profile.name ?? s.agent_id),
+        amount_minor: a.amount.amount_minor, created_at: a.created_at, ledger_state: a.ledger_state, payout_state: a.payout_state,
+        payment: p ? { purpose: p.purpose, capture_state: p.capture_state, authorization_state: p.authorization_state, refund_state: p.refund_state, dispute_state: p.dispute_state, captured_minor: p.captured_minor } : null,
+        paypal: {
+          order_id: p?.provider_order_id ?? null, authorization_id: p?.provider_authorization_id ?? null, capture_id: p?.provider_capture_id ?? null,
+          payout_batch_id: a.provider_payout_id,
+          refund_ids: [...refunds.values()].filter(r => r.payment_id === a.payment_id && r.provider_refund_id).map(r => r.provider_refund_id!),
+        },
+      };
+    }) };
+  }
+  const assistantCalls = new Map<string, number[]>();
+  /** Sliding one-minute window per operator; the question counts before the model is called. */
+  function assistantRateLimit(operatorId: string) {
+    const limit = o.assistantRateLimit ?? 10;
+    const recent = (assistantCalls.get(operatorId) ?? []).filter(t => t > time() - 60_000);
+    if (recent.length >= limit) throw new Fault(429, 'RATE_LIMITED', `At most ${limit} questions a minute. Try again shortly.`, true, Math.max(1, Math.ceil((recent[0] + 60_000 - time()) / 1000)));
+    recent.push(time()); assistantCalls.set(operatorId, recent);
+  }
+
   type Result = { status: number; body?: any; cache?: string; type?: string; location?: string; after?: () => void };
   async function execute(op: string, p: Principal | undefined, params: any, body: any, query: any, headers: any): Promise<Result> {
     const ok = (body: any, status = 200): Result => ({ status, body });
@@ -406,7 +443,7 @@ export async function createApi(o: ApiOptions) {
         mode: o.provider.mode, currency: 'USD', terms_version: policy.terms_version, policy,
         capabilities: { authorization: true, additional_checkout: true, external_agents: true, payouts: simulatePayouts ? 'simulated' : 'paypal_sandbox',
           ai_evaluation: !o.evaluator.version.startsWith('heuristic'), house_agents: !!o.houseAgents && Object.keys(o.houseAgents).length > 0, operator_onboarding: 'paypal_login',
-          browser_previews: !!o.renderer },
+          browser_previews: !!o.renderer, operator_assistant: !!o.operatorAssistant },
         server_time: stamp(),
       });
 
@@ -677,6 +714,23 @@ export async function createApi(o: ApiOptions) {
         const me = who(); demand(me.role === 'operator', 'OPERATOR_REQUIRED', 'Connect PayPal as an agent operator first.', 403);
         const result = page([...allocations.values()].filter(a => a.operator_id === me.operator_id), query);
         result.items = result.items.map(({ server_time: _t, ...a }: any) => a); return ok(result); // Allocation has no server_time
+      }
+      case 'askOperatorAssistant': {
+        const me = who(); demand(me.role === 'operator', 'OPERATOR_REQUIRED', 'Connect PayPal as an agent operator first.', 403);
+        demand(o.operatorAssistant, 'NOT_FOUND', 'The operator assistant is not enabled on this server.', 404);
+        const question = String(body.question).trim();
+        demand(question.length > 0, 'VALIDATION_ERROR', 'Ask a question.', 400);
+        assistantRateLimit(me.operator_id);
+        const ledger = operatorLedger(me.operator_id);
+        let answer;
+        try { answer = await o.operatorAssistant.ask({ question, ledger, signal: AbortSignal.timeout(90_000) }); }
+        catch (e) {
+          log('assistant failed', (e as Error).message);
+          throw new Fault(503, 'PROVIDER_UNAVAILABLE', 'The assistant could not answer right now. Try again in a moment.', true);
+        }
+        log('assistant answered', { operator: me.operator_id, requests: answer.usage.requests, input_tokens: answer.usage.input_tokens, output_tokens: answer.usage.output_tokens,
+          lookups: answer.lookups.map(l => `${l.tool}:${l.status}`).join(' ') });
+        return { status: 200, body: { answer: answer.answer, lookups: answer.lookups, server_time: stamp() }, cache: 'no-store' };
       }
       case 'getAgentEarnings': {
         const me = who(); demand(me.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
@@ -1051,7 +1105,7 @@ export async function createApi(o: ApiOptions) {
     const status = e instanceof Fault ? e.status : e.statusCode === 413 ? 413 : e.statusCode === 400 || e.statusCode === 415 ? 400 : 503;
     const code = e instanceof Fault ? e.code : status === 413 ? 'PAYLOAD_TOO_LARGE' : status === 400 ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
     if (status === 503 && !(e instanceof Fault)) log(`internal error ${req.method} ${req.url}`, e.stack);
-    if (status === 429 || status === 503) reply.header('Retry-After', '1');
+    if (status === 429 || status === 503) reply.header('Retry-After', String(e instanceof Fault ? e.retryAfterSeconds : 1));
     reply.header('X-Request-Id', req.id).status(status).type('application/problem+json').send({
       type: `urn:provable:problem:${code.toLowerCase()}`, title: code.replaceAll('_', ' ').toLowerCase(), status, code,
       detail: status === 503 && !(e instanceof Fault) ? 'Internal error; the request can be retried with the same Idempotency-Key.' : e.message,
@@ -1084,7 +1138,16 @@ export async function createApi(o: ApiOptions) {
       } else demand(req.body === undefined, 'VALIDATION_ERROR', 'This operation has no request body.', 400);
 
       let after: (() => void) | undefined;
-      const result = await exclusive(async () => {
+      const respond = (r: Result) => {
+        if (r.status !== 302) {
+          try { validateResponse(op, r.status, r.type ?? 'application/json', r.body); }
+          catch (e) { if (o.strictResponses !== false) throw e; log(`contract drift in ${op.operationId}`, (e as Error).message); }
+        }
+        return r;
+      };
+      const result = OUTSIDE_QUEUE.has(op.operationId)
+        ? respond(await execute(op.operationId, principal, req.params, req.body, query, headers)) // read-only, no idempotency replay
+        : await exclusive(async () => {
         const key = headers['idempotency-key'];
         const subject = principal ? (principal.role === 'agent' ? `agent:${principal.agent_id}` : `${principal.role}:${principal.id}`) : 'public';
         const scope = op.method === 'post' && key && op.operationId !== 'createBuyerSession' ? `${subject}|post|${req.url.split('?')[0]}|${key}` : null;
@@ -1095,11 +1158,7 @@ export async function createApi(o: ApiOptions) {
           return { status: cached.status, body: structuredClone(cached.body), cache: cached.cache } as Result;
         }
         tick();
-        const r = await execute(op.operationId, principal, req.params, req.body, query, headers);
-        if (r.status !== 302) {
-          try { validateResponse(op, r.status, r.type ?? 'application/json', r.body); }
-          catch (e) { if (o.strictResponses !== false) throw e; log(`contract drift in ${op.operationId}`, (e as Error).message); }
-        }
+        const r = respond(await execute(op.operationId, principal, req.params, req.body, query, headers));
         if (scope && r.status < 300) replays.set(scope, { fingerprint, status: r.status, body: structuredClone(r.body), cache: r.cache });
         after = r.after;
         return r;
