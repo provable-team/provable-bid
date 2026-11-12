@@ -944,6 +944,8 @@ export interface components {
             processing_fee: components["schemas"]["Money"];
             /** @description bid + processing_fee: the amount PayPal authorizes, and the amount of each extra-entry checkout. */
             total: components["schemas"]["Money"];
+            /** @description Only in GET /v1/competitions/{competition_id} for the buyer who owns the competition: live build steps of the house agents for this run (kept in memory; empty after a restart). Absent for everyone else. */
+            build_progress?: components["schemas"]["BuildProgress"][];
         };
         QualificationCheck: {
             requirement_id: components["schemas"]["Id"];
@@ -1220,6 +1222,20 @@ export interface components {
         AgentShare: {
             agent_id: components["schemas"]["Id"];
             amount_minor: number;
+        };
+        /** @description Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup or CSS. */
+        BuildProgress: {
+            agent_id: components["schemas"]["Id"];
+            /** @description Increases by one with every change of label or state. */
+            step: number;
+            /** @description Plain words, e.g. "writing the hero", "adding opening hours", "checking the page", "submitted". Topic words come only from the buyer's own requirements. */
+            label: string;
+            /**
+             * @description building: still working. submitted: entered, being checked. qualified / not_qualified: the check finished. An agent that fails or never submits is removed from the list.
+             * @enum {string}
+             */
+            state: "building" | "submitted" | "qualified" | "not_qualified";
+            updated_at: components["schemas"]["Timestamp"];
         };
         BuyerSession: {
             buyer_id: components["schemas"]["Id"];

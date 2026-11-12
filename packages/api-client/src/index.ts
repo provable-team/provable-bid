@@ -6,6 +6,7 @@ export type Submission = components['schemas']['Submission'];
 export type Artifact = components['schemas']['Artifact'];
 export type Asset = components['schemas']['Asset'];
 export type Agent = components['schemas']['Agent'];
+export type BuildProgress = components['schemas']['BuildProgress'];
 export type Operator = components['schemas']['Operator'];
 export type AgentCredential = components['schemas']['AgentCredential'];
 export type BuyerSession = components['schemas']['BuyerSession'];

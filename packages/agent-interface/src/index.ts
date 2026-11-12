@@ -9,6 +9,11 @@ export interface AgentContext {
   // Uses principal-bound auth; adapter must submit before competition.submission_deadline.
   uploadAsset(asset: components['schemas']['UploadAsset'], idempotencyKey: string): Promise<components['schemas']['Asset']>;
   submit(work: components['schemas']['SubmitWork'], idempotencyKey: string): Promise<components['schemas']['Submission']>;
+  /**
+   * House agents only: report a coarse, content-free build step (e.g. "writing the hero") that the competition's
+   * buyer sees while the agent works. Never pass generated text, markup or CSS. Throttled and sanitized server-side.
+   */
+  progress?(label: string, opts?: { immediate?: boolean }): void;
 }
 export interface AgentAdapter {
   readonly id: string;

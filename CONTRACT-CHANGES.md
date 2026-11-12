@@ -13,6 +13,7 @@ Every change is applied by [`scripts/contract-v0.4.mjs`](scripts/contract-v0.4.m
 | Windows | submission 300–86,400 s | 300, 900 or 3,600 s; decision up to 24 h (inside PayPal's 3-day honor period) |
 | Agents | internal personas + buyer-triggered `agent-runs` | outside agents (`internal: false`) and labelled house agents on the same public API; `agent-runs` removed; `competition.opened` webhook (HMAC-signed) |
 | Identity | fixture tokens | `POST /v1/buyer-sessions`; operators via Log in with PayPal (`/v1/operators/connect`); `POST /v1/operators/me/agents` issues agent tokens; `GET /v1/agents/me` |
+| Build progress | none | `Competition.build_progress` (only on `GET /v1/competitions/{id}` for its buyer): `{ agent_id, step, label, state, updated_at }` per house agent, coarse step words derived from the structure of the streamed page, never its content |
 | Delivery | `/__mock/deliveries/{token}` | `/v1/deliveries/{token}`; bytes match the judged SHA-256 |
 | Mock routes | always on the mock | only when the API runs with the fake provider |
 

@@ -6,6 +6,7 @@ import type { components } from '../../../packages/api-client/src/schema.js';
 import { operations, resolve, validator, validateResponse } from '../../../scripts/contract.js';
 import type { PageRenderer, RenderResult } from './browser.js';
 import { gateHtml, prepareHtml } from './html.js';
+import { safeLabel, STEP } from './progress.js';
 import {
   HOUSE_AGENTS, HOUSE_OPERATOR_ID, hashToken, newSecret, newToken, resolvePrincipal,
   type AgentPrincipal, type AgentRecord, type Credential, type Operator, type Principal,
@@ -62,6 +63,8 @@ export interface ApiOptions {
   renderer?: PageRenderer | null;
   /** House agents (null when no model key is configured). They use the public API with their own credentials. */
   houseAgents?: Record<string, AgentAdapter> | null;
+  /** Minimum time between two build-progress updates from one house agent (default 1000 ms). */
+  progressIntervalMs?: number;
   now?: () => number;
   strictResponses?: boolean;
   /** Record payouts as simulated instead of calling the provider. Defaults to true with the fake provider. */
@@ -505,7 +508,12 @@ export async function createApi(o: ApiOptions) {
         competitions.set(c.id, c); return ok(view(c), 201);
       }
       case 'listCompetitions': { const me = who(); return ok(page([...competitions.values()].filter(c => c.opens_at || c.buyer_id === me.id || me.role === 'admin'), query)); }
-      case 'getCompetition': { const c = fetchOne(competitions, params.competition_id); readCompetition(c, who()); return ok(view(c)); }
+      case 'getCompetition': {
+        const me = who(); const c = fetchOne(competitions, params.competition_id); readCompetition(c, me);
+        const body = view(c);
+        if (me.role === 'buyer' && me.id === c.buyer_id) body.build_progress = buildProgressFor(c.id); // the buyer only
+        return ok(body);
+      }
       case 'createInitialCheckout': {
         const c = fetchOne(competitions, params.competition_id); owner(c, who());
         demand(['draft', 'awaiting_authorization'].includes(c.state));
@@ -728,6 +736,36 @@ export async function createApi(o: ApiOptions) {
     if (o.houseAgents) for (const [agentId, adapter] of Object.entries(o.houseAgents)) track(runHouseAgent(agentId, adapter, c));
   }
 
+  // ---------------------------------------------------------------- house-agent build progress (in memory, for the run)
+  // Coarse step labels only (see progress.ts): never generated text, markup or CSS. Shown to the competition's buyer.
+  type Progress = S['BuildProgress'] & { at: number; submission_id: string | null };
+  const buildProgress = new Map<string, Map<string, Progress>>(); // competition ID → agent ID → latest step
+  const progressInterval = o.progressIntervalMs ?? 1000;
+  const buildProgressFor = (competitionId: string): S['BuildProgress'][] =>
+    [...(buildProgress.get(competitionId)?.values() ?? [])].map(({ agent_id, step, label, state, updated_at }) => ({ agent_id, step, label, state, updated_at }));
+  function setProgress(competitionId: string, agentId: string, label: string, state: S['BuildProgress']['state'], submissionId: string | null = null) {
+    let byAgent = buildProgress.get(competitionId);
+    if (!byAgent) buildProgress.set(competitionId, byAgent = new Map());
+    const cur = byAgent.get(agentId);
+    byAgent.set(agentId, { agent_id: agentId, step: (cur?.step ?? -1) + 1, label, state, updated_at: stamp(), at: time(), submission_id: submissionId ?? cur?.submission_id ?? null });
+  }
+  function reportProgress(competitionId: string, agentId: string, raw: string, immediate = false) {
+    const label = safeLabel(raw);
+    const cur = buildProgress.get(competitionId)?.get(agentId);
+    if (!label || (cur && (cur.state !== 'building' || cur.label === label))) return;
+    if (cur && !immediate && time() - cur.at < progressInterval) return; // at most one update per interval per agent
+    setProgress(competitionId, agentId, label, 'building');
+  }
+  /** After evaluation: an honest end state for a house agent's placeholder, or none if the check could not finish. */
+  function settleProgress(s: S['Submission']) {
+    const byAgent = buildProgress.get(s.competition_id);
+    const cur = byAgent?.get(s.agent_id);
+    if (!cur || cur.submission_id !== s.id) return;
+    if (s.qualification_status === 'qualified') setProgress(s.competition_id, s.agent_id, 'qualified', 'qualified');
+    else if (s.qualification_status === 'failed') setProgress(s.competition_id, s.agent_id, "didn't qualify", 'not_qualified');
+    else if (s.qualification_status !== 'pending') byAgent!.delete(s.agent_id);
+  }
+
   /** House agents act through the public API with their own credentials, exactly like an outside agent. */
   async function runHouseAgent(agentId: string, adapter: AgentAdapter, c: S['Competition']) {
     const token = houseTokens.get(agentId)!;
@@ -742,10 +780,23 @@ export async function createApi(o: ApiOptions) {
       await adapter.run({
         competition: c, signal: controller.signal,
         uploadAsset: (asset, key) => call('POST', '/v1/assets', asset, key),
-        submit: (work, key) => call('POST', `/v1/competitions/${c.id}/submissions`, work, key),
+        submit: async (work, key) => {
+          const s: S['Submission'] = await call('POST', `/v1/competitions/${c.id}/submissions`, work, key);
+          if (buildProgress.get(c.id)?.get(agentId)?.state === 'building') {
+            setProgress(c.id, agentId, STEP.submitted, 'submitted', s.id);
+            const stored = submissions.get(s.id);
+            if (stored) settleProgress(stored); // in case it was already checked
+          }
+          return s;
+        },
+        progress: (label, opts) => reportProgress(c.id, agentId, label, opts?.immediate),
       });
     } catch (e) { log(`house agent ${agentId} on ${c.id} failed`, (e as Error).message); }
-    finally { clearTimeout(timer); }
+    finally {
+      clearTimeout(timer);
+      // Failed, declined or never submitted: the placeholder simply goes away.
+      if (buildProgress.get(c.id)?.get(agentId)?.state === 'building') buildProgress.get(c.id)!.delete(agentId);
+    }
   }
 
   // ---------------------------------------------------------------- worker: evaluation + provider operations
@@ -798,6 +849,7 @@ export async function createApi(o: ApiOptions) {
         await exclusive(async () => {
           const current = submissions.get(s.id);
           if (current?.qualification_status === 'pending' && time() < Date.parse(c.qualification_deadline!)) { current.qualification_status = result.status; current.qualification = result; }
+          if (current) settleProgress(current);
         });
       })().finally(() => evaluating.delete(s.id)));
     }

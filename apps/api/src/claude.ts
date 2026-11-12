@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AgentAdapter, AgentContext as AgentContextT, EvaluatorAdapter } from '../../../packages/agent-interface/src/index.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
 import { gateHtml, prepareHtml, visibleText } from './html.js';
+import { progressTracker, STEP } from './progress.js';
 
 type S = components['schemas'];
 // Claude Haiku 5.5 at medium effort for both the judge and the house agents. Haiku 5.5 has no server-side refusal
@@ -145,22 +146,46 @@ Hard rules (pages that break them are disqualified automatically):
 - Write real, specific copy for this buyer (no lorem ipsum, no placeholders like "Your text here").
 - Give it a <title>.`;
 
-/** A labelled house agent. It enters through the public API (uploadAsset → submit) with its own credential. */
-export function claudeHouseAgent(client: Anthropic, profile: { id: string; name: string; style: string; description: string }): AgentAdapter {
+export type HouseProfile = { id: string; name: string; style: string; description: string };
+/** Produces a page for the brief, calling onText with the growing output as it streams in. */
+export type PageGenerator = (ctx: AgentContextT, profile: HouseProfile, onText: (snapshot: string) => void) => Promise<{ text: string; stopReason: string | null }>;
+
+/**
+ * A labelled house agent around any streaming page generator. While the page streams in, it reports coarse build
+ * steps derived from the structure of the partial HTML (never its content); then it checks the page and enters it
+ * through the public API (uploadAsset → submit) with its own credential.
+ */
+export function streamingHouseAgent(profile: HouseProfile, generate: PageGenerator): AgentAdapter {
   return {
     id: profile.id,
     async run(ctx) {
-      const { competition: c, signal } = ctx;
-      const stream = client.beta.messages.stream({
-        model: MODEL, max_tokens: 64000,
-        output_config: { effort: EFFORT },
-        system: BUILDER_SYSTEM(profile.name, `${profile.description} ${profile.style}`),
-        messages: [{ role: 'user', content: builderBrief(c) }],
-      }, { signal });
-      const message = await stream.finalMessage();
-      if (message.stop_reason === 'refusal') throw new Error(`declined (${message.stop_details?.category ?? 'no category'})`);
-      const text = message.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map(b => b.text).join('');
-      await submitHouseHtml(text, message.stop_reason, profile, ctx);
+      const step = progressTracker(ctx.competition.requirements);
+      ctx.progress?.(STEP.planning, { immediate: true });
+      const { text, stopReason } = await generate(ctx, profile, snapshot => ctx.progress?.(step(snapshot)));
+      ctx.progress?.(STEP.checking, { immediate: true });
+      await submitHouseHtml(text, stopReason, profile, ctx);
     },
   };
+}
+
+/** Claude as a page generator: streams the reply so build steps track real progress. */
+export function claudeGenerator(client: Anthropic): PageGenerator {
+  return async ({ competition: c, signal }, profile, onText) => {
+    const stream = client.beta.messages.stream({
+      model: MODEL, max_tokens: 64000,
+      output_config: { effort: EFFORT },
+      system: BUILDER_SYSTEM(profile.name, `${profile.description} ${profile.style}`),
+      messages: [{ role: 'user', content: builderBrief(c) }],
+    }, { signal });
+    stream.on('text', (_delta, snapshot) => onText(snapshot));
+    const message = await stream.finalMessage();
+    if (message.stop_reason === 'refusal') throw new Error(`declined (${message.stop_details?.category ?? 'no category'})`);
+    const text = message.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map(b => b.text).join('');
+    return { text, stopReason: message.stop_reason };
+  };
+}
+
+/** A labelled house agent built by Claude. */
+export function claudeHouseAgent(client: Anthropic, profile: HouseProfile): AgentAdapter {
+  return streamingHouseAgent(profile, claudeGenerator(client));
 }

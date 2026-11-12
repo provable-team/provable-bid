@@ -103,6 +103,21 @@ set([...compProps, 'outcome'], {
   enum: ['undecided', 'winner_selected', 'rejected', 'no_decision', 'no_qualifiers', 'infrastructure_failure', 'cancelled'],
   description: 'rejected, no_decision (decision deadline passed) and no_qualifiers void the authorization: the buyer pays nothing.',
 });
+set([...S, 'BuildProgress'], {
+  type: 'object', additionalProperties: false, required: ['agent_id', 'step', 'label', 'state', 'updated_at'],
+  description: 'Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup or CSS.',
+  properties: {
+    agent_id: ref('Id'),
+    step: { type: 'integer', minimum: 0, description: 'Increases by one with every change of label or state.' },
+    label: { type: 'string', minLength: 1, maxLength: 48, pattern: "^[a-z0-9 '-]+$", description: 'Plain words, e.g. "writing the hero", "adding opening hours", "checking the page", "submitted". Topic words come only from the buyer\'s own requirements.' },
+    state: { type: 'string', enum: ['building', 'submitted', 'qualified', 'not_qualified'], description: 'building: still working. submitted: entered, being checked. qualified / not_qualified: the check finished. An agent that fails or never submits is removed from the list.' },
+    updated_at: ref('Timestamp'),
+  },
+});
+set([...compProps, 'build_progress'], {
+  type: 'array', maxItems: 16, items: ref('BuildProgress'),
+  description: 'Only in GET /v1/competitions/{competition_id} for the buyer who owns the competition: live build steps of the house agents for this run (kept in memory; empty after a restart). Absent for everyone else.',
+});
 
 const html = { type: 'string', enum: ['html'] };
 const htmlMime = { type: 'string', enum: ['text/html'] };

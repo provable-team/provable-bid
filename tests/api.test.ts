@@ -7,7 +7,8 @@ import Database from 'better-sqlite3';
 import { join } from 'node:path';
 import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
 import { createApi } from '../apps/api/src/app.js';
-import { heuristicEvaluator } from '../apps/api/src/claude.js';
+import { heuristicEvaluator, streamingHouseAgent } from '../apps/api/src/claude.js';
+import { progressTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
 import { agentPayoutFor, paypalCheckoutFee, processingFeeFor } from '../apps/api/src/money.js';
@@ -37,14 +38,14 @@ const brief = {
   accepted_terms_version: 'race-v1',
 };
 
-async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer } = {}) {
+async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number } = {}) {
   let now = T0;
   const store = new Store(opts.dbPath ?? ':memory:');
   const fake = fakeProvider({ webOrigin: WEB, now: () => now });
   const notices: { url: string; body: string; sig: string }[] = [];
   const api = await createApi({
     store, provider: fake.provider, evaluator: opts.evaluator ?? heuristicEvaluator(), webOrigin: WEB, apiOrigin: 'http://api.test',
-    adminToken: ADMIN, houseOperatorPayerId: 'HOUSEPAYER0001', houseAgents: opts.houseAgents ?? null, now: () => now, renderer: opts.renderer ?? null,
+    adminToken: ADMIN, houseOperatorPayerId: 'HOUSEPAYER0001', houseAgents: opts.houseAgents ?? null, progressIntervalMs: opts.progressIntervalMs, now: () => now, renderer: opts.renderer ?? null,
     strictResponses: true, simulatePayouts: opts.simulatePayouts ?? false, log: () => {},
     notify: async (url, body, sig) => { notices.push({ url, body, sig }); },
   });
@@ -364,6 +365,89 @@ test('house agents enter every competition through the public API, labelled as h
   assert.equal(gallery[0].agent_id, 'agent_house_atelier');
   await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: gallery[0].id }, b); await f.settle();
   assert.deepEqual(f.fake.controls.calls.filter(x => x.op === 'sendPayout').map(x => x.target), ['HOUSEPAYER0001']);
+});
+
+// A house agent's streamed page: the build steps shown to the buyer come from its structure, never its content.
+const streamedPage = `Here is the page.\n<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crumb &amp; Co.</title><style>body{font-family:Georgia,serif;margin:0}.cta{background:#b5522b;color:#fff}
+@media (max-width:600px){.grid{display:block}}</style></head><body>
+<header><nav><a href="#story">Our story</a></nav></header>
+<div class="hero"><h1>Warm cardamom buns since 1987</h1><p>Sourdough proofed for two full days.</p></div>
+<section id="story"><h2>Three generations of bakers</h2><p>Grandma Ilse opened the shop with one oven and a stubborn starter.</p>
+${'<p>The rye loaves sell out by nine on Saturdays, so come early.</p>'.repeat(6)}</section>
+<section id="when"><h2>Opening hours</h2><p>Tuesday to Sunday, 7am to 3pm. Closed Mondays.</p></section>
+<a class="cta" href="#preorder">Pre-order now</a><footer><p>Corner of Elm and 4th.</p></footer></body></html>`;
+const secrets = ['cardamom', 'Sourdough', 'Ilse', 'rye loaves', 'Georgia', '#b5522b', 'max-width', 'Tuesday', 'Elm and 4th', '<', '>'];
+
+test('build progress: coarse steps from the stream structure; requirement words only when the stream has them', () => {
+  const step = progressTracker(brief.requirements);
+  const labels: string[] = [];
+  for (let i = 0; i <= streamedPage.length + 7; i += 7) {
+    const l = step(streamedPage.slice(0, i));
+    if (labels.at(-1) !== l) labels.push(l);
+  }
+  assert.deepEqual(labels, ['planning the page', 'setting up the page', 'writing the styles', 'styling for phones', 'writing the header',
+    'writing the hero', 'adding a section', 'adding opening hours', 'writing the footer', 'finishing up']);
+  // A section that mentions no requirement stays generic; nothing from the page itself ever becomes a label.
+  const other = progressTracker([{ description: 'Has a menu with prices.' }]);
+  assert.equal(other(`<!doctype html><body><section>${'x'.repeat(500)}</section>`), 'adding a section');
+  assert.equal(progressTracker([{ description: 'Has a menu with prices.' }])('<!doctype html><body><section class="menu"><h2>Cakes</h2>'), 'adding the menu');
+});
+
+test('house agents report live build steps to the buyer only, and the steps never contain the page', async t => {
+  let release!: () => void;
+  const ready = new Promise<void>(r => { release = r; });
+  const seen: any[] = [];
+  let look: () => Promise<void> = async () => {};
+  const house = {
+    agent_house_atelier: streamingHouseAgent({ id: 'agent_house_atelier', name: 'Atelier', style: 'Editorial.', description: 'Atelier.' }, async (_ctx, _p, onText) => {
+      await ready;
+      for (let i = 0; i < streamedPage.length; i += 40) { onText(streamedPage.slice(0, i + 40)); await look(); }
+      return { text: streamedPage, stopReason: 'end_turn' };
+    }),
+  };
+  const f = await fixture(t, { houseAgents: house, progressIntervalMs: 0 });
+  const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const { c } = await f.open(b);
+  look = async () => { seen.push((await f.get(`/v1/competitions/${c.id}`, b)).data); };
+  release();
+  await f.settle();
+  await look();
+  const steps = seen.flatMap(x => x.build_progress ?? []);
+  assert.ok(steps.length > 0 && steps.every((s: any) => s.agent_id === 'agent_house_atelier'));
+  const labels = [...new Set(steps.map((s: any) => s.label))];
+  for (const expected of ['writing the styles', 'styling for phones', 'writing the header', 'writing the hero', 'adding opening hours', 'finishing up', 'qualified'])
+    assert.ok(labels.includes(expected), `saw "${expected}" in ${JSON.stringify(labels)}`);
+  assert.equal(seen.at(-1).build_progress[0].state, 'qualified');
+  const indexes = steps.map((s: any) => s.step);
+  assert.deepEqual(indexes, [...indexes].sort((x, y) => x - y), 'step indexes only increase');
+  for (const s of steps) {
+    assert.deepEqual(Object.keys(s).sort(), ['agent_id', 'label', 'state', 'step', 'updated_at']);
+    for (const secret of secrets) assert.ok(!s.label.includes(secret), `label "${s.label}" leaks "${secret}"`);
+  }
+  // Only the buyer who owns the competition sees it; agents, other buyers and anonymous callers never do.
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, ann.token)).data.build_progress, undefined);
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, null)).data.build_progress, undefined);
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, await f.buyer())).data.build_progress, undefined);
+});
+
+test('a house agent that fails mid-build disappears quietly; a failed check says so', async t => {
+  const failing = streamingHouseAgent({ id: 'agent_house_meadow', name: 'Meadow', style: '.', description: '.' }, async (_ctx, _p, onText) => {
+    onText('<!doctype html><html><head><style>');
+    throw new Error('model unavailable');
+  });
+  const noHours = streamingHouseAgent({ id: 'agent_house_voltage', name: 'Voltage', style: '.', description: '.' }, async (_ctx, _p, onText) => {
+    const html = streamedPage.replace(/<section id="when">[\s\S]*?<\/section>/, '');
+    onText(html);
+    return { text: html, stopReason: 'end_turn' };
+  });
+  const f = await fixture(t, { houseAgents: { agent_house_meadow: failing, agent_house_voltage: noHours }, progressIntervalMs: 0 });
+  const b = await f.buyer();
+  const { c } = await f.open(b);
+  await f.settle();
+  const progress = (await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress;
+  assert.deepEqual(progress.map((p: any) => [p.agent_id, p.label, p.state]), [['agent_house_voltage', "didn't qualify", 'not_qualified']]);
 });
 
 test('state survives a restart; an operation interrupted mid-call resumes with the same request ID', async t => {
