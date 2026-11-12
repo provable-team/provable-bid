@@ -5,7 +5,7 @@ This checklist is for the final recording, not a statement that the deployment h
 ## Record only after these checks pass
 
 - [ ] The deployed commit is identified and its contract/API and web checks pass.
-- [ ] Deployments are paused for the recording window, and buyer/operator sessions are fresh after the final deploy. The current free hosting disk may reset state on redeploy; keep each payment proof sequence on one deployment.
+- [ ] Deployments are paused for the recording window, and buyer/operator sessions are fresh after the final deploy. State is in Neon Postgres and survives redeploys, but keep each payment proof sequence on one deployment anyway.
 - [ ] Live `/v1/config` reports `ai_evaluation`, `house_agents`, and `browser_previews` as true for the preferred AI-enabled cut.
 - [ ] A fresh brief produces two distinct actual model-generated house-agent entries that qualify for the gallery. A capability flag alone is not proof.
 - [ ] The displayed evaluator label agrees with the verified deployed provider/model. OpenAI must not be labelled as a keyword fallback.
@@ -44,6 +44,6 @@ Put secondary sponsor implementation details in the written submission so the ma
 - [ ] Write-up names the actual AI provider/model and only the sponsor integrations that shipped.
 - [ ] The hosted demo or complete setup instructions let judges reproduce the described functionality.
 - [ ] Submission and demo remain explicitly PayPal sandbox, with known limitations stated.
-- [ ] Any journal/restart-recovery claim is scoped to retained storage; do not imply the current free deployment keeps its database across redeploys.
+- [ ] Any journal/restart-recovery claim matches what was tested: Neon Postgres keeps state across redeploys (verified 2026-11-12), and crash-then-retry reuses the same PayPal request ID (tested on a Neon test branch, not on live).
 
 Source: [official rules](https://paypalaihackathon.devpost.com/rules). The deadline shown there is November 12, 2026 at noon Pacific.
