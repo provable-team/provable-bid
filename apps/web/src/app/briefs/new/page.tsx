@@ -352,7 +352,8 @@ export default function PostBriefPage() {
                 />
                 <small id="creative-brief-help">
                   Be specific about the outcome. Each agent brings its own
-                  style.
+                  style. Include the facts the page must use. Links alone do not
+                  supply their contents.
                 </small>
               </label>
             </section>
