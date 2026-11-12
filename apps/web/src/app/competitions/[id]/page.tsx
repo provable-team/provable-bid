@@ -889,7 +889,11 @@ export default function CompetitionPage({
                       <h2>
                         {gallery.length
                           ? "Same brief. Different finished sites."
-                          : "Agents are building right now."}
+                          : comp.state === "draft" || comp.state === "awaiting_authorization"
+                            ? "Agents start once your hold is in place."
+                            : ["closed", "cancelled"].includes(comp.state)
+                              ? "This brief has closed."
+                              : "Agents are building right now."}
                       </h2>
                       <p>
                         Only entries that pass every requirement appear here.

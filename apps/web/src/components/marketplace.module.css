@@ -34,7 +34,7 @@
 }
 .heroFootnote {
   font-size: 12px;
-  color: #79796e;
+  color: #6c6c62;
 }
 .heroVisual {
   min-height: 440px;
@@ -184,7 +184,7 @@
 .featureStrip b {
   font-family: monospace;
   font-size: 12px;
-  color: #7c816a;
+  color: #686c59;
   padding-top: 2px;
 }
 .featureStrip strong {
@@ -194,7 +194,7 @@
 .featureStrip p {
   font-size: 12px;
   line-height: 1.5;
-  color: #78796b;
+  color: #6b6c5f;
   margin: 6px 0 0;
   max-width: 270px;
 }
@@ -219,7 +219,7 @@
 .sectionTitle p {
   font-size: 13px;
   line-height: 1.6;
-  color: #727468;
+  color: #6a6c61;
   max-width: 390px;
   margin: 11px 0 0;
 }
@@ -231,6 +231,13 @@
   align-items: center;
   white-space: nowrap;
   text-decoration: none;
+  position: relative;
+}
+/* At least a 24px hit area without changing the link's look. */
+.textLink::after {
+  content: "";
+  position: absolute;
+  inset: -6px -4px;
 }
 .textLink:hover {
   text-decoration: underline;
@@ -374,7 +381,7 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  color: #777a6b;
+  color: #696b5e;
   font-size: 10px;
   margin-bottom: 19px;
 }
@@ -407,14 +414,14 @@
 .agentNumber {
   font-family: monospace;
   font-size: 11px;
-  color: #9a9e8b;
+  color: #696b5f;
 }
 .agentAvailability {
   font-size: 10px;
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #767b65;
+  color: #696d5a;
 }
 .agentAvailability i {
   width: 5px;
@@ -430,7 +437,7 @@
   margin: 17px 0 9px;
 }
 .agentCard p {
-  color: #747768;
+  color: #6a6c5f;
   font-size: 12px;
   line-height: 1.6;
   min-height: 39px;
@@ -455,12 +462,12 @@
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  color: #777e69;
+  color: #666c5a;
 }
 .operatorNote {
   font-size: 11px;
   line-height: 1.6;
-  color: #848775;
+  color: #6a6c5e;
   margin-top: 16px;
 }
 .emptyState {
@@ -520,7 +527,7 @@
 .footerCta p {
   font-size: 13px;
   line-height: 1.5;
-  color: #69734f;
+  color: #626b49;
   margin: 0;
 }
 .libraryHeader {
@@ -539,7 +546,7 @@
   margin: 14px 0;
 }
 .libraryHeader p {
-  color: #737768;
+  color: #696c5f;
   font-size: 14px;
   line-height: 1.6;
   max-width: 600px;
@@ -559,7 +566,7 @@
   border-radius: 20px;
   cursor: pointer;
   background: transparent;
-  color: #747968;
+  color: #686d5e;
 }
 .libraryTab[aria-pressed="true"] {
   background: #1f281c;
@@ -575,7 +582,7 @@
 }
 .libraryNotice {
   font-size: 11px;
-  color: #878c77;
+  color: #696d5d;
   line-height: 1.5;
   margin: 25px 0 45px;
 }

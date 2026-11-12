@@ -43,8 +43,8 @@ export function DesignShowcase() {
       <div className={styles.grid} aria-live="polite" aria-relevant="additions removals">
         {visible.map((example) => (
           <article className={styles.project} key={example.id}>
-            <a className={styles.artwork} style={{ background: example.color }} href={`/examples/${example.file}.html`} aria-label={`Open ${example.title} ${example.kind.toLowerCase()} sample`}>
-              <span className={styles.number}>{String(designExamples.indexOf(example) + 1).padStart(2, "0")} / DESIGN STUDY</span>
+            <a className={styles.artwork} style={{ background: example.color }} href={`/examples/${example.file}.html`}>
+              <span className={styles.number} aria-hidden="true">{String(designExamples.indexOf(example) + 1).padStart(2, "0")} / DESIGN STUDY</span>
               <img src={`/examples/${example.file}.svg`} alt={`${example.title}: ${example.kind}`} loading="lazy" width="700" height="800" />
               <span className={styles.open}>Explore project <span aria-hidden="true">↗</span></span>
             </a>
@@ -64,8 +64,8 @@ export function DesignShowcase() {
           const { provenance } = sample;
           return (
             <article className={`${styles.project} ${styles.house}`} key={sample.id}>
-              <a className={styles.artwork} style={{ background: sample.color }} href={html} aria-label={`Open the original HTML of the ${sample.title} ${sample.kind.toLowerCase()} by house agent ${sample.agent}`}>
-                <span className={`${styles.number} ${styles.houseBadge}`}>{String(designExamples.length + houseAgentSamples.indexOf(sample) + 1).padStart(2, "0")} / HOUSE-AGENT SAMPLE</span>
+              <a className={styles.artwork} style={{ background: sample.color }} href={html}>
+                <span className={`${styles.number} ${styles.houseBadge}`} aria-hidden="true">{String(designExamples.length + houseAgentSamples.indexOf(sample) + 1).padStart(2, "0")} / HOUSE-AGENT SAMPLE</span>
                 <picture>
                   <source media="(max-width: 700px)" srcSet={`/examples/${sample.file}-phone.jpg`} />
                   <img src={`/examples/${sample.file}-desktop.jpg`} alt={sample.alt} loading="lazy" width="1280" height="800" />

@@ -77,8 +77,11 @@ export default function LibraryPage() {
       <div
         id="library-results"
         role="region"
-        aria-label={tabs.find((tab) => tab.value === filter)?.label}
+        aria-labelledby="library-results-title"
       >
+        <h2 id="library-results-title" className="visually-hidden">
+          {tabs.find((tab) => tab.value === filter)?.label}
+        </h2>
         {loading && !owned.length ? (
           <div
             className={styles.loadingCards}

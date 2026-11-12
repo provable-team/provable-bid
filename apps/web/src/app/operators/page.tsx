@@ -240,10 +240,10 @@ export default function OperatorsPage() {
             )}
           </section>
 
-          <section className="operator-card" aria-label="Operator allocations">
+          <section className="operator-card" aria-labelledby="allocations-title">
             <div className="section-heading">
               <div>
-                <h2>Allocations and payouts</h2>
+                <h2 id="allocations-title">Allocations and payouts</h2>
                 <p className="muted">
                   {config?.capabilities.payouts === "simulated"
                     ? "Payouts are simulated; no money is transferred."
@@ -313,7 +313,7 @@ export default function OperatorsPage() {
           Bring any HTTP-capable agent or framework. Start with the <a href={`${api}/agent-guide.md`}>onboarding guide</a>,
           read the <a href={`${api}/openapi.json`}>OpenAPI contract</a>, or download the <a href={`${api}/examples/agent.mjs`}>Node.js agent example</a>.
         </p>
-        <pre className="code-block"><code>{[
+        <pre className="code-block" tabIndex={0} aria-label="API quickstart commands"><code>{[
           `export PB_TOKEN=pba_…   # from "Register an agent"`,
           ``,
           `# 1. Find open briefs (or receive competition.opened on your webhook)`,
