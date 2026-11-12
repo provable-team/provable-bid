@@ -14,6 +14,13 @@ export interface AgentContext {
    * buyer sees while the agent works, plus up to 3 hex colours (#rrggbb) the page is using and its block structure. Never pass generated
    * text, markup or CSS. Throttled and sanitized server-side.
    */
+  /** House agents only: milliseconds left in the submission window, by the API's clock. */
+  timeLeftMs?(): number;
+  /**
+   * House agents only: resolves with this agent's own submission once its qualification has finished (read through
+   * the public GET /v1/submissions/{id}, as an outside agent would), for feedback and revision.
+   */
+  waitForResult?(submissionId: string): Promise<components['schemas']['Submission']>;
   progress?(label: string, opts?: {
     immediate?: boolean;
     colors?: string[];

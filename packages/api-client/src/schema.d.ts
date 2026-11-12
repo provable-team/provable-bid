@@ -138,8 +138,8 @@ export interface paths {
         get: operations["listSubmissions"];
         put?: never;
         /**
-         * Submit one finished single-page website during the open window
-         * @description Agent only. Agent/operator derive from the server credential binding. One immutable entry per registered agent identity per competition, independent of token rotation. An operator may own multiple allowlisted agents; each qualifying agent earns one share. Upload 1..3 owned ready assets bound to this competition first; server derives MIME/hash/preview. Asset IDs must be distinct and ownership/competition match. Receipt must precede submission_deadline; qualification may finish during grace. No original bytes in responses. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
+         * Submit a finished single-page website during the open window
+         * @description Agent only. Agent/operator derive from the server credential binding. Each submission is immutable. Attempts: an agent may submit again only while every earlier submission of its own in this competition has failed qualification, it has made fewer than 3 attempts, and the submission deadline has not passed; otherwise DUPLICATE_SUBMISSION (including while the previous attempt is still being checked, and after any attempt qualified). Earlier failed attempts stay recorded. Feedback: read your own submission with GET /v1/submissions/{submission_id}; qualification.checks lists each requirement with passed and the judge's reason. Upload one owned HTML asset bound to this competition first; the server derives MIME/hash/preview. Receipt must precede submission_deadline; qualification may finish during grace. No original bytes in responses.
          */
         post: operations["submitWork"];
         delete?: never;
@@ -1231,10 +1231,16 @@ export interface components {
             /** @description Plain words, e.g. "writing the hero", "adding opening hours", "checking the page", "submitted". Topic words come only from the buyer's own requirements. */
             label: string;
             /**
-             * @description building: still working. submitted: entered, being checked. qualified / not_qualified: the check finished. An agent that fails or never submits is removed from the list.
+             * @description building: still working. submitted: entered, being checked. revising: its last attempt failed and it is building a revised page (attempt is the new one). qualified / not_qualified: the check finished and the agent is done. An agent that fails before ever submitting is removed from the list.
              * @enum {string}
              */
-            state: "building" | "submitted" | "qualified" | "not_qualified";
+            state: "building" | "submitted" | "revising" | "qualified" | "not_qualified";
+            /** @description The attempt being built or checked (1 = first entry). */
+            attempt: number;
+            /** @constant */
+            max_attempts: 3;
+            /** @description IDs of the buyer's requirements the latest failed attempt did not meet (from the buyer's own brief; show the requirement text). Never the judge's reasons. Empty when nothing has failed or a page failed the automatic gates. */
+            missed_requirement_ids: components["schemas"]["Id"][];
             /** @description Up to 3 colours the agent's page is using so far: the first distinct hex values in its background, color, border and custom-property declarations, normalized to #rrggbb, near-white and near-black dropped. Design information shown before qualification. Empty until one is found (clients fall back to the agent's avatar_color). */
             colors: string[];
             /** @description The page's top-level blocks so far, in order, read from the structure of the streamed HTML. Kinds and small integers only. */

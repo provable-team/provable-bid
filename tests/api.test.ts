@@ -309,7 +309,7 @@ test('PayPal webhooks: signature checked with PayPal, deduplicated, then canonic
   assert.equal((await f.post(`/v1/purchases/${c.first_purchase_id ?? (await f.get(`/v1/competitions/${c.id}`, b)).data.first_purchase_id}/delivery-access`, undefined, b)).data.code, 'DELIVERY_LOCKED');
 });
 
-test('permissions, gates and one-entry rule', async t => {
+test('permissions, gates and the attempts rule', async t => {
   const f = await fixture(t);
   const b = await f.buyer(); const other = await f.buyer();
   const opToken = await f.operator('PAYERANN0001', 'Ann');
@@ -324,7 +324,9 @@ test('permissions, gates and one-entry rule', async t => {
   const gated = await f.enter(ann.token, c.id, external); await f.settle();
   const seen = (await f.get(`/v1/submissions/${gated.id}`, ann.token)).data;
   assert.equal(seen.qualification.failure_code, 'invalid_output');
-  assert.equal((await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'again', artifacts: [{ asset_id: gated.artifacts[0].asset_id }] }, ann.token)).data.code, 'DUPLICATE_SUBMISSION');
+  // A failed attempt may be revised; while the new attempt is being checked, no further one is accepted.
+  assert.equal((await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'again', artifacts: [{ asset_id: gated.artifacts[0].asset_id }] }, ann.token)).status, 201);
+  assert.equal((await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'third', artifacts: [{ asset_id: gated.artifacts[0].asset_id }] }, ann.token)).data.code, 'DUPLICATE_SUBMISSION');
   assert.equal((await f.get(`/v1/submissions/${gated.id}`, ben.token)).status, 404, 'agents cannot read rivals');
   assert.equal((await f.get(`/v1/submissions/${gated.id}`, b)).status, 404, 'buyers never see unqualified work');
   assert.equal((await f.get(`/v1/competitions/${c.id}/purchases`, other)).status, 404, 'other buyers cannot read purchases');
@@ -468,7 +470,8 @@ test('house agents report live build steps to the buyer only, and the steps neve
   assert.equal(seen.at(-1).build_progress[0].accent, '#b5522b');
   assert.ok(steps.some((s: any) => s.blocks.length > 0 && s.blocks.length < 5), 'the structure grows while the page streams');
   for (const s of steps) {
-    assert.deepEqual(Object.keys(s).sort(), ['accent', 'agent_id', 'blocks', 'colors', 'current_block', 'label', 'state', 'step', 'updated_at']);
+    assert.deepEqual(Object.keys(s).sort(), ['accent', 'agent_id', 'attempt', 'blocks', 'colors', 'current_block', 'label', 'max_attempts', 'missed_requirement_ids', 'state', 'step', 'updated_at']);
+    assert.ok(s.missed_requirement_ids.every((x: string) => brief.requirements.some(r => r.id === x)));
     assert.ok(s.colors.every((c: string) => pageColors.includes(c)), `only the page's own colours: ${s.colors}`);
     for (const b of s.blocks) {
       assert.ok(['nav', 'hero', 'section', 'form', 'faq', 'table', 'footer'].includes(b.kind));
@@ -501,6 +504,56 @@ test('a house agent that fails mid-build disappears quietly; a failed check says
   await f.settle();
   const progress = (await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress;
   assert.deepEqual(progress.map((p: any) => [p.agent_id, p.label, p.state]), [['agent_house_voltage', "didn't qualify", 'not_qualified']]);
+});
+
+test('feedback and revision: an outside agent reads its failed checks and resubmits; at most 3 attempts, none after a pass', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const ben = await f.agent(await f.operator('PAYERBEN0002', 'Ben'), 'Beta');
+  const { c } = await f.open(b);
+  // Attempt 1 has no opening hours: the agent reads which requirement it missed, and why.
+  const first = await f.enter(ann.token, c.id, page('', false)); await f.settle();
+  const mine = (await f.get(`/v1/submissions/${first.id}`, ann.token)).data;
+  assert.equal(mine.qualification_status, 'failed');
+  assert.deepEqual(mine.qualification.checks.filter((x: any) => !x.passed).map((x: any) => x.requirement_id), ['req_hours']);
+  // Attempt 2 fixes it and qualifies; the failed attempt stays recorded; no attempt after a pass.
+  const second = await f.enter(ann.token, c.id, page()); await f.settle();
+  assert.equal((await f.get(`/v1/submissions/${second.id}`, ann.token)).data.qualification_status, 'qualified');
+  assert.equal((await f.get(`/v1/submissions/${first.id}`, ann.token)).data.qualification_status, 'failed', 'earlier attempts stay recorded');
+  const asset = (await f.post('/v1/assets', { competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: Buffer.from(page()).toString('base64') }, ann.token)).data;
+  const again = await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'One more try', artifacts: [{ asset_id: asset.id }] }, ann.token);
+  assert.equal(again.data.code, 'DUPLICATE_SUBMISSION', JSON.stringify([asset, again.data]));
+  // Three failed attempts are the limit.
+  for (let i = 0; i < 3; i++) { await f.enter(ben.token, c.id, page('', false)); await f.settle(); }
+  const fourth = (await f.post('/v1/assets', { competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: Buffer.from(page()).toString('base64') }, ben.token)).data;
+  const refused = await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'Fourth attempt', artifacts: [{ asset_id: fourth.id }] }, ben.token);
+  assert.equal(refused.data.code, 'DUPLICATE_SUBMISSION', JSON.stringify([fourth, refused.data]).slice(0, 600));
+  assert.match(refused.data.detail, /At most 3 attempts/);
+  // The buyer sees one qualified entry from Ann, nothing from Ben.
+  assert.deepEqual((await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items.map((x: any) => x.id), [second.id]);
+});
+
+test('house agents revise a failed attempt from its checks: attempt 2 passes, then they stop', async t => {
+  const calls: { revision?: any }[] = [];
+  const atelier = streamingHouseAgent({ id: 'agent_house_atelier', name: 'Atelier', style: '.', description: '.' }, async (_ctx, _p, onText, revision) => {
+    calls.push({ revision });
+    const html = revision ? page() : page('', false); // the first page has no opening hours
+    onText(html);
+    return { text: html, stopReason: 'end_turn' };
+  });
+  const f = await fixture(t, { houseAgents: { agent_house_atelier: atelier }, progressIntervalMs: 0 });
+  const b = await f.buyer();
+  const { c } = await f.open(b);
+  await f.settle();
+  assert.equal(calls.length, 2, 'one revision, and nothing after the pass');
+  assert.equal(calls[0].revision, undefined);
+  assert.deepEqual(calls[1].revision.failed.map((x: any) => x.requirement), ['Shows opening hours.'], 'the revision gets the failed requirement');
+  assert.match(calls[1].revision.html, /^<!doctype html>/, 'and its own previous page');
+  const [p] = (await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress;
+  assert.deepEqual([p.state, p.attempt, p.max_attempts], ['qualified', 2, 3]);
+  assert.deepEqual(p.missed_requirement_ids, ['req_hours'], 'the buyer can see which requirement attempt 1 missed (by ID)');
+  assert.equal((await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items.length, 1);
 });
 
 test('state survives a restart; an operation interrupted mid-call resumes with the same request ID', async t => {

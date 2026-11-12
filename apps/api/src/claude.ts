@@ -57,17 +57,19 @@ export const builderBrief = (c: AgentContextT['competition']) =>
   `Brief title: ${c.title}\n\nBrief:\n${c.brief}\n\nRequirements (each is checked):\n${c.requirements.map(r => `- ${r.description}`).join('\n')}`;
 
 /** Takes a model's output, checks the page the way the API will, and enters it through the public API. */
-export async function submitHouseHtml(text: string, stopReason: string | null | undefined, profile: { id: string; name: string }, { competition: c, uploadAsset, submit }: AgentContextT) {
+export async function submitHouseHtml(text: string, stopReason: string | null | undefined, profile: { id: string; name: string }, { competition: c, uploadAsset, submit }: AgentContextT, attempt = 1) {
   const start = text.search(/<!doctype html/i);
   const end = text.toLowerCase().lastIndexOf('</html>');
   if (start < 0 || end < start) throw new Error(`no HTML document in output (stop_reason ${stopReason})`);
   const html = text.slice(start, end + 7);
   const gate = gateHtml(html);
-  if (gate) throw new Error(`own page fails the gate: ${gate.reason}`); // don't burn the one submission
+  if (gate) throw new Error(`own page fails the gate: ${gate.reason}`); // don't spend an attempt on it
   const base64 = Buffer.from(html, 'utf8').toString('base64');
   prepareHtml(base64); // throws on anything the API would reject
-  const asset = await uploadAsset({ competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: base64 }, `${profile.id}-${c.id}-upload`.slice(0, 128));
-  await submit({ title: `${c.title.slice(0, 80)} — ${profile.name}`.slice(0, 120), artifacts: [{ asset_id: asset.id }] }, `${profile.id}-${c.id}-submit`.slice(0, 128));
+  const n = attempt > 1 ? `-${attempt}` : '';
+  const asset = await uploadAsset({ competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: base64 }, `${profile.id}-${c.id}-upload${n}`.slice(0, 128));
+  const submission = await submit({ title: `${c.title.slice(0, 80)} — ${profile.name}`.slice(0, 120), artifacts: [{ asset_id: asset.id }] }, `${profile.id}-${c.id}-submit${n}`.slice(0, 128));
+  return { submission, html };
 }
 
 export const JUDGE_SYSTEM = `You are the qualification judge for provable.bid, a marketplace where AI agents submit finished single-page websites for a buyer's brief.
@@ -158,8 +160,19 @@ Hard rules (pages that break them are disqualified automatically):
 - Give it a <title>.`;
 
 export type HouseProfile = { id: string; name: string; style: string; description: string };
-/** Produces a page for the brief, calling onText with the growing output as it streams in. */
-export type PageGenerator = (ctx: AgentContextT, profile: HouseProfile, onText: (snapshot: string) => void) => Promise<{ text: string; stopReason: string | null }>;
+/** A failed attempt to revise: the agent's own previous page and the checks it failed (requirement text and reason). */
+export type Revision = { html: string; failed: { requirement: string; reason: string }[] };
+/**
+ * Produces a page for the brief, calling onText with the growing output as it streams in. With `revision`, it
+ * produces a complete revised page that fixes the failed checks.
+ */
+export type PageGenerator = (ctx: AgentContextT, profile: HouseProfile, onText: (snapshot: string) => void, revision?: Revision) => Promise<{ text: string; stopReason: string | null }>;
+
+export const MAX_HOUSE_ATTEMPTS = 3;
+const REVISION_MIN_MS = 60_000;
+const revisionPrompt = (r: Revision) =>
+  `Your page was checked and did not pass these requirements:\n${r.failed.map(f => `- ${f.requirement}\n  Judge: ${f.reason}`).join('\n')}\n\n` +
+  'Return one complete, revised HTML document that fixes these while keeping everything that already passed. Same rules as before: start with <!doctype html>, end with </html>, nothing else.';
 
 /**
  * A labelled house agent around any streaming page generator. While the page streams in, it reports coarse build
@@ -172,28 +185,44 @@ export function streamingHouseAgent(profile: HouseProfile, generate: PageGenerat
   return {
     id: profile.id,
     async run(ctx) {
-      const step = progressTracker(ctx.competition.requirements);
-      const colors = colorTracker();
-      const structure = structureTracker();
-      ctx.progress?.(STEP.planning, { immediate: true });
-      const { text, stopReason } = await generate(ctx, profile, snapshot => {
-        const shape = structure(snapshot);
-        ctx.progress?.(structuralLabel(step(snapshot), shape), { colors: colors(snapshot), structure: shape });
-      });
-      ctx.progress?.(STEP.checking, { immediate: true, colors: colors(text), structure: structure(text, true) });
-      await submitHouseHtml(text, stopReason, profile, ctx);
+      let revision: Revision | undefined;
+      for (let attempt = 1; attempt <= MAX_HOUSE_ATTEMPTS; attempt++) {
+        const step = progressTracker(ctx.competition.requirements);
+        const colors = colorTracker();
+        const structure = structureTracker();
+        ctx.progress?.(STEP.planning, { immediate: true });
+        const { text, stopReason } = await generate(ctx, profile, snapshot => {
+          const shape = structure(snapshot);
+          ctx.progress?.(structuralLabel(step(snapshot), shape), { colors: colors(snapshot), structure: shape });
+        }, revision);
+        ctx.progress?.(STEP.checking, { immediate: true, colors: colors(text), structure: structure(text, true) });
+        const { submission, html } = await submitHouseHtml(text, stopReason, profile, ctx, attempt);
+        // Feedback: wait for this entry's own check; revise only a failed one, with time left, up to 3 attempts.
+        if (!ctx.waitForResult) return;
+        const result = await ctx.waitForResult(submission.id);
+        if (result.qualification_status !== 'failed' || attempt === MAX_HOUSE_ATTEMPTS) return;
+        if ((ctx.timeLeftMs?.() ?? 0) < REVISION_MIN_MS) return;
+        const failed = (result.qualification?.checks ?? []).filter(x => !x.passed).map(x => ({
+          requirement: ctx.competition.requirements.find(r => r.id === x.requirement_id)?.description ?? x.requirement_id,
+          reason: x.reason,
+        }));
+        if (!failed.length) failed.push({ requirement: 'The automated page checks', reason: result.qualification?.reason ?? 'failed' });
+        revision = { html, failed };
+      }
     },
   };
 }
 
 /** Claude as a page generator: streams the reply so build steps track real progress. */
 export function claudeGenerator(client: Anthropic): PageGenerator {
-  return async ({ competition: c, signal }, profile, onText) => {
+  return async ({ competition: c, signal }, profile, onText, revision) => {
     const stream = client.beta.messages.stream({
       model: MODEL, max_tokens: 64000,
       output_config: { effort: EFFORT },
       system: BUILDER_SYSTEM(profile.name, `${profile.description} ${profile.style}`),
-      messages: [{ role: 'user', content: builderBrief(c) }],
+      messages: revision
+        ? [{ role: 'user', content: builderBrief(c) }, { role: 'assistant', content: revision.html }, { role: 'user', content: revisionPrompt(revision) }]
+        : [{ role: 'user', content: builderBrief(c) }],
     }, { signal });
     stream.on('text', (_delta, snapshot) => onText(snapshot));
     const message = await stream.finalMessage();
