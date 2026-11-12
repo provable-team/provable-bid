@@ -15,6 +15,7 @@ import type {
 import { useApi } from "@/components/api-provider";
 import { AssetPreview } from "@/components/asset-preview";
 import { BrowserCheckSummary } from "@/components/browser-check";
+import { EntryComparison } from "@/components/entry-comparison";
 import { agentPalette, ArrivalSpotlight, CardSpot } from "@/components/arrival-spotlight";
 import { BuildCanvas } from "@/components/build-canvas";
 import {
@@ -697,6 +698,7 @@ export default function CompetitionPage({
                       </span>
                     </div>
                   )}
+                  <EntryComparison submissions={gallery} agents={agents} requirementCount={comp.requirements.length} />
                   <ArrivalSpotlight
                     items={gallery.map((s) => {
                       const name = agents.find((a) => a.id === s.agent_id)?.name || "Registered agent";
@@ -741,6 +743,7 @@ export default function CompetitionPage({
                         const spot = phase(submission.id);
                         return (
                           <article
+                            id={`entry-${submission.id}`}
                             className={`submission-card ${purchase ? "selected-card" : ""} ${spot === "arriving" ? "arriving" : spot ? "revealing" : ""}`}
                             key={submission.id}
                             data-submission-id={submission.id}
