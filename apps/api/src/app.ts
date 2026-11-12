@@ -131,6 +131,8 @@ type StoredAsset = {
   browser?: {
     renderer: string; phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[]; focus?: RenderResult['focus'];
     phoneLayout?: RenderResult['phoneLayout']; loadMs?: number; renderMs?: number;
+    /** Print measurement (pages with print CSS): kept for the record and the judge, not served in browser_check. */
+    print?: RenderResult['print'];
     /** KERNEL replay of the check (server-side; offered to readers of the submission only until expires_at). */
     replay?: { id: string; url: string; expires_at: string };
   };
@@ -1280,7 +1282,7 @@ export async function createApi(o: ApiOptions) {
     const asset = assets.get(assetId)!;
     asset.shots = { desktop: r.desktop_base64, phone: r.phone_base64, desktopHeight: r.desktopHeight, phoneHeight: r.phoneHeight };
     asset.browser = { renderer: r.renderer, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests, focus: r.focus,
-      phoneLayout: r.phoneLayout, loadMs: r.loadMs, renderMs: r.renderMs,
+      phoneLayout: r.phoneLayout, loadMs: r.loadMs, renderMs: r.renderMs, ...(r.print ? { print: r.print } : {}),
       replay: r.replay ? { id: r.replay.id, url: r.replay.url, expires_at: at(time() + r.replay.retentionMs) } : undefined };
     const preview: S['Preview'] = { ...asset.metadata.preview, mime_type: 'image/jpeg', phone_url: `${asset.metadata.preview.url}?view=phone`, width: 1280, height: r.desktopHeight };
     asset.metadata.preview = preview;

@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business Card: Maya Okafor, Product Designer</title>
+<style>
+  :root {
+    --ink: #3b3350;
+    --soft: #6e6485;
+    --blush: #fbe3ea;
+    --rose: #f4b6c9;
+    --mint: #e3f4ee;
+    --sage: #9fd8c3;
+    --lilac: #e6dcf7;
+    --lilac-deep: #b9a4e3;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: ui-rounded, "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+    background: #f7f4fb;
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .screen {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 28px 16px 48px;
+  }
+  .note {
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 18px 20px;
+    box-shadow: 0 6px 18px rgba(59, 51, 80, 0.07);
+    margin-bottom: 28px;
+    max-width: 640px;
+  }
+  .note h1 {
+    font-size: 1.25rem;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+  .note p {
+    margin: 0;
+    color: var(--soft);
+    line-height: 1.5;
+    font-size: 0.95rem;
+  }
+  .sides {
+    display: grid;
+    gap: 32px;
+    justify-items: center;
+  }
+  .side {
+    width: 100%;
+    max-width: 420px;
+  }
+  .side h2 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--soft);
+    margin: 0 0 10px 4px;
+  }
+
+  /* Card: 3.5 x 2 in, scales fluidly on screen */
+  .card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3.5 / 2;
+    container-type: inline-size;
+    border-radius: 18px;
+    box-shadow: 0 10px 26px rgba(59, 51, 80, 0.12);
+  }
+  /* Decoration layer: text-free, clips only its own shapes */
+  .deco {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .card-inner {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* Front */
+  .front { background: var(--blush); }
+  .front .deco-blob {
+    position: absolute;
+    right: -6cqw;
+    top: -10cqw;
+    width: 40cqw;
+    height: 40cqw;
+    border-radius: 50%;
+    background: var(--rose);
+    opacity: 0.75;
+  }
+  .front .deco-dot {
+    position: absolute;
+    right: 9cqw;
+    bottom: 9cqw;
+    width: 13cqw;
+    height: 13cqw;
+    border-radius: 50%;
+    background: var(--lilac);
+  }
+  .front .deco-stripe {
+    position: absolute;
+    left: 8cqw;
+    top: 9cqw;
+    width: 16cqw;
+    height: 2.4cqw;
+    border-radius: 2cqw;
+    background: var(--sage);
+  }
+  .front .text {
+    position: absolute;
+    left: 8cqw;
+    bottom: 9cqw;
+    right: 40cqw;
+  }
+  .front .name {
+    font-size: 8.2cqw;
+    font-weight: 800;
+    line-height: 1.1;
+    margin: 0 0 1.6cqw;
+    color: var(--ink);
+  }
+  .front .title {
+    font-size: 4.4cqw;
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 0;
+    color: var(--soft);
+  }
+
+  /* Back */
+  .back { background: var(--mint); }
+  .back .deco-arc {
+    position: absolute;
+    right: -4cqw;
+    bottom: -8cqw;
+    width: 34cqw;
+    height: 34cqw;
+    border-radius: 50%;
+    background: var(--sage);
+    opacity: 0.55;
+  }
+  .back .deco-pill {
+    position: absolute;
+    right: 9cqw;
+    top: 9cqw;
+    width: 12cqw;
+    height: 12cqw;
+    border-radius: 40%;
+    background: var(--lilac);
+  }
+  .back .contact {
+    position: absolute;
+    left: 8cqw;
+    top: 50%;
+    transform: translateY(-50%);
+    right: 14cqw;
+  }
+  .back .row {
+    display: flex;
+    align-items: center;
+    gap: 3cqw;
+    margin: 0 0 3.2cqw;
+  }
+  .back .row:last-child { margin-bottom: 0; }
+  .back .dot {
+    flex: 0 0 auto;
+    width: 3.2cqw;
+    height: 3.2cqw;
+    border-radius: 50%;
+    background: var(--lilac-deep);
+  }
+  .back .info { min-width: 0; }
+  .back .value {
+    display: block;
+    font-size: 4.9cqw;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+  .back .label {
+    display: block;
+    font-size: 2.9cqw;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--soft);
+    margin-bottom: 0.6cqw;
+  }
+
+  /* Wide screens: two sides side by side */
+  @media (min-width: 920px) {
+    .sides {
+      grid-template-columns: repeat(2, minmax(0, 420px));
+      justify-content: center;
+      gap: 40px;
+    }
+  }
+
+  /* Print: exactly two pages, one card per page */
+  @media print {
+    @page {
+      size: 3.5in 2in;
+      margin: 0;
+    }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff !important;
+      width: 3.5in;
+      min-height: 0;
+      overflow: visible;
+    }
+    .screen-only,
+    .note,
+    .side h2 {
+      display: none !important;
+    }
+    .screen {
+      max-width: none;
+      padding: 0;
+      margin: 0;
+    }
+    .sides {
+      display: block;
+      gap: 0;
+    }
+    .side {
+      width: 3.5in;
+      max-width: none;
+      margin: 0;
+    }
+    .card {
+      width: 3.5in;
+      height: 2in;
+      aspect-ratio: auto;
+      border-radius: 0;
+      box-shadow: none;
+      position: relative;
+      overflow: hidden;
+      container-type: normal;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .side:first-child .card {
+      break-after: page;
+      page-break-after: always;
+    }
+    .side:last-child .card {
+      break-after: auto;
+      page-break-after: auto;
+    }
+    .card-inner {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 3.5in;
+      height: 2in;
+    }
+    .front .name { font-size: 20pt; margin: 0 0 4pt; }
+    .front .title { font-size: 9pt; }
+    .front .text { left: 0.3in; bottom: 0.3in; right: 1.4in; }
+    .front .deco-stripe { left: 0.3in; top: 0.3in; width: 0.5in; height: 0.07in; }
+    .front .deco-blob { width: 1.2in; height: 1.2in; right: -0.3in; top: -0.4in; }
+    .front .deco-dot { width: 0.42in; height: 0.42in; right: 0.3in; bottom: 0.3in; }
+    .back .contact { left: 0.3in; right: 0.6in; }
+    .back .value { font-size: 9.5pt; }
+    .back .label { font-size: 7.5pt; margin-bottom: 1pt; }
+    .back .row { gap: 6pt; margin-bottom: 8pt; }
+    .back .dot { width: 6pt; height: 6pt; }
+    .back .deco-arc { width: 1.1in; height: 1.1in; right: -0.3in; bottom: -0.4in; }
+    .back .deco-pill { width: 0.38in; height: 0.38in; right: 0.3in; top: 0.3in; }
+  }
+</style>
+</head>
+<body>
+<main class="screen">
+
+  <div class="note screen-only">
+    <h1>Maya Okafor, Product Designer</h1>
+    <p>Two-sided US business card, trim size 3.5 x 2 in. The front shows name and title; the back shows email and website. To print, open the print dialog, set paper size to 3.5 x 2 in (or a custom 3.5 x 2 in size), set margins to none, and turn off headers and footers. The card prints as two pages: front, then back.</p>
+  </div>
+
+  <div class="sides">
+
+    <section class="side">
+      <h2 class="screen-only">Front</h2>
+      <div class="card front" id="front" aria-label="Front of card">
+        <div class="deco" aria-hidden="true">
+          <div class="deco-blob"></div>
+          <div class="deco-stripe"></div>
+          <div class="deco-dot"></div>
+        </div>
+        <div class="card-inner">
+          <div class="text">
+            <p class="name">Maya Okafor</p>
+            <p class="title">Product Designer</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="side">
+      <h2 class="screen-only">Back</h2>
+      <div class="card back" id="back" aria-label="Back of card">
+        <div class="deco" aria-hidden="true">
+          <div class="deco-arc"></div>
+          <div class="deco-pill"></div>
+        </div>
+        <div class="card-inner">
+          <div class="contact">
+            <div class="row">
+              <span class="dot" aria-hidden="true"></span>
+              <div class="info">
+                <span class="label">Email</span>
+                <span class="value">maya@example.com</span>
+              </div>
+            </div>
+            <div class="row">
+              <span class="dot" aria-hidden="true"></span>
+              <div class="info">
+                <span class="label">Website</span>
+                <span class="value">example.com/maya</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+</body>
+</html>

@@ -36,6 +36,33 @@ export interface AgentAdapter {
   readonly id: string;
   run(context: AgentContext): Promise<void>; // May decline; chooses its own resources/strategy.
 }
+/**
+ * The page in print media (same browser, print emulated, viewport at the declared @page size), measured only when
+ * it has print CSS. Selector hints and text snippets are short, sanitized and come from the (untrusted) page.
+ */
+export interface PrintMeasurement {
+  checked: boolean;
+  /** Why the measurement could not finish (the render itself still succeeds). */
+  error?: string;
+  /** The @page size the CSS declares, in mm (width, height); null when it declares none (auto). */
+  page_size_mm?: [number, number] | null;
+  /** Pages the browser's print engine produced (page.pdf with the CSS page size), or page-sized boxes when it could not print. */
+  pages?: number | null;
+  pages_source?: 'pdf' | 'page_boxes';
+  /** Size of the printed pages, mm, when printed to PDF. */
+  printed_size_mm?: [number, number] | null;
+  /** Page-sized boxes the page draws (outermost only): each should print as one page. Absent when there are none. */
+  expected_pages?: number;
+  /** Text cut off by a clipping box, and fixed-size clipping boxes whose content is bigger than the box. */
+  overflow?: { selector_hint: string; px: number; text?: string }[];
+  /** Text runs closer than 3 mm to the edge of a page-sized box (or past it). */
+  safe_area_violations?: number;
+  /** Smallest visible text, pt. */
+  min_font_pt?: number | null;
+  /** The problems in words, at most 10. Empty means none found. */
+  issues?: string[];
+}
+
 export interface EvaluatorAdapter {
   readonly version: string;
   qualify(input: {
@@ -51,6 +78,8 @@ export interface EvaluatorAdapter {
       phoneLayout?: { layoutWidth: number; contentWidth: number; scale: number };
       /** Keyboard focus measured by pressing Tab (up to 20 stops): tag names and booleans only. */
       focus?: { tabStops: number; visibleIndicators: number; complete: boolean; samples: { tag: string; visible: boolean; nav: boolean; faq: boolean }[] };
+      /** Print media, measured only when the page has print CSS (@page or @media print); `checked: false` otherwise. */
+      print?: PrintMeasurement;
     };
     artifacts: {
       metadata: components['schemas']['Artifact'];

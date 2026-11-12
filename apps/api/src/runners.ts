@@ -35,6 +35,8 @@ export type RenderedPage = {
   desktop_base64: string; phone_base64: string; desktopHeight: number; phoneHeight: number;
   phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[]; focus?: RenderResult['focus'];
   phoneLayout?: RenderResult['phoneLayout']; loadMs?: number; renderMs?: number; replay?: RenderResult['replay'];
+  /** Print measurement (plain JSON): only the judge uses it; it is not part of the served browser_check. */
+  print?: RenderResult['print'];
 };
 /** The qualification result without artifact_hashes: the API binds those to its own digests, never the runner's. */
 export type Verdict = Omit<S['QualificationResult'], 'artifact_hashes'>;
@@ -54,7 +56,7 @@ export const toRendered = (renderer: string, r: RenderResult): RenderedPage => (
   renderer, desktop_base64: r.desktop.toString('base64'), phone_base64: r.phone.toString('base64'), desktopHeight: r.desktopHeight, phoneHeight: r.phoneHeight,
   phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests, ...(r.focus ? { focus: r.focus } : {}),
   ...(r.phoneLayout ? { phoneLayout: r.phoneLayout } : {}), ...(r.loadMs !== undefined ? { loadMs: r.loadMs } : {}),
-  ...(r.renderMs !== undefined ? { renderMs: r.renderMs } : {}), ...(r.replay ? { replay: r.replay } : {}),
+  ...(r.renderMs !== undefined ? { renderMs: r.renderMs } : {}), ...(r.replay ? { replay: r.replay } : {}), ...(r.print ? { print: r.print } : {}),
 });
 
 /** Gates, then (with a renderer) a real-browser render, else null. Never throws for a render failure. */
@@ -73,7 +75,7 @@ export async function judgeEntry(job: EvaluationJob, rendered: RenderedPage | nu
     artifacts: [{ metadata: job.artifact, bytes: new Uint8Array(Buffer.from(job.original_base64, 'base64')) }],
     ...(rendered ? {
       screenshots: { desktop: new Uint8Array(Buffer.from(rendered.desktop_base64, 'base64')), phone: new Uint8Array(Buffer.from(rendered.phone_base64, 'base64')) },
-      browser: { phoneOverflowPx: rendered.phoneOverflowPx, phoneLayout: rendered.phoneLayout, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests, focus: rendered.focus },
+      browser: { phoneOverflowPx: rendered.phoneOverflowPx, phoneLayout: rendered.phoneLayout, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests, focus: rendered.focus, ...(rendered.print ? { print: rendered.print } : {}) },
     } : {}),
   });
   return verdict;
