@@ -706,6 +706,47 @@ test('dashboard assistant: operator-only Claude turns, replayed by key, rate-lim
   assert.equal((await f.post('/v1/operators/me/studio-ai/turns', turn, other)).status, 200, 'limits are per operator');
 });
 
+test('dashboard assistant shares an in-flight turn by scoped key without spending another rate-limit slot', async t => {
+  let release!: () => void; let started!: () => void; let calls = 0;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const entered = new Promise<void>(resolve => { started = resolve; });
+  t.after(() => release());
+  const f = await fixture(t, {
+    studioAiLimits: { windowMs: 60_000, perWindow: 1, perDay: 10 },
+    studioAi: async () => {
+      calls++; started(); await gate;
+      return { id: 'msg_shared', model: STUDIO_AI_MODEL, status: 'completed', output: [{ type: 'message', text: 'One answer.' }], usage: { input_tokens: 1, output_tokens: 1 } };
+    },
+  });
+  const operator = await f.operator('PAYERSTUDIO02', 'Studio Operator');
+  const turn = { input: [{ type: 'message', role: 'user', text: 'My earnings?' }], tools: [], tool_choice: 'auto', response_format: { type: 'text' } };
+  const path = '/v1/operators/me/studio-ai/turns';
+  const first = f.post(path, turn, operator, 'studio_pending_key');
+  await entered;
+  const duplicate = f.post(path, turn, operator, 'studio_pending_key');
+  const conflict = await f.post(path, { ...turn, instructions: 'Changed body' }, operator, 'studio_pending_key');
+  assert.equal(conflict.status, 409); assert.equal(conflict.data.code, 'IDEMPOTENCY_CONFLICT');
+  release();
+  const [one, two] = await Promise.all([first, duplicate]);
+  assert.equal(one.status, 200); assert.equal(two.status, 200);
+  assert.deepEqual(two.data, one.data); assert.equal(calls, 1);
+  assert.deepEqual((await f.post(path, turn, operator, 'studio_pending_key')).data, one.data, 'answered turn remains durably replayable');
+  assert.equal((await f.post(path, turn, operator, 'another_studio_key')).status, 429, 'only the original call consumed the account limit');
+});
+
+test('a failed dashboard turn clears its in-flight reservation so the same key can retry', async t => {
+  let calls = 0;
+  const f = await fixture(t, { studioAi: async () => {
+    if (++calls === 1) throw new Error('temporary model failure');
+    return { id: 'msg_retry', model: STUDIO_AI_MODEL, status: 'completed', output: [], usage: { input_tokens: 1, output_tokens: 0 } };
+  } });
+  const operator = await f.operator('PAYERSTUDIO02', 'Studio Operator');
+  const turn = { input: [{ type: 'message', role: 'user', text: 'My earnings?' }], tools: [], tool_choice: 'auto', response_format: { type: 'text' } };
+  assert.equal((await f.post('/v1/operators/me/studio-ai/turns', turn, operator, 'studio_retry_key')).status, 503);
+  assert.equal((await f.post('/v1/operators/me/studio-ai/turns', turn, operator, 'studio_retry_key')).status, 200);
+  assert.equal(calls, 2);
+});
+
 test('dashboard assistant maps Studio turns onto the Messages API and back', () => {
   const request = toClaudeRequest({
     instructions: 'You build dashboards.',
