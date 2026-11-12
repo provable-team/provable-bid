@@ -747,6 +747,8 @@ test('house agents report live build steps to the buyer only, and the steps neve
   const labels = [...new Set(steps.map((s: any) => s.label))];
   for (const expected of ['writing the styles', 'styling for phones', 'writing the header', 'writing the hero', 'adding opening hours', 'finishing up', 'qualified'])
     assert.ok(labels.includes(expected), `saw "${expected}" in ${JSON.stringify(labels)}`);
+  // House agents read and upload through the public API too, but outside-agent activity never applies to them.
+  assert.ok(!labels.some(l => ['read the brief', 'uploading its page'].includes(l)), JSON.stringify(labels));
   assert.equal(seen.at(-1).build_progress[0].state, 'qualified');
   const indexes = steps.map((s: any) => s.step);
   assert.deepEqual(indexes, [...indexes].sort((x, y) => x - y), 'step indexes only increase');
@@ -818,6 +820,71 @@ test('feedback and revision: an outside agent reads its failed checks and resubm
   assert.match(refused.data.detail, /At most 3 attempts/);
   // The buyer sees one qualified entry from Ann, nothing from Ben.
   assert.deepEqual((await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items.map((x: any) => x.id), [second.id]);
+});
+
+test('outside agents show honest activity to their buyer only: read the brief, uploading, then the submission flow', async t => {
+  const f = await fixture(t); // default 1000 ms throttle
+  const b = await f.buyer();
+  const b2 = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann Operator'), 'Alpha');
+  const ben = await f.agent(await f.operator('PAYERBEN0002', 'Ben Operator'), 'Beta');
+  const { c } = await f.open(b);
+  const { c: c2 } = await f.open(b2);
+  const progress = async (buyer: string, cid: string) => ((await f.get(`/v1/competitions/${cid}`, buyer)).data.build_progress ?? []) as any[];
+  const of = async (agentId: string, buyer = b, cid = c.id) => (await progress(buyer, cid)).find(p => p.agent_id === agentId);
+  const upload = (token: string) => f.post('/v1/assets', { competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: Buffer.from(page()).toString('base64') }, token);
+  // Notified but silent: nothing is invented.
+  assert.equal(await of(ann.agent.id), undefined);
+  // Reading the brief with its own credential is the first real signal.
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, ann.token)).status, 200);
+  const read = await of(ann.agent.id);
+  assert.deepEqual([read.label, read.state, read.attempt, read.blocks, read.colors], ['read the brief', 'building', 1, [], []]);
+  // Only this competition's buyer sees it: not agents, not anonymous callers, not another buyer's competition.
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, ann.token)).data.build_progress, undefined);
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, ben.token)).data.build_progress, undefined);
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, null)).data.build_progress, undefined);
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, b2)).data.build_progress, undefined);
+  assert.equal(await of(ann.agent.id, b2, c2.id), undefined, "another buyer's competition never shows Ann's activity here");
+  assert.equal(await of(ben.agent.id, b2, c2.id), undefined);
+  assert.equal((await of(ben.agent.id)).label, 'read the brief', "Ben's own read shows on this brief");
+  // Throttled: an upload within the interval does not move the step; after it, it does.
+  assert.equal((await upload(ann.token)).status, 201);
+  assert.equal((await of(ann.agent.id)).label, 'read the brief');
+  await f.advance(1);
+  const asset = (await upload(ann.token)).data;
+  const up = await of(ann.agent.id);
+  assert.deepEqual([up.label, up.state], ['uploading its page', 'building']);
+  assert.ok(up.step > read.step);
+  // Re-reading the brief later never moves the step back.
+  await f.advance(1);
+  await f.get(`/v1/competitions/${c.id}`, ann.token);
+  assert.equal((await of(ann.agent.id)).label, 'uploading its page');
+  // Its entry takes over: submitted (being checked), then qualified and in the gallery.
+  const s = (await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'Crumb & Co.', artifacts: [{ asset_id: asset.id }] }, ann.token)).data;
+  assert.equal((await of(ann.agent.id)).state, 'submitted');
+  await f.settle();
+  assert.equal((await of(ann.agent.id)).state, 'qualified');
+  assert.deepEqual((await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items.map((x: any) => x.id), [s.id]);
+});
+
+test('outside activity after a failed attempt shows as revising, and stops once the window closes', async t => {
+  const f = await fixture(t, { progressIntervalMs: 0 });
+  const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const { c } = await f.open(b);
+  const of = async () => ((await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress ?? []).find((p: any) => p.agent_id === ann.agent.id);
+  await f.get(`/v1/competitions/${c.id}`, ann.token);
+  await f.enter(ann.token, c.id, page('', false)); await f.settle();
+  const failed = await of();
+  assert.deepEqual([failed.state, failed.missed_requirement_ids], ['not_qualified', ['req_hours']]);
+  await f.get(`/v1/competitions/${c.id}`, ann.token);
+  const again = await of();
+  assert.deepEqual([again.state, again.label, again.attempt, again.missed_requirement_ids], ['revising', 'read the brief', 2, ['req_hours']]);
+  // An agent that never read the brief with its credential stays silent; after the deadline nothing is recorded.
+  const ben = await f.agent(await f.operator('PAYERBEN0002', 'Ben'), 'Beta');
+  await f.advance(c.submission_window_seconds + 1);
+  await f.get(`/v1/competitions/${c.id}`, ben.token);
+  assert.equal(((await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress ?? []).find((p: any) => p.agent_id === ben.agent.id), undefined);
 });
 
 test('house agents revise a failed attempt from its checks: attempt 2 passes, then they stop', async t => {

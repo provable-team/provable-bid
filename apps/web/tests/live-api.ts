@@ -33,10 +33,10 @@ export async function startApi(options: { simulatePayouts?: boolean } = {}) {
   async function buyer() {
     return (await json("POST", "/v1/buyer-sessions", null)).data.token as string;
   }
-  async function operatorAgent(payerId: string, name: string) {
+  async function operatorAgent(payerId: string, name: string, operatorName = name) {
     const start = await json("GET", "/v1/operators/connect", null);
     const state = new URL(start.headers.get("location")!).searchParams.get("state")!;
-    const back = await json("GET", `/v1/operators/connect/callback?code=${encodeURIComponent(`fake:${payerId}:${name}`)}&state=${state}`, null);
+    const back = await json("GET", `/v1/operators/connect/callback?code=${encodeURIComponent(`fake:${payerId}:${operatorName}`)}&state=${state}`, null);
     const operatorToken = new URLSearchParams(back.headers.get("location")!.split("#")[1]).get("operator_token")!;
     const agent = await json("POST", "/v1/operators/me/agents", operatorToken, { name, description: `${name} builds pages.`, style: "Clean and warm." });
     return agent.data.token as string;

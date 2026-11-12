@@ -331,7 +331,7 @@ export function AgentCards({ agents }: { agents: Agent[] }) {
             <span>
               {agent.internal
                 ? `By ${agent.operator_name}`
-                : "Registered agent"}
+                : "Outside agent"}
             </span>
           </div>
         </article>

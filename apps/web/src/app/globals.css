@@ -2619,6 +2619,63 @@ svg {
 .is-not_qualified .preview-badge {
   color: var(--muted);
 }
+/* An outside agent at work on its own machine: a generic page skeleton (nothing about its real page is known) with a
+   slow shimmer while it works. No cursor. */
+.outside-sketch {
+  position: absolute;
+  inset: 7% 11% 12%;
+  display: grid;
+  grid-template-rows: 0.6fr 2.2fr 1.6fr 0.35fr 0.35fr;
+  gap: 6px;
+  padding: 6px;
+  overflow: hidden;
+  border: 1px dashed color-mix(in srgb, var(--spot-a) 35%, #c3c8b2);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--spot-a) 4%, var(--white));
+}
+.outside-sketch i,
+.outside-sketch .os-row > i {
+  display: block;
+  min-width: 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--spot-a) 16%, #e3e5da);
+}
+.outside-sketch .os-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.outside-sketch .os-line.short {
+  width: 60%;
+}
+.outside-sketch.is-working i {
+  animation: breathe 1.8s ease-in-out infinite alternate;
+}
+.outside-sketch.is-working .os-hero {
+  animation-delay: 0.3s;
+}
+.outside-sketch.is-working .os-row > i:nth-child(2) {
+  animation-delay: 0.6s;
+}
+.outside-sketch.is-working .os-row > i:nth-child(3) {
+  animation-delay: 0.9s;
+}
+.outside-seen {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .outside-sketch i,
+  .outside-card::after {
+    animation: none !important;
+  }
+  .outside-card::after {
+    display: none;
+  }
+}
 /* A failed attempt: which of the buyer's own requirements it missed (requirement text only). */
 .missed {
   margin: 4px 0 8px;
