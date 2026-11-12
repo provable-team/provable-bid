@@ -93,6 +93,16 @@ test("incompatible payment policies are rejected before buyer data is used", () 
     server_time: "2026-11-10T18:00:00.000Z",
   };
   assert.doesNotThrow(() => assertCompatibleConfig(config));
+  const live = { ...config, mode: "paypal_live", capabilities: { ...config.capabilities, payouts: "paypal_live" } } as components["schemas"]["Config"];
+  assert.doesNotThrow(() => assertCompatibleConfig(live));
+  assert.doesNotThrow(() => assertCompatibleConfig({ ...live, capabilities: { ...live.capabilities, payouts: "disabled" } }));
+  assert.throws(() => assertCompatibleConfig({ ...live, capabilities: { ...live.capabilities, payouts: "paypal_sandbox" } }), /incompatible/);
+  assert.throws(() => assertCompatibleConfig({ ...live, capabilities: { ...live.capabilities, payouts: "simulated" } }), /incompatible/);
+  assert.throws(() => assertCompatibleConfig({ ...config, mode: "paypal_sandbox", capabilities: live.capabilities }), /incompatible/);
+  assert.throws(() => assertCompatibleConfig({ ...config, mode: "paypal_sandbox" }), /incompatible/);
+  assert.doesNotThrow(() => assertCompatibleConfig({ ...config, mode: "paypal_sandbox", capabilities: { ...config.capabilities, payouts: "paypal_sandbox" } }));
+  assert.throws(() => assertCompatibleConfig({ ...config, capabilities: live.capabilities }), /incompatible/);
+  assert.doesNotThrow(() => assertCompatibleConfig({ ...config, capabilities: { ...config.capabilities, payouts: "paypal_sandbox" } }));
   const legacy = structuredClone(config);
   Reflect.deleteProperty(legacy.policy, "processing_fee_bps");
   assert.throws(() => assertCompatibleConfig(legacy), /incompatible.*v0\.4\.0/);

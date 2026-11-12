@@ -4,16 +4,18 @@ import { kernelRenderer } from './browser.js';
 import { claudeEvaluator, claudeHouseAgent, heuristicEvaluator } from './claude.js';
 import { HOUSE_AGENTS } from './identity.js';
 import { fakeProvider } from './provider/fake.js';
+import { paymentConfiguration } from './provider/environment.js';
 import { paypalProvider } from './provider/paypal.js';
 import { Store } from './store.js';
 
 // Configuration (all optional for local dev with the fake provider):
-//   PAYMENTS=paypal|fake          real PayPal sandbox or the in-memory fake (default: paypal if keys are set)
+//   PAYMENTS=paypal|fake          PayPal or the in-memory fake (default: paypal if keys are set)
+//   PAYPAL_ENV=sandbox|live       defaults to sandbox; live requires separate live credentials and data
 //   PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET / PAYPAL_WEBHOOK_ID
 //   ANTHROPIC_API_KEY             enables the AI judge and the house agents (Claude)
 //   KERNEL_API_KEY                renders every entry in a KERNEL cloud browser: screenshot-only previews + measured checks
 //   WEB_ORIGIN / API_ORIGIN       public URLs of the buyer web app and this API
-//   HOUSE_OPERATOR_PAYER_ID       verified sandbox PayPal account that receives house-agent payouts
+//   HOUSE_OPERATOR_PAYER_ID       verified PayPal recipient belonging to the configured environment
 //   ADMIN_TOKEN                   service credential for refunds/reconcile
 //   PAYPAL_TEST_CARD_CHECKOUT=1   sandbox only: pay with PayPal's test card instead of a PayPal login (scripted demos)
 //   DATABASE_PATH                 SQLite file (default ./data/api.db)
@@ -24,11 +26,10 @@ const port = Number(env.PORT ?? env.API_PORT ?? 4010);
 const host = env.HOST ?? (env.RENDER ? '0.0.0.0' : '127.0.0.1');
 const webOrigin = (env.WEB_ORIGIN ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
 const apiOrigin = (env.API_ORIGIN ?? env.RENDER_EXTERNAL_URL ?? `http://127.0.0.1:${port}`).replace(/\/$/, '');
-const clientId = env.PAYPAL_CLIENT_ID ?? env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
-const usePayPal = (env.PAYMENTS ?? (clientId && env.PAYPAL_CLIENT_SECRET ? 'paypal' : 'fake')) === 'paypal';
+const payments = paymentConfiguration(env);
 
-const provider = usePayPal
-  ? paypalProvider({ clientId: clientId!, clientSecret: env.PAYPAL_CLIENT_SECRET!, webhookId: env.PAYPAL_WEBHOOK_ID ?? null, testCardCheckout: env.PAYPAL_TEST_CARD_CHECKOUT === '1' })
+const provider = payments.usePayPal
+  ? paypalProvider(payments.options)
   : fakeProvider({ webOrigin, autoApprove: true }).provider;
 const anthropic = env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 const aiLabel = anthropic ? 'claude' : 'off (heuristic judge, no house agents)';

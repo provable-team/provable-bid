@@ -179,3 +179,33 @@ test('refunds and disputes are re-read: capture from the up link, cumulative ref
   ]);
   assert.equal(captureIdFromLinks([{ href: `${SANDBOX}/v2/payments/captures/CAP9`, rel: 'self' }]), null, 'only rel=up names the parent capture');
 });
+
+test('sandbox default and explicit live select matching SDK, REST, Connect hosts and truthful modes with stubbed transports', async () => {
+  for (const live of [false, true]) {
+    const sdk = sdkStub(() => ({ status: 200, body: order('ORDERENV') }));
+    const rest = fetchStub(() => ({ status: 200, body: { batch_header: { batch_status: 'SUCCESS' }, items: [] } }));
+    const provider = paypalProvider({ ...env, ...(live ? { live: true } : {}) }, { clientOptions: sdk.clientOptions, fetch: rest.fetch });
+    assert.equal(provider.mode, live ? 'paypal_live' : 'paypal_sandbox');
+    await provider.getOrder('ORDERENV');
+    await provider.getPayout('BATCHENV');
+    const base = live ? 'https://api-m.paypal.com' : SANDBOX;
+    assert.ok(sdk.seen.every(request => request.url.startsWith(`${base}/`)), 'SDK reads use the configured environment');
+    assert.ok(rest.seen.every(request => request.url.startsWith(`${base}/`)), 'OAuth and REST reads use the same environment');
+    assert.equal(new URL(provider.identityAuthorizeUrl('https://web.test/callback', 'state')).hostname, live ? 'www.paypal.com' : 'www.sandbox.paypal.com');
+  }
+  assert.throws(() => paypalProvider({ ...env, live: true, testCardCheckout: true }), /sandbox-only/);
+});
+
+test('PayPal order approval links from the wrong environment are refused even when the order was created', async () => {
+  const args = { intent: 'AUTHORIZE' as const, amountMinor: 2123, referenceId: 'cmp_1', customId: 'pay_1', description: 'stub environment check', requestId: 'req-env', returnUrl: 'https://web.test/c', cancelUrl: 'https://web.test/c' };
+  for (const live of [false, true]) {
+    for (const matching of [false, true]) {
+      const host = (live === matching) ? 'www.paypal.com' : 'www.sandbox.paypal.com';
+      const approval = `https://${host}/checkoutnow?token=ORDERENV`;
+      const sdk = sdkStub(() => ({ status: 201, body: { ...order('ORDERENV', 'CREATED'), links: [{ href: approval, rel: 'payer-action', method: 'GET' }] } }));
+      const provider = paypalProvider({ ...env, live }, { clientOptions: sdk.clientOptions });
+      if (matching) assert.equal((await provider.createOrder(args)).approvalUrl, approval);
+      else assert.equal((await rejects(provider.createOrder(args)) as ProviderError).issue, 'INVALID_APPROVAL_LINK');
+    }
+  }
+});

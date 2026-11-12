@@ -43,18 +43,26 @@ test(
     dom.window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
     dom.window.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new dom.window.Event("close")); };
     const requests: { method: string; url: string; authorization: string | null }[] = [];
-    let settlementOverrides: { first: string; second: string; simulated: boolean } | null = null;
+    let settlementOverrides: { first: string; second: string; simulated: boolean; live?: boolean; mismatch?: boolean } | null = null;
+    let liveConfig = false;
     globalThis.fetch = async (input, init) => {
       const request = new Request(input instanceof Request ? input.clone() : input, init);
       assert.equal(new URL(request.url).origin, baseUrl, "the buyer UI only talks to the configured API");
       requests.push({ method: request.method, url: request.url, authorization: request.headers.get("Authorization") });
       const response = await nativeFetch(input, init);
+      if (liveConfig && request.url.endsWith("/v1/config") && response.ok) {
+        const data = await response.json();
+        data.mode = "paypal_live"; data.capabilities.payouts = "paypal_live";
+        return new Response(JSON.stringify(data), { status: response.status, headers: response.headers });
+      }
       if (settlementOverrides && request.url.endsWith(`/competitions/${competition.id}/settlement`) && response.ok) {
         const data = await response.json();
-        if (settlementOverrides.simulated) data.payout_mode = "simulated";
+        if (settlementOverrides.mismatch) data.payout_mode = "paypal_sandbox";
+        else if (settlementOverrides.live) data.payout_mode = "paypal_live";
+        else if (settlementOverrides.simulated) data.payout_mode = "simulated";
         data.allocations = data.allocations.map((allocation: { payment_id: string }) => ({
           ...allocation,
-          payout_state: allocation.payment_id === settlementOverrides!.first
+          payout_state: settlementOverrides!.live ? "paid" : allocation.payment_id === settlementOverrides!.first
             ? (settlementOverrides!.simulated ? "simulated" : "pending")
             : (settlementOverrides!.simulated ? "blocked" : "failed"),
           ledger_state: allocation.payment_id === settlementOverrides!.first ? "allocated" : "held",
@@ -72,9 +80,13 @@ test(
         downloads.push({ filename: this.download, bytes: nativeFetch(this.href).then((r) => r.arrayBuffer()) });
       } else nativeClick.call(this);
     };
-    const [{ createRoot }, { ApiProvider }, { default: CompetitionPage }] = await Promise.all([
+    const [{ createRoot }, { ApiProvider, useApi }, { default: CompetitionPage }] = await Promise.all([
       import("react-dom/client"), import("../src/components/api-provider.js"), import("../src/app/competitions/[id]/page.js"),
     ]);
+    function ReconnectConfig() {
+      const { reconnect } = useApi();
+      return <button onClick={reconnect}>Reload configuration</button>;
+    }
     const container = dom.window.document.getElementById("app")!;
     const root = createRoot(container);
     const params = Promise.resolve({ id: competition.id });
@@ -105,7 +117,7 @@ test(
     const cards = () => [...container.querySelectorAll<HTMLElement>(".submission-card")];
 
     await act(async () => root.render(
-      <ApiProvider><Suspense fallback={<p>Loading…</p>}><CompetitionPage params={params} /></Suspense></ApiProvider>,
+      <ApiProvider><ReconnectConfig /><Suspense fallback={<p>Loading…</p>}><CompetitionPage params={params} /></Suspense></ApiProvider>,
     ));
     await eventually(() => cards().length === 2 && container.querySelectorAll(".site-preview iframe").length === 2, "both qualified sites render as sandboxed previews");
     for (const frame of container.querySelectorAll("iframe")) {
@@ -161,6 +173,18 @@ test(
     await click(button("Qualified work"), "Qualified work");
     assert.ok(cards().find((c) => c.querySelector(".winner-badge"))?.textContent?.includes("Simulated payout of $19.00; no money was transferred"));
     assert.ok(cards().find((c) => !c.querySelector(".winner-badge"))?.textContent?.includes("Payout of $19.00 is blocked"));
+    settlementOverrides.live = true;
+    liveConfig = true;
+    await click(button("Reload configuration"), "Reload configuration");
+    await eventually(() => Boolean(container.textContent?.includes("Payout of $19.00 confirmed by the provider")), "live payout is labelled without test mode");
+    assert.ok(!container.textContent?.includes("Test payout of $19.00"));
+    await click(button("Settlement"), "Settlement");
+    await eventually(() => Boolean(container.textContent?.includes("PayPal live payouts transfer real money")) && Boolean(container.textContent?.includes("Paid")), "settlement identifies live payouts");
+    assert.ok(!container.textContent?.includes("Paid (test)"));
+    settlementOverrides.mismatch = true;
+    await eventually(() => Boolean(container.textContent?.includes("Payout environment could not be confirmed")) && Boolean(container.textContent?.includes("Payout confirmed")), "mismatched settlement does not claim a live or test payout");
+    assert.ok(!container.textContent?.includes("PayPal live payouts transfer real money"));
+    assert.ok(!container.textContent?.includes("PayPal sandbox payouts use test money"));
     assert.equal(requests.filter((r) => r.method === "POST" && r.url.endsWith("/selection")).length, 1, "one selection command");
     assert.ok(requests.every((r) => r.authorization === `Bearer ${buyerToken}` || r.url.endsWith("/v1/config") || r.url.endsWith("/v1/agents?limit=100")));
   },

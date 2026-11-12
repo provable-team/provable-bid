@@ -3,7 +3,7 @@
 The backend for the v0.4.0 contract (`contracts/openapi.yaml`). Every route is generated from the
 contract, every request is validated against it, and (outside production) every response too.
 
-- **Payments:** real PayPal sandbox (`PAYMENTS=paypal`) or an in-memory fake (`PAYMENTS=fake`) that honours
+- **Payments:** PayPal (`PAYMENTS=paypal`, `PAYPAL_ENV=sandbox` by default) or an in-memory fake (`PAYMENTS=fake`) that honours
   PayPal-Request-Id the same way. Authorize on open, capture the full authorization on selection,
   separate CAPTURE checkouts for extra entries, void on reject / no qualifiers / no decision.
 - **Operation journal:** every provider command persists its PayPal-Request-Id before the call. Unknown
@@ -20,3 +20,8 @@ contract, every request is validated against it, and (outside production) every 
 
 Run from the repository root: `npm run api` (reads `.env.local`) or `npm run api:fake`. See `apps/api/src/server.ts`
 for every environment variable.
+
+`PAYPAL_ENV=live` selects production PayPal endpoints and reports `paypal_live` throughout the API. It requires
+PayPal credentials and refuses test-card checkout or a fallback to fake payments. The deployed Render blueprint
+remains explicitly `sandbox`. Mode support is preparation, not activation: see [payment environments](../../docs/payment-environments.md)
+for configuration isolation and remaining launch prerequisites.

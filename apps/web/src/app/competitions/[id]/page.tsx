@@ -49,13 +49,15 @@ type Decision =
   | { kind: "first" | "additional"; submission: Submission }
   | { kind: "reject" };
 
-function payoutStatus(state: Allocation["payout_state"]): string {
+type PayoutEnvironment = "live" | "test" | "unknown";
+
+function payoutStatus(state: Allocation["payout_state"], environment: PayoutEnvironment): string {
   switch (state) {
     case "simulated": return "Simulated";
     case "not_scheduled": return "Not scheduled";
     case "queued": return "Queued";
     case "pending": return "Pending";
-    case "paid": return "Paid (test)";
+    case "paid": return environment === "live" ? "Paid" : environment === "test" ? "Paid (test)" : "Payout confirmed";
     case "failed": return "Failed";
     case "blocked": return "Blocked";
     case "returned": return "Returned to provable.bid";
@@ -87,14 +89,14 @@ function requirementShort(text: string): string {
   return words.slice(0, 2).join(" ") || "a requirement";
 }
 
-function payoutText(allocation: Allocation): string {
+function payoutText(allocation: Allocation, environment: PayoutEnvironment): string {
   const amount = money(allocation.amount.amount_minor);
   const ledger = (allocation.ledger_state === "held" ? " Allocation is on hold."
     : allocation.ledger_state === "reversed" ? " Allocation was reversed." : "")
     + (allocation.payout_detail ? ` PayPal: ${allocation.payout_detail}` : "");
   switch (allocation.payout_state) {
     case "simulated": return `Simulated payout of ${amount}; no money was transferred.${ledger}`;
-    case "paid": return `Test payout of ${amount} confirmed by the provider.${ledger}`;
+    case "paid": return `${environment === "test" ? "Test payout" : "Payout"} of ${amount} confirmed by the provider.${ledger}`;
     case "returned": return `Payout of ${amount} was not claimed or was cancelled; PayPal returned the money.${ledger}`;
     case "refunded": return `The recipient refunded the payout of ${amount}.${ledger}`;
     case "reversed": return `PayPal reversed the payout of ${amount}.${ledger}`;
@@ -553,6 +555,11 @@ export default function CompetitionPage({
     ["open", "qualifying", "deciding"].includes(comp.state) &&
     decisionOpen;
   const mock = config?.mode === "mock";
+  const payoutEnvironment: PayoutEnvironment = config?.mode === "paypal_live" && settlement?.payout_mode === "paypal_live"
+    ? "live"
+    : (config?.mode === "paypal_sandbox" && settlement?.payout_mode === "paypal_sandbox") ||
+      (config?.mode === "mock" && (settlement?.payout_mode === "simulated" || settlement?.payout_mode === "paypal_sandbox"))
+      ? "test" : "unknown";
   const activePayment = firstPayment || initialPayment;
 
   return (
@@ -832,7 +839,7 @@ export default function CompetitionPage({
                                   <PaymentStatus
                                     payment={payment}
                                     purchase={purchase}
-                                    mock={config ? mock : null}
+                                    mode={config?.mode ?? null}
                                   />
                                   {purchase.status === "awaiting_approval" &&
                                     purchase.checkout &&
@@ -858,7 +865,7 @@ export default function CompetitionPage({
                                   {allocation && (
                                     <p className="payout-line">
                                       <Icon name={allocation.payout_state === "paid" ? "check" : "clock"} size={14} />
-                                      {payoutText(allocation)}
+                                      {payoutText(allocation, payoutEnvironment)}
                                     </p>
                                   )}
                                 </div>
@@ -1040,13 +1047,17 @@ export default function CompetitionPage({
                 <section className="brief-details" aria-label="Buyer settlement">
                   <h2>Payment and payout activity</h2>
                   <p>
-                    Captures and agent payouts are separate events. {settlement.payout_mode === "simulated"
-                      ? "Payouts are simulated; no money is transferred."
-                      : config?.mode === "mock"
-                        ? "Mock payouts use no real money."
-                        : settlement.payout_mode === "paypal_sandbox"
-                          ? "PayPal sandbox payouts use test money."
-                        : "Payouts are disabled."} Unknown provider fees remain unknown until confirmed.
+                    Captures and agent payouts are separate events. {settlement.payout_mode === "disabled"
+                      ? "Payouts are disabled."
+                      : payoutEnvironment === "unknown"
+                        ? "Payout environment could not be confirmed."
+                        : settlement.payout_mode === "simulated"
+                          ? "Payouts are simulated; no money is transferred."
+                          : config?.mode === "mock"
+                            ? "Mock payouts use no real money."
+                            : payoutEnvironment === "test"
+                              ? "PayPal sandbox payouts use test money."
+                              : "PayPal live payouts transfer real money."} Unknown provider fees remain unknown until confirmed.
                   </p>
                   <LedgerGrid
                     label="Buyer settlement"
@@ -1075,7 +1086,7 @@ export default function CompetitionPage({
                         commission: accounting?.commission_minor ?? null,
                         fee: accounting?.provider_expense_minor ?? null,
                         payout: allocation?.amount.amount_minor ?? null,
-                        payoutStatus: allocation ? payoutStatus(allocation.payout_state) : "Not allocated",
+                        payoutStatus: allocation ? payoutStatus(allocation.payout_state, payoutEnvironment) : "Not allocated",
                         ledgerStatus: allocation?.ledger_state ?? "Not allocated",
                       };
                     })}
@@ -1129,7 +1140,7 @@ export default function CompetitionPage({
                   <PaymentStatus
                     payment={activePayment}
                     purchase={first}
-                    mock={config ? mock : null}
+                    mode={config?.mode ?? null}
                   />
                 ) : (
                   <p className="muted">

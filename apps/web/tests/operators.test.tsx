@@ -35,6 +35,7 @@ test("operator ledger paginates with its own credential and discards stale accou
   let mode: "pages" | "loop" | "hang" | "error" | "empty" | "wait" = "pages";
   let releaseOld: ((value: Response) => void) | undefined;
   let releaseSecond: ((value: Response) => void) | undefined;
+  let secondWait = false;
   let releaseHung: ((value: Response) => void) | undefined;
   let releaseRotation: ((value: Response) => void) | undefined;
   const jsonResponse = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -44,7 +45,7 @@ test("operator ledger paginates with its own credential and discards stale accou
     const url = new URL(req.url);
     if (url.pathname === "/v1/operators/me/allocations") {
       ledgerRequests.push({ url, authorization: req.headers.get("Authorization") });
-      if (url.origin === secondBase) return new Promise<Response>((resolve) => { releaseSecond = resolve; });
+      if (url.origin === secondBase) return secondWait ? new Promise<Response>((resolve) => { releaseSecond = resolve; }) : jsonResponse(page([{ ...secondAllocation, payout_state: "paid" }], null));
       if (mode === "wait") return new Promise<Response>((resolve) => { releaseOld = resolve; });
       if (mode === "hang") return url.searchParams.has("cursor") ? new Promise<Response>((resolve) => { releaseHung = resolve; }) : jsonResponse(page([baseAllocation], "hung-next"));
       if (mode === "loop") return jsonResponse(page([baseAllocation], "repeat"));
@@ -54,7 +55,11 @@ test("operator ledger paginates with its own credential and discards stale accou
     }
     if (url.origin === live.baseUrl && url.pathname.endsWith("/credential") && req.method === "POST") return new Promise<Response>((resolve) => { releaseRotation = resolve; });
     if (url.origin === secondBase && url.pathname === "/v1/operators/me") return jsonResponse({ id: "op-two", name: "Second operator", paypal_account_verified: true, agents: [], server_time: "2026-01-01T00:00:00Z" });
-    if (url.origin === secondBase && url.pathname === "/v1/config") return nativeFetch(`${live.baseUrl}/v1/config`);
+    if (url.origin === secondBase && url.pathname === "/v1/config") {
+      const config = await (await nativeFetch(`${live.baseUrl}/v1/config`)).json();
+      config.mode = "paypal_live"; config.capabilities.payouts = "paypal_live";
+      return jsonResponse(config);
+    }
     return nativeFetch(input, init);
   };
   const [{ createRoot }, { ApiProvider, useApi }, { default: OperatorsPage }] = await Promise.all([
@@ -120,7 +125,11 @@ test("operator ledger paginates with its own credential and discards stale accou
   await eventually(() => Boolean(releaseRotation), "credential rotation remains pending");
   assert.equal(button("New token")?.disabled, true);
   await click("Switch API");
-  await eventually(() => Boolean(releaseSecond) && Boolean(container.textContent?.includes("Second operator")), "new account loads");
+  await eventually(() => Boolean(container.textContent?.includes("Second operator")) && Boolean(container.textContent?.includes("PayPal live payouts transfer real money")), "new live account loads");
+  await eventually(() => Boolean(container.textContent?.includes("pay-two")), "live payout row loads");
+  assert.match(container.textContent!, /Live PayPal account connected/);
+  assert.match(container.textContent!, /Paid/);
+  assert.doesNotMatch(container.textContent!, /Paid \(test\)/);
   assert.equal(button("Register agent")?.disabled, false, "new account actions are not blocked by the old request");
   await act(async () => releaseRotation!(jsonResponse({ agent, token: "pba_old_credential", webhook_secret: null })));
   assert.ok(!container.textContent?.includes("pba_old_credential"), "late credentials stay with the original account");
@@ -128,8 +137,11 @@ test("operator ledger paginates with its own credential and discards stale accou
   assert.ok(!container.textContent?.includes("pay-one"), "old account data cannot reappear after switching");
   assert.ok(ledgerRequests.filter((request) => request.url.origin === secondBase).every((request) => request.authorization === `Bearer ${secondToken}`));
   assert.equal(ledgerRequests.filter((request) => request.url.searchParams.get("cursor") === "old-next").length, 0);
+  secondWait = true;
+  await click("Refresh");
+  await eventually(() => Boolean(releaseSecond), "new account refresh is pending");
   await click("Sign out");
   await act(async () => releaseSecond!(jsonResponse(page([secondAllocation], null))));
   assert.ok(!container.textContent?.includes("pay-two"), "late response cannot restore data after sign out");
-  assert.ok(container.textContent?.includes("Connect (demo login)"));
+  assert.ok(container.textContent?.includes("Connect with PayPal"));
 });

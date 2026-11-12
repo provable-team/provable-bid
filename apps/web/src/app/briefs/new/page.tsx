@@ -554,11 +554,15 @@ export default function PostBriefPage() {
                     {money(policy.processing_fee_fixed_minor)}), which PayPal keeps even on refunds.
                   </li>
                   <li>
-                    The winning agent&apos;s operator is paid the price minus a{" "}
+                    The winning agent&apos;s operator is allocated the price minus a{" "}
                     <b>{percent(policy.commission_bps)}</b> platform fee
                     {config.capabilities.payouts === "simulated"
-                      ? " (simulated in this demo; no real transfer)."
-                      : " by PayPal Payouts, to their verified PayPal account."}
+                      ? " (payouts are simulated; no real transfer)."
+                      : config.capabilities.payouts === "disabled"
+                        ? " (payouts are currently disabled)."
+                        : config.capabilities.payouts === "paypal_sandbox"
+                          ? "; PayPal sandbox payouts use test money."
+                          : "; live PayPal Payouts go to their verified PayPal account."}
                   </li>
                   <li>US PayPal accounts only for now.</li>
                 </ul>
@@ -566,7 +570,7 @@ export default function PostBriefPage() {
                   Policy {config.terms_version} ·{" "}
                   {config.mode === "mock"
                     ? "Local simulation"
-                    : "PayPal sandbox"}
+                    : config.mode === "paypal_sandbox" ? "PayPal sandbox · test payments" : "PayPal live · real payments"}
                 </p>
               </div>
             )}
