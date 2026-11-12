@@ -395,6 +395,10 @@ export async function createApi(o: ApiOptions) {
     }
   }
   function completeCapture(p: S['Payment'], cap: { id: string; amountMinor: number; feeMinor: number | null }) {
+    // A canonical webhook may settle a capture whose responses were all lost, including after retries stopped.
+    for (const op of ops.values()) if (op.payment_id === p.id && ['capture_authorization', 'capture_order'].includes(op.kind)) {
+      op.state = 'succeeded'; op.last_error = null; op.updated_at = stamp();
+    }
     if (p.capture_state === 'completed') return;
     p.capture_state = 'completed'; p.operation_state = 'succeeded'; p.last_error_code = null;
     if (p.authorization_state !== 'not_applicable') p.authorization_state = 'captured';
@@ -1103,9 +1107,19 @@ export async function createApi(o: ApiOptions) {
       }
     } catch (e) {
       await exclusive(async () => {
+        const capture = op.kind === 'capture_authorization' || op.kind === 'capture_order';
+        // Do not let a late timeout overwrite a capture the webhook already confirmed while this call was in flight.
+        if (capture && pay?.capture_state === 'completed') { op.state = 'succeeded'; op.last_error = null; op.updated_at = stamp(); return; }
         const unknown = !(e instanceof ProviderError) || e.kind === 'unknown';
         op.last_error = (e as Error).message; op.updated_at = stamp();
-        if (unknown && op.attempts < 12) { op.state = 'unknown'; op.next_at = backoff(op.attempts); if (pay) pay.operation_state = 'unknown'; }
+        if (unknown && (op.attempts < 12 || capture)) {
+          op.state = 'unknown';
+          // Exhausting retries proves only that we could not read the answer. Stop automatic mutation retries, keep
+          // delivery locked and await canonical webhook/manual reconciliation; never void a possibly captured payment.
+          const manual = capture && op.attempts >= 12;
+          op.next_at = manual ? Number.MAX_SAFE_INTEGER : backoff(op.attempts);
+          if (pay) { pay.operation_state = 'unknown'; pay.updated_at = stamp(); if (manual) pay.last_error_code = 'CAPTURE_OUTCOME_REQUIRES_RECONCILIATION'; }
+        }
         else {
           op.state = 'failed';
           if (pay && (op.kind === 'capture_authorization' || op.kind === 'capture_order')) failCapture(pay, e instanceof ProviderError ? e.issue ?? 'DECLINED' : 'INTERNAL');

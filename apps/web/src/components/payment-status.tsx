@@ -53,7 +53,9 @@ export function PaymentStatus({
   if (payment.operation_state === "unknown") {
     title = "Payment outcome unknown";
     description =
-      "The backend is reconciling with the provider. Keep this purchase; do not create another charge.";
+      payment.last_error_code === "CAPTURE_OUTCOME_REQUIRES_RECONCILIATION"
+        ? "PayPal has not confirmed the result. Contact the operator to reconcile this purchase; do not create another charge."
+        : "The backend is reconciling with the provider. Keep this purchase; do not create another charge.";
     tone = "pending";
   }
   if (
