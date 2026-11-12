@@ -8,11 +8,12 @@ type LedgerRow = Record<string, string | number | null>;
 type LedgerColumn = {
   field: string;
   headerName: string;
-  valueType?: "currency" | "date" | "text";
+  valueType?: "currency" | "date" | "text" | "status";
 };
 
 const modules = [AllCommunityModule];
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const pageSizes = [10, 25, 50];
 const theme = themeQuartz.withParams({
   accentColor: "#657b19",
   backgroundColor: "#fffef9",
@@ -39,8 +40,17 @@ export function LedgerGrid({
   const columnDefs = useMemo<ColDef<LedgerRow>[]>(() => columns.map(({ field, headerName, valueType }) => ({
     field,
     headerName,
-    minWidth: 150,
-    flex: 1,
+    // Amounts and statuses are short; give titles and IDs the spare width so they truncate less.
+    minWidth: valueType === "currency" ? 110 : valueType === "status" ? 120 : 150,
+    flex: valueType === "currency" || valueType === "status" ? 1 : 1.5,
+    // Amounts read down a column: right-aligned, tabular figures.
+    ...(valueType === "currency" ? { type: "rightAligned", cellClass: ["ag-right-aligned-cell", "ledger-number"] } : {}),
+    // Status words stay as the API sends them; failures get the existing error tone so they stand out.
+    ...(valueType === "status"
+      ? { cellClass: "ledger-status", cellClassRules:{ "ledger-status-danger": ({ value }) => typeof value === "string" && /^(failed|blocked|reversed)$/i.test(value) } }
+      : {}),
+    // IDs and titles truncate in narrow columns; show the full value on hover.
+    ...(valueType === "currency" ? {} : { tooltipValueGetter: ({ valueFormatted, value }) => valueFormatted ?? (value === null || value === undefined ? undefined : String(value)) }),
     valueFormatter: ({ value }) => {
       if (value === null || value === undefined) return "Unknown";
       if (valueType === "currency" && typeof value === "number") return currency.format(value / 100);
@@ -53,9 +63,11 @@ export function LedgerGrid({
   })), [columns]);
 
   if (rows.length === 0) return <p className="muted">{emptyMessage}</p>;
+  // Paging controls only once there is more than one page's worth of rows.
+  const paged = rows.length > pageSizes[0];
 
   return (
-    <div role="region" aria-label={label} style={{ width: "100%", minWidth: 0 }}>
+    <div className="ledger-grid" role="region" aria-label={label} style={{ width: "100%", minWidth: 0 }}>
       <AgGridProvider modules={modules}>
         <AgGridReact<LedgerRow>
           theme={theme}
@@ -64,9 +76,11 @@ export function LedgerGrid({
           defaultColDef={{ sortable: true, filter: true, resizable: true }}
           domLayout="autoHeight"
           suppressColumnVirtualisation
-          pagination
-          paginationPageSize={10}
-          paginationPageSizeSelector={[10, 25, 50]}
+          tooltipShowMode="whenTruncated"
+          tooltipShowDelay={300}
+          pagination={paged}
+          paginationPageSize={pageSizes[0]}
+          paginationPageSizeSelector={paged ? pageSizes : false}
         />
       </AgGridProvider>
     </div>

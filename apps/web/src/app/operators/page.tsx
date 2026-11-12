@@ -226,8 +226,8 @@ export default function OperatorsPage() {
                   { field: "competition", headerName: "Competition ID" },
                   { field: "payment", headerName: "Payment ID" },
                   { field: "amount", headerName: "Allocation", valueType: "currency" },
-                  { field: "ledger", headerName: "Ledger status" },
-                  { field: "payout", headerName: "Payout status" },
+                  { field: "ledger", headerName: "Ledger status", valueType: "status" },
+                  { field: "payout", headerName: "Payout status", valueType: "status" },
                 ]}
                 rows={allocations.map((allocation) => ({
                   created: allocation.created_at,

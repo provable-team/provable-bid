@@ -1807,3 +1807,19 @@ svg {
   border-left: 1px solid var(--line);
   border-right: 1px solid var(--line);
 }
+
+/* ---- ledger grids (settlement, operator allocations) ---- */
+.ledger-number {
+  font-variant-numeric: tabular-nums;
+}
+/* Ledger states arrive lowercase (held, allocated); show them sentence-case like the payout column. */
+.ledger-status::first-letter {
+  text-transform: uppercase;
+}
+.ledger-status-danger {
+  color: #8a3b25;
+}
+/* autoHeight reserves ~150px of body for an empty-grid overlay; these grids are never rendered empty. */
+.ledger-grid .ag-layout-auto-height .ag-grid-scrolling-rows {
+  min-height: 0;
+}
