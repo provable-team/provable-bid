@@ -35,6 +35,12 @@ test('every DNS answer must be public, including IPv6; only explicit fake-mode l
   await assert.rejects(webhookDestination(url, true, async () => [{ address: '127.0.0.1', family: 4 }]), /exclusively to public/);
   const local = await webhookDestination(new URL('http://localhost/cb'), true, async () => [{ address: '::1', family: 6 }]);
   assert.equal(local.address, '::1');
+  const dual = await webhookDestination(url, false, async () => [
+    { address: '2606:4700:4700::1111', family: 6 }, { address: '1.1.1.1', family: 4 },
+  ]);
+  assert.equal(dual.address, '1.1.1.1', 'AAAA-first dual-stack callbacks still work on IPv4-only deployment networks');
+  const ipv6 = await webhookDestination(url, false, async () => [{ address: '2606:4700:4700::1111', family: 6 }]);
+  assert.equal(ipv6.family, 6, 'public IPv6-only destinations remain supported');
 });
 
 test('the validated DNS address is pinned to the socket; a rebound retry is rejected and redirects are never followed', async () => {

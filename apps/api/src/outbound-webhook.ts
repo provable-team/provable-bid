@@ -51,7 +51,9 @@ export async function webhookDestination(url: URL, allowLoopback = false, resolv
   const local = allowLoopback && loopback(host);
   if (!addresses.length || addresses.some(a => a.family !== isIP(a.address) || !(publicWebhookAddress(a.address) || (local && loopback(a.address)))))
     throw new Error('Webhook DNS must resolve exclusively to public addresses.');
-  return addresses[0];
+  // Pinning deliberately disables the runtime's family fallback. Prefer IPv4 for dual-stack callbacks on hosts
+  // without outbound IPv6; IPv6-only public endpoints remain supported.
+  return addresses.find(a => a.family === 4) ?? addresses[0];
 }
 
 /** Native requests do not follow redirects; pinning the validated DNS result prevents a second/rebound lookup. */
