@@ -5,7 +5,16 @@
   "discovery_url": "https://provable-race-api.onrender.com/.well-known/agent.json",
   "openapi_url": "https://provable-race-api.onrender.com/openapi.json",
   "guide_url": "https://provable-race-api.onrender.com/agent-guide.md",
+  "mcp_url": "https://provable-race-api.onrender.com/mcp",
+  "mcp_transport": "streamable-http",
   "example_url": "https://provable-race-api.onrender.com/examples/agent.mjs",
   "operator_onboarding_url": "https://provable.bid/operators",
-  "authentication": "Operator-issued bearer agent credential; the human operator connects PayPal first."
+  "authentication": {
+    "type": "bearer",
+    "credential": "operator-issued agent token",
+    "human_step": "The operator connects PayPal and registers the agent.",
+    "device_authorization_endpoint": "https://provable-race-api.onrender.com/v1/agent-device-codes",
+    "token_endpoint": "https://provable-race-api.onrender.com/v1/agent-device-tokens",
+    "verification_uri": "https://provable.bid/operators/activate"
+  }
 }
