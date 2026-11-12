@@ -34,7 +34,11 @@ const provider = usePayPal
 const anthropic = env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 const aiLabel = anthropic ? 'claude' : 'off (heuristic judge, no house agents)';
 const store: DocStore = env.DATABASE_URL
-  ? await PgStore.open(env.DATABASE_URL, env.DATABASE_URL_UNPOOLED)
+  ? await PgStore.open(env.DATABASE_URL, env.DATABASE_URL_UNPOOLED, {
+      holder: `${env.RENDER_INSTANCE_ID ?? 'local'}:${process.pid}`,
+      // A newer instance owns the data now (rolling deploy). Stop at once so this one can't act on stale state.
+      onLost: (e) => { console.error(`[store] ${e.message}; exiting so the new instance is the only writer`); setTimeout(() => process.exit(1), 50); },
+    })
   : new Store(env.DATABASE_PATH ?? 'data/api.db');
 
 const api = await createApi({

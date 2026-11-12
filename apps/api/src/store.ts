@@ -118,7 +118,19 @@ export class Store extends DocStoreBase {
 
 // Schema as code. JSON is kept as TEXT (not JSONB) so the stored string round-trips byte for byte,
 // which is what change tracking compares against.
-const SCHEMA = 'CREATE TABLE IF NOT EXISTS docs (kind TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (kind, id))';
+const SCHEMA = [
+  'CREATE TABLE IF NOT EXISTS docs (kind TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (kind, id))',
+  // One writer at a time. Each process takes the lease (epoch + 1) on boot, before it loads anything, and every
+  // flush re-checks the epoch inside its transaction. During a rolling deploy the old instance's next flush sees a
+  // newer epoch and fails, so it can never overwrite the new instance's state or call PayPal again (calls are
+  // always preceded by a flush of their request ID).
+  'CREATE TABLE IF NOT EXISTS store_lease (id INT PRIMARY KEY, epoch BIGINT NOT NULL, holder TEXT NOT NULL, acquired_at TIMESTAMPTZ NOT NULL DEFAULT now())',
+].join(';\n');
+
+/** Thrown when another process has taken the store over; the caller should stop serving writes. */
+export class LeaseLostError extends Error {
+  constructor(readonly mine: string, readonly current: string) { super(`store lease lost (mine ${mine}, current ${current})`); }
+}
 
 /**
  * Postgres (Neon) via node-postgres: a long-running server reuses one small pool. The app uses the
@@ -127,9 +139,10 @@ const SCHEMA = 'CREATE TABLE IF NOT EXISTS docs (kind TEXT NOT NULL, id TEXT NOT
 export class PgStore extends DocStoreBase {
   private chain: Promise<void> = Promise.resolve();
 
-  private constructor(private pool: pg.Pool, private rows: Map<string, Row[]>) { super(); }
+  private constructor(private pool: pg.Pool, private rows: Map<string, Row[]>, readonly epoch: string,
+    private onLost: (e: LeaseLostError) => void) { super(); }
 
-  static async open(url: string, directUrl?: string): Promise<PgStore> {
+  static async open(url: string, directUrl?: string, opts: { holder?: string; onLost?: (e: LeaseLostError) => void } = {}): Promise<PgStore> {
     if (directUrl) {
       const direct = new pg.Client({ connectionString: directUrl, connectionTimeoutMillis: 20_000 });
       await direct.connect();
@@ -138,10 +151,17 @@ export class PgStore extends DocStoreBase {
     const pool = new pg.Pool({ connectionString: url, max: 4, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 20_000 });
     pool.on('error', e => console.error('[store] idle client error', e.message));
     if (!directUrl) await pool.query(SCHEMA);
+    // Take the lease first (this waits for any in-flight flush of the previous holder, which locks the row), then
+    // load: everything the old writer committed is visible, and it can commit nothing more.
+    const holder = opts.holder ?? `pid-${process.pid}`;
+    const { rows: [lease] } = await pool.query<{ epoch: string }>(
+      `INSERT INTO store_lease (id, epoch, holder) VALUES (1, 1, $1)
+       ON CONFLICT (id) DO UPDATE SET epoch = store_lease.epoch + 1, holder = EXCLUDED.holder, acquired_at = now()
+       RETURNING epoch::text AS epoch`, [holder]);
     const all = (await pool.query<Row>('SELECT kind, id, json FROM docs')).rows;
     const rows = new Map<string, Row[]>();
     for (const r of all) rows.set(r.kind, [...(rows.get(r.kind) ?? []), r]);
-    return new PgStore(pool, rows);
+    return new PgStore(pool, rows, lease.epoch, opts.onLost ?? (() => {}));
   }
 
   protected load(kind: string): Row[] {
@@ -163,6 +183,12 @@ export class PgStore extends DocStoreBase {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      const { rows: [lease] } = await client.query<{ epoch: string }>('SELECT epoch::text AS epoch FROM store_lease WHERE id = 1 FOR UPDATE');
+      if (lease?.epoch !== this.epoch) {
+        const lost = new LeaseLostError(this.epoch, lease?.epoch ?? 'none');
+        this.onLost(lost);
+        throw lost;
+      }
       if (p.writes.length) {
         await client.query(
           `INSERT INTO docs (kind, id, json)
