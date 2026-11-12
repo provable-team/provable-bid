@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ApiProvider } from "@/components/api-provider";
 import { SiteChrome, SiteFooter } from "@/components/site-chrome";
 import "./globals.css";
@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   openGraph: { type: "website", siteName: "provable.bid", url: "/", title, description, locale: "en_US" },
   twitter: { card: "summary_large_image", title, description },
 };
+// The site has one (light) theme: match the mobile browser chrome to the paper color.
+export const viewport: Viewport = { themeColor: "#f6f5ef", colorScheme: "light" };
 export default function RootLayout({
   children,
 }: {
