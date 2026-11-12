@@ -13,11 +13,14 @@ import {
   type AgReportState,
   type AgResponsiveLayoutBreakpoint,
   type AgStudioApi,
+  type AgStudioErrorRaisedEvent,
   type AgStudioMode,
+  type AgStudioStateUpdatedEvent,
   type AgWidgetLayoutState,
 } from "ag-studio";
 import type { OperatorStudioRow } from "./operator-studio";
 import { studioAiAdapter } from "./studio-ai-adapter";
+import { createAutosaver, loadDashboard, type DashboardAccount, type DashboardState, type SaveStatus } from "./studio-dashboard-store";
 import { bottom, PAYOUT_STAGES, payoutStageSummary, phoneLayout, studioAllocationData } from "./studio-dashboard-data";
 import { latestPayoutDefinition, payoutPipelineDefinition, payoutShortLabel, type DashboardRegistry } from "./studio-widgets";
 
@@ -168,12 +171,41 @@ When the user asks to show, chart, plot, compare, add, change, move or remove so
 
 // ---------------------------------------------------------------- component
 
-export default function OperatorStudioCanvas({ rows, licenseKey, assistant }: {
+type Props = {
   rows: OperatorStudioRow[];
   licenseKey?: string;
   /** The operator's API base and credential, when the API offers the dashboard assistant. */
   assistant?: { baseUrl: string; token: string } | null;
-}) {
+  /** The operator's API base and credential, to load and save the dashboard layout. */
+  account?: DashboardAccount | null;
+};
+type Loaded = { state: DashboardState | null; version: number; saving: boolean };
+
+/** Loads the operator's saved dashboard first (Studio reads its initial state once), then shows it. */
+export default function OperatorStudioCanvas(props: Props) {
+  const { account } = props;
+  const [loaded, setLoaded] = useState<Loaded | null>(account ? null : { state: null, version: 0, saving: false });
+  useEffect(() => {
+    if (!account) return;
+    let active = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    // Anything but a saved dashboard (an error, a timeout, an older API) shows the default layout, without saving.
+    loadDashboard(account, controller.signal)
+      .then((saved) => ({ ...saved, saving: true }), () => ({ state: null, version: 0, saving: false }))
+      .then((next) => { if (active) setLoaded(next); })
+      .finally(() => clearTimeout(timeout));
+    return () => { active = false; controller.abort(); clearTimeout(timeout); };
+  }, [account]);
+  if (!loaded) return <p role="status">Loading allocation dashboard…</p>;
+  return <Dashboard {...props} loaded={loaded} />;
+}
+
+const SAVE_TEXT: Record<SaveStatus, string> = {
+  idle: "", saving: "Saving…", saved: "Saved", error: "Couldn't save", conflict: "Changed in another window", "too-large": "Too large to save",
+};
+
+function Dashboard({ rows, licenseKey, assistant, account, loaded }: Props & { loaded: Loaded }) {
   const { allocations, missingAmounts } = useMemo(() => studioAllocationData(rows), [rows]);
   const data = useMemo<AgDataSourcesDefinition<DashboardRegistry>>(() => ({
     sources: [{
@@ -230,7 +262,9 @@ export default function OperatorStudioCanvas({ rows, licenseKey, assistant }: {
     return () => observer.disconnect();
   }, []);
   const studioThemeForWidth = useMemo(() => (narrowWidth ? theme.withParams({ studioAiPanelWidth: narrowWidth }) : theme), [narrowWidth]);
-  const [rowsShown, setRowsShown] = useState(bottom(Object.values(initialState.pages[0].widgetLayout ?? {}) as AgWidgetLayoutState[]));
+  // The saved dashboard, or the default; a saved one Studio can't load falls back to the default (and a new key remounts).
+  const [start, setStart] = useState(() => ({ state: (loaded.state as AgReportState<DashboardRegistry> | null) ?? initialState, saved: !!loaded.state, key: 0 }));
+  const [rowsShown, setRowsShown] = useState(() => bottom(Object.values(start.state.pages.find((p) => p.id === start.state.selectedPageId)?.widgetLayout ?? start.state.pages[0]?.widgetLayout ?? {}) as AgWidgetLayoutState[]));
   const reportRows = useCallback((count: number) => queueMicrotask(() => setRowsShown((prev) => (prev === count ? prev : count))), []);
   const breakpoints = useMemo<AgResponsiveLayoutBreakpoint[]>(() => [
     { maxWidth: PHONE_MAX, layout: (candidates, { columns }) => { const out = phoneLayout(candidates, columns); reportRows(bottom(out)); return out; } },
@@ -260,6 +294,45 @@ export default function OperatorStudioCanvas({ rows, licenseKey, assistant }: {
   })) : undefined, [adapter]);
   const modules = useMemo(() => (ai ? [AgStudioAiModule] : []), [ai]);
 
+  // Saving: every report change (by hand or by the assistant) is saved to the operator's account after a short pause.
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [autosaver] = useState(() => (account && loaded.saving
+    ? createAutosaver({ account, version: loaded.version, saved: loaded.state, onStatus: setSaveStatus }) : null));
+  const studioApi = useRef<AgStudioApi | null>(null);
+  // Save only once the dashboard has really been changed: by the assistant, by a reset, or by hand. On a phone Studio
+  // records a "ui" edit of its own while it lays the widgets out, before anyone touches it; an untouched dashboard
+  // keeps following the default layout.
+  const edited = useRef(false);
+  const touched = useRef(false);
+  const onStateUpdated = useCallback((event: AgStudioStateUpdatedEvent) => {
+    studioApi.current = event.api;
+    if (event.change && (event.change.source.type !== "ui" || touched.current)) edited.current = true;
+    if (event.durable && edited.current) autosaver?.schedule(event.state);
+  }, [autosaver]);
+  const touch = useCallback(() => { touched.current = true; }, []);
+  const onErrorRaised = useCallback((event: AgStudioErrorRaisedEvent) => {
+    if (!event.fatal || !start.saved) return;
+    setStart((prev) => ({ state: initialState, saved: false, key: prev.key + 1 }));
+  }, [start.saved]);
+  useEffect(() => {
+    if (!autosaver) return;
+    const leave = () => void autosaver.flush();
+    window.addEventListener("pagehide", leave);
+    return () => { window.removeEventListener("pagehide", leave); leave(); };
+  }, [autosaver]);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const resetButton = useRef<HTMLButtonElement>(null);
+  // Leaving the confirm step puts focus back on "Reset layout" (the buttons that had it are gone).
+  const closeConfirm = useCallback(() => { setConfirmReset(false); setTimeout(() => resetButton.current?.focus(), 0); }, []);
+  const reset = useCallback(() => {
+    closeConfirm();
+    const api = studioApi.current;
+    if (!api) { setStart((prev) => ({ state: initialState, saved: false, key: prev.key + 1 })); return; }
+    edited.current = true;
+    api.setState(structuredClone(initialState));
+    autosaver?.schedule(api.getState());
+  }, [autosaver, closeConfirm]);
+
   return (
     <section className="studio-dashboard" aria-label="Allocation dashboard">
       <div className="studio-dashboard-head">
@@ -267,22 +340,38 @@ export default function OperatorStudioCanvas({ rows, licenseKey, assistant }: {
           <h3>Earnings dashboard</h3>
           <p className="muted">From your loaded allocations only. Net allocated excludes reversals; paid shows confirmed transfers, which a ledger reversal does not recall. Payout activity shows historical recorded amounts.</p>
         </div>
-        {ai && (
-          <div className="studio-mode" role="group" aria-label="Dashboard mode">
-            <button type="button" className={mode === "view" ? "active" : ""} aria-pressed={mode === "view"} onClick={() => setMode("view")}>Dashboard</button>
-            <button type="button" className={mode === "edit" ? "active" : ""} aria-pressed={mode === "edit"} onClick={() => setMode("edit")}>Ask Claude</button>
-          </div>
-        )}
+        <div className="studio-tools">
+          {confirmReset ? (
+            <span className="studio-reset-confirm" role="group" aria-label="Reset the dashboard layout">
+              <span>Reset to the default layout?</span>
+              <button type="button" className="studio-link danger" onClick={reset}>Reset</button>
+              <button type="button" className="studio-link" onClick={closeConfirm} autoFocus>Cancel</button>
+            </span>
+          ) : (
+            <button type="button" className="studio-link" ref={resetButton} onClick={() => setConfirmReset(true)}>Reset layout</button>
+          )}
+          {ai && (
+            <div className="studio-mode" role="group" aria-label="Dashboard mode">
+              <button type="button" className={mode === "view" ? "active" : ""} aria-pressed={mode === "view"} onClick={() => setMode("view")}>Dashboard</button>
+              <button type="button" className={mode === "edit" ? "active" : ""} aria-pressed={mode === "edit"} onClick={() => setMode("edit")}>Ask Claude</button>
+            </div>
+          )}
+          <span className={`studio-save ${saveStatus}`} role="status" aria-live="polite">
+            {autosaver ? SAVE_TEXT[saveStatus] : "Layout changes aren't saved"}
+            {saveStatus === "error" && autosaver && <button type="button" className="studio-link" onClick={() => void autosaver.retry()}>Retry</button>}
+            {saveStatus === "conflict" && <button type="button" className="studio-link" onClick={() => window.location.reload()}>Reload</button>}
+          </span>
+        </div>
       </div>
       {missingAmounts > 0 && <p role="status">{missingAmounts} loaded allocation{missingAmounts === 1 ? " has" : "s have"} no valid amount and {missingAmounts === 1 ? "is" : "are"} excluded from amount totals.</p>}
-      <div className={`studio-canvas ${mode}`} ref={frame} style={{ height }}>
+      <div className={`studio-canvas ${mode}`} ref={frame} style={{ height }} onPointerDownCapture={touch} onKeyDownCapture={touch}>
         <AgStudioProvider licenseKey={licenseKey} modules={modules}>
           <AgStudio<DashboardRegistry>
             // `ai` is read once, when Studio is created.
-            key={ai ? "assistant" : "plain"}
+            key={`${ai ? "assistant" : "plain"}-${start.key}`}
             style={FILL}
             data={data}
-            initialState={initialState}
+            initialState={start.state}
             mode={mode}
             theme={studioThemeForWidth}
             widgets={widgets}
@@ -292,6 +381,9 @@ export default function OperatorStudioCanvas({ rows, licenseKey, assistant }: {
             localeText={LOCALE_TEXT}
             aiText={AI_TEXT}
             responsiveLayoutBreakpoints={breakpoints}
+            onStateUpdated={onStateUpdated}
+            onErrorRaised={onErrorRaised}
+            onApiReady={(event) => { studioApi.current = event.api; }}
           />
         </AgStudioProvider>
       </div>

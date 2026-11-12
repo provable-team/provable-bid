@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { AgentAdapter, EvaluatorAdapter } from '../../../packages/agent-interface/src/index.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
 import { operations, resolve, validator, validateResponse } from '../../../scripts/contract.js';
@@ -116,6 +116,10 @@ export function payoutOutcome(status: string): { state: S['Allocation']['payout_
   }
 }
 
+/** Largest saved dashboard state, as JSON bytes. */
+export const STUDIO_DASHBOARD_MAX_BYTES = 200_000;
+/** One operator's saved AG Studio dashboard, with the key and body hash of its latest save (for a retried save). */
+type StudioDashboardRecord = { operator_id: string; state: S['StudioDashboardSave']['state']; version: number; updated_at: string; last_key: string; last_fingerprint: string };
 type StoredAsset = {
   metadata: S['Asset']; original_base64: string; preview: string;
   /** Real-browser render (KERNEL): JPEG screenshots (base64) and measurements. Once present, buyers only ever get images. */
@@ -179,7 +183,7 @@ export async function createApi(o: ApiOptions) {
   const log = o.log ?? ((m: string, x?: unknown) => console.log(`[api] ${m}`, x ?? ''));
   const app: FastifyInstance = Fastify({ logger: false, bodyLimit: 1_000_000, requestIdHeader: false, genReqId: () => id('req') });
   const origins = [o.webOrigin, ...(o.corsOrigins ?? []), 'http://localhost:3000', 'http://127.0.0.1:3000'];
-  await app.register(cors, { origin: origins, exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'] });
+  await app.register(cors, { origin: origins, methods: ['GET', 'HEAD', 'POST', 'PUT'], exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'] });
   registerAgentDocs(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin });
 
   const houseRunner = o.houseRunner ?? inProcessHouseRunner(o.houseAgents);
@@ -216,6 +220,8 @@ export async function createApi(o: ApiOptions) {
   const oauthStates = st.collection<{ expires: number }>('oauth_state');
   /** Remote house-agent runs (Render Workflows), keyed `${competition}:${agent}`, so a restarted API can re-attach or cancel them. */
   const houseRuns = st.collection<{ competition_id: string; agent_id: string; task_run_id: string; state: 'running' | 'finished' | 'canceled'; started_at: string }>('house_run');
+  /** Each operator's saved AG Studio dashboard (layout, widgets, format; never data rows), keyed by operator ID. */
+  const studioDashboards = st.collection<StudioDashboardRecord>('studio_dashboard');
 
   // House operator + house agents (labelled; payouts go to the house operator's verified PayPal account).
   const houseOperator: Operator = operators.get(HOUSE_OPERATOR_ID) ?? { id: HOUSE_OPERATOR_ID, name: 'provable.bid', email: null, paypal_payer_id: null, recipient_id: 'recipient_provable', house: true, created_at: stamp() };
@@ -946,6 +952,28 @@ export async function createApi(o: ApiOptions) {
             throw new Fault(503, 'PROVIDER_UNAVAILABLE', 'The model is unavailable. Try again.', true);
           } finally { usage.inFlight--; }
         } };
+      }
+      case 'getStudioDashboard': {
+        const me = who(); demand(me.role === 'operator', 'OPERATOR_REQUIRED', 'Connect PayPal as an agent operator first.', 403);
+        const saved = studioDashboards.get(me.operator_id);
+        return { status: 200, body: { state: saved ? structuredClone(saved.state) : null, version: saved?.version ?? 0, updated_at: saved?.updated_at ?? null, server_time: stamp() }, cache: 'no-store' };
+      }
+      case 'saveStudioDashboard': {
+        const me = who(); demand(me.role === 'operator', 'OPERATOR_REQUIRED', 'Connect PayPal as an agent operator first.', 403);
+        const json = JSON.stringify(body.state);
+        if (Buffer.byteLength(json) > STUDIO_DASHBOARD_MAX_BYTES) throw new Fault(413, 'PAYLOAD_TOO_LARGE', `The dashboard is larger than ${STUDIO_DASHBOARD_MAX_BYTES} bytes. Remove some widgets and try again.`);
+        const saved = studioDashboards.get(me.operator_id);
+        const key = String(headers['idempotency-key']);
+        // Only the latest save can be retried (its record holds the key): a replay returns the same result again.
+        const fingerprint = createHash('sha256').update(canonical(body)).digest('hex');
+        if (saved?.last_key === key) {
+          demand(saved.last_fingerprint === fingerprint, 'IDEMPOTENCY_CONFLICT', 'Key was used with a different request body.');
+          return { status: 200, body: { version: saved.version, updated_at: saved.updated_at, server_time: stamp() }, cache: 'no-store' };
+        }
+        demand(body.version === (saved?.version ?? 0), 'INVALID_STATE', 'The dashboard was saved from another window or device. Reload it to continue.');
+        const record: StudioDashboardRecord = { operator_id: me.operator_id, state: JSON.parse(json), version: (saved?.version ?? 0) + 1, updated_at: stamp(), last_key: key, last_fingerprint: fingerprint };
+        studioDashboards.set(me.operator_id, record);
+        return { status: 200, body: { version: record.version, updated_at: record.updated_at, server_time: stamp() }, cache: 'no-store' };
       }
       case 'getAgentEarnings': {
         const me = who(); demand(me.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);

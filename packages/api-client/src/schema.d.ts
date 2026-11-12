@@ -844,6 +844,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/operators/me/studio-dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the operator's saved dashboard layout
+         * @description Operator credential only. The AG Studio dashboard state this operator last saved, with its version. When nothing is saved, 200 with state null and version 0 (the page then shows the default layout).
+         */
+        get: operations["getStudioDashboard"];
+        /**
+         * Save the operator's dashboard layout
+         * @description Operator credential only. Replaces the saved AG Studio dashboard state (layout, widgets, format; never data rows). version must equal the stored version (0 for the first save), else 409 INVALID_STATE: reload and save again. State larger than 200,000 bytes as JSON: 413 PAYLOAD_TOO_LARGE. Requires an Idempotency-Key: retrying the latest save with the same key and body returns its result again; the same key with a different body is 409 IDEMPOTENCY_CONFLICT.
+         */
+        put: operations["saveStudioDashboard"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export interface webhooks {
     competitionOpened: {
@@ -1498,6 +1522,39 @@ export interface components {
                 cached_input_tokens?: number;
                 cache_write_tokens?: number;
             };
+            server_time: components["schemas"]["Timestamp"];
+        };
+        StudioDashboardSave: {
+            /** @description AG Studio's serialized report state (AgReportState): pages with their widgets, widget layout and format. The server stores it as given and does not interpret Studio's schema; at most 200,000 bytes as JSON (413 PAYLOAD_TOO_LARGE). It never holds data rows. */
+            state: {
+                pages: {
+                    [key: string]: unknown;
+                }[];
+                selectedPageId?: string;
+            } & {
+                [key: string]: unknown;
+            };
+            /** @description The version this save replaces: the version last read or saved, 0 when nothing is saved yet. 409 INVALID_STATE when the stored version differs (saved meanwhile from another window or device). */
+            version: number;
+        };
+        StudioDashboard: {
+            /** @description The saved state, or null when the operator has not saved a dashboard (use the default layout). */
+            state: ({
+                pages: {
+                    [key: string]: unknown;
+                }[];
+                selectedPageId?: string;
+            } & {
+                [key: string]: unknown;
+            }) | null;
+            /** @description Increases by one with every save; 0 when nothing is saved. */
+            version: number;
+            updated_at: components["schemas"]["Timestamp"] | null;
+            server_time: components["schemas"]["Timestamp"];
+        };
+        StudioDashboardSaved: {
+            version: number;
+            updated_at: components["schemas"]["Timestamp"];
             server_time: components["schemas"]["Timestamp"];
         };
     };
@@ -3029,6 +3086,74 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getStudioDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The saved dashboard, or state null. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioDashboard"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    saveStudioDashboard: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique logical command key; use the same key and body for network retries. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudioDashboardSave"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioDashboardSaved"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
             422: components["responses"]["Problem"];
             429: components["responses"]["Problem"];
             503: components["responses"]["Problem"];

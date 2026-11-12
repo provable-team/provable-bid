@@ -172,6 +172,7 @@ export default function OperatorsPage() {
   })), [allocations, agentOf]);
   const assistant = useMemo(() => (token && config?.capabilities.studio_ai ? { baseUrl: settings.baseUrl, token } : null),
     [token, config?.capabilities.studio_ai, settings.baseUrl]);
+  const dashboardAccount = useMemo(() => (token ? { baseUrl: settings.baseUrl, token } : null), [token, settings.baseUrl]);
 
   const api = settings.baseUrl;
   return (
@@ -262,7 +263,7 @@ export default function OperatorsPage() {
               />
             )}
             {!ledgerLoading && !ledgerError && allocations.length > 0 && (
-              <OperatorStudio rows={studioRows} assistant={assistant} />
+              <OperatorStudio rows={studioRows} assistant={assistant} account={dashboardAccount} />
             )}
           </section>
 

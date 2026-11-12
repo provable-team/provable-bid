@@ -12,10 +12,12 @@ const OperatorStudioCanvas = dynamic(() => import("./operator-studio-canvas"), {
 });
 
 /** Summarizes only the allocation rows already loaded for the signed-in operator. */
-export function OperatorStudio({ rows, assistant }: {
+export function OperatorStudio({ rows, assistant, account }: {
   rows: OperatorStudioRow[];
   /** The operator's API base and credential, when the API offers the dashboard assistant (Claude, via the API). */
   assistant?: { baseUrl: string; token: string } | null;
+  /** The operator's API base and credential, to load and save the dashboard layout. */
+  account?: { baseUrl: string; token: string } | null;
 }) {
   const licenseKey = process.env.NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY?.trim();
 
@@ -26,5 +28,5 @@ export function OperatorStudio({ rows, assistant }: {
     return <p>No allocation records are loaded for this operator.</p>;
   }
 
-  return <OperatorStudioCanvas rows={rows} licenseKey={licenseKey} assistant={assistant} />;
+  return <OperatorStudioCanvas rows={rows} licenseKey={licenseKey} assistant={assistant} account={account} />;
 }

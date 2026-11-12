@@ -54,6 +54,17 @@ const bodies = {
     input: [{ type: 'message', role: 'user', text: 'Add a widget that shows my earnings this week.' }],
     tools: [], tool_choice: 'auto', response_format: { type: 'text' },
   },
+  saveStudioDashboard: {
+    state: {
+      pages: [{
+        id: 'earnings',
+        widgets: { 'by-agent': { type: 'bar-chart-grouped', dataMapping: { categoryKey: [{ id: 'allocations.agent' }], valueKey: [{ id: 'allocations.net_allocated_usd', aggregation: 'sum' }] } } },
+        widgetLayout: { 'by-agent': { xTrack: 0, yTrack: 0, xSpan: 12, ySpan: 16 } },
+      }],
+      selectedPageId: 'earnings',
+    },
+    version: 0,
+  },
   advanceMockClock: { seconds: 300 },
   observeMockPayment: { observation: 'completed' },
 };
