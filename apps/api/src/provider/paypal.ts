@@ -15,6 +15,8 @@ import { ProviderError, type AuthorizationView, type CaptureView, type Intent, t
  * testCardCheckout (sandbox only): pay with PayPal's test Visa instead of a PayPal login, so scripts can run the
  * whole money flow without a browser. The order is authorized/captured at creation; everything after uses the normal paths.
  */
+const TEST_CARDS = ['4032039317984658', '4111111111111111', '4012888888881881', '5555555555554444'];
+
 export function paypalProvider(env: { clientId: string; clientSecret: string; webhookId: string | null; live?: boolean; testCardCheckout?: boolean }): PaymentProvider {
   if (env.live && env.testCardCheckout) throw new Error('testCardCheckout is sandbox-only');
   const base = env.live ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
@@ -24,7 +26,7 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
 
   async function accessToken(): Promise<string> {
     if (token && Date.now() < token.expires) return token.value;
-    const res = await fetch(`${base}/v1/oauth2/token`, { method: 'POST', headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=client_credentials' })
+    const res = await fetch(`${base}/v1/oauth2/token`, { method: 'POST', headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=client_credentials', signal: AbortSignal.timeout(30_000) })
       .catch((e) => { throw new ProviderError(`PayPal OAuth unreachable: ${e.message}`, 'unknown'); });
     const body = await res.json().catch(() => ({})) as { access_token?: string; expires_in?: number };
     if (!res.ok || !body.access_token) throw new ProviderError(`PayPal OAuth failed (${res.status})`, res.status >= 500 ? 'unknown' : 'definitive', 'OAUTH', res.status);
@@ -54,7 +56,16 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
   const client = new Client({
     environment: env.live ? Environment.Production : Environment.Sandbox,
     timeout: 30_000,
-    clientCredentialsAuthCredentials: { oAuthClientId: env.clientId, oAuthClientSecret: env.clientSecret },
+    clientCredentialsAuthCredentials: {
+      oAuthClientId: env.clientId, oAuthClientSecret: env.clientSecret, oAuthClockSkew: 120,
+      // The SDK caches a failed token request and replays that rejection on every later call (Context Plugin,
+      // typescript-authentication: "Your oAuthTokenProvider must never reject"). Return an already-expired token
+      // instead, so this call fails with a 401 (mapped to 'unknown', retried) and the next call fetches afresh.
+      oAuthTokenProvider: async (last, manager) => {
+        try { return await manager.fetchToken(); }
+        catch { return { ...(last ?? { accessToken: '', tokenType: 'Bearer' }), expiry: 0n }; }
+      },
+    },
   });
   const orders = new OrdersController(client);
   const payments = new PaymentsController(client);
@@ -67,11 +78,14 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
     } catch (e) {
       if (e instanceof ApiError) {
         // Typed errors carry the parsed payload on `result` (wire field names); a bare ApiError only has `body`.
-        let d = e.result as { name?: string; message?: string; details?: { issue?: string; description?: string }[] } | undefined;
+        let d = e.result as { name?: string; message?: string; error?: string; error_description?: string; details?: { issue?: string; description?: string }[] } | undefined;
         if (!d && typeof e.body === 'string') try { d = JSON.parse(e.body); } catch { /* not JSON */ }
-        const issue = d?.details?.[0]?.issue ?? d?.name ?? `HTTP_${e.statusCode}`;
-        const message = `PayPal ${e.statusCode} ${issue}${d?.details?.[0]?.description ? `: ${d.details[0].description}` : d?.message ? `: ${d.message}` : ''}`;
-        throw new ProviderError(message, e.statusCode >= 500 || e.statusCode === 429 ? 'unknown' : 'definitive', issue, e.statusCode);
+        const issue = d?.details?.[0]?.issue ?? d?.name ?? d?.error ?? `HTTP_${e.statusCode}`;
+        const detail = d?.details?.[0]?.description ?? d?.message ?? d?.error_description;
+        const message = `PayPal ${e.statusCode} ${issue}${detail ? `: ${detail}` : ''}`;
+        // 401 means our credentials or token failed, never a decision about the payment, so it is retried.
+        const unknown = e.statusCode >= 500 || e.statusCode === 429 || e.statusCode === 401;
+        throw new ProviderError(message, unknown ? 'unknown' : 'definitive', issue, e.statusCode);
       }
       throw new ProviderError(`PayPal ${label} unreachable: ${(e as Error).message}`, 'unknown');
     }
@@ -104,7 +118,13 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
     async createOrder(o) {
       const value = fromMinor(o.amountMinor);
       const usd = { currencyCode: 'USD', value };
-      const order = await sdk('create order', (r) => orders.createOrder({ paypalRequestId: o.requestId, prefer: PREFER, body: {
+      // Sandbox test cards: PayPal sometimes starts declining one (PAYER_CANNOT_PAY), so scripted runs try the next.
+      const cards = env.testCardCheckout ? TEST_CARDS : [''];
+      let order!: Awaited<ReturnType<typeof orders.createOrder>>['result'];
+      for (let i = 0; i < cards.length; i++) {
+        const card = cards[i];
+        try {
+          order = await sdk('create order', (r) => orders.createOrder({ paypalRequestId: i ? `${o.requestId}-c${i}` : o.requestId, prefer: PREFER, body: {
         intent: o.intent === 'AUTHORIZE' ? CheckoutPaymentIntent.Authorize : CheckoutPaymentIntent.Capture,
         purchaseUnits: [{
           referenceId: o.referenceId, customId: o.customId, description: o.description.slice(0, 127),
@@ -112,7 +132,7 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
           items: [{ name: o.description.slice(0, 127), sku: o.referenceId.slice(0, 127), quantity: '1', category: ItemCategory.DigitalGoods, unitAmount: usd }],
         }],
         paymentSource: env.testCardCheckout
-          ? { card: { number: '4032039317984658', expiry: '2030-12', securityCode: '123', name: 'Sandbox Tester',
+          ? { card: { number: card, expiry: '2030-12', securityCode: '123', name: 'Sandbox Tester',
               billingAddress: { addressLine1: '1 Main St', adminArea2: 'San Jose', adminArea1: 'CA', postalCode: '95131', countryCode: 'US' } } }
           : { paypal: { experienceContext: {
               brandName: 'provable.bid', shippingPreference: PaypalWalletContextShippingPreference.NoShipping,
@@ -120,6 +140,11 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
               returnUrl: o.returnUrl, cancelUrl: o.cancelUrl,
             } } },
       } }, r));
+          break;
+        } catch (e) {
+          if (!(e instanceof ProviderError) || e.issue !== 'PAYER_CANNOT_PAY' || i === cards.length - 1) throw e;
+        }
+      }
       if (env.testCardCheckout) return { orderId: order.id!, approvalUrl: o.returnUrl };
       const approval = order.links?.find((l) => l.rel === 'payer-action' || l.rel === 'approve')?.href;
       if (!approval) throw new ProviderError('PayPal order has no approval link', 'definitive', 'NO_APPROVAL_LINK');
@@ -198,10 +223,10 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
 
     async identityFromCode(code, redirectUri) {
       const res = await fetch(`${base}/v1/oauth2/token`, { method: 'POST', headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri }) });
+        body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri }), signal: AbortSignal.timeout(30_000) });
       const tok = await res.json().catch(() => ({})) as { access_token?: string; error_description?: string; error?: string };
       if (!res.ok || !tok.access_token) throw new ProviderError(`PayPal login failed: ${tok.error_description ?? tok.error ?? res.status}`, 'definitive', 'LOGIN_FAILED', res.status);
-      const infoRes = await fetch(`${base}/v1/identity/oauth2/userinfo?schema=paypalv1.1`, { headers: { Authorization: `Bearer ${tok.access_token}` } });
+      const infoRes = await fetch(`${base}/v1/identity/oauth2/userinfo?schema=paypalv1.1`, { headers: { Authorization: `Bearer ${tok.access_token}` }, signal: AbortSignal.timeout(30_000) });
       const info = await infoRes.json().catch(() => ({})) as { payer_id?: string; name?: string; emails?: { value: string; primary?: boolean }[] };
       if (!infoRes.ok || !info.payer_id) throw new ProviderError('PayPal did not share the account ID. Enable "PayPal account ID" under Log in with PayPal.', 'definitive', 'NO_PAYER_ID', infoRes.status);
       const email = info.emails?.find((e) => e.primary)?.value ?? info.emails?.[0]?.value ?? null;

@@ -84,22 +84,26 @@ export function kernelRenderer(apiKey: string): PageRenderer {
     name: 'kernel',
     async render(html, signal) {
       const session = await kernel.browsers.create({ headless: true, timeout_seconds: 90 });
-      const browser = await chromium.connectOverCDP(session.cdp_ws_url, { timeout: 20_000 });
-      const abort = () => void browser.close().catch(() => {});
+      let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | undefined;
+      const abort = () => void browser?.close().catch(() => {});
       signal?.addEventListener('abort', abort, { once: true });
       try {
+        // Inside try, so a failed connection still deletes the session instead of leaving it until its timeout.
+        browser = await chromium.connectOverCDP(session.cdp_ws_url, { timeout: 20_000 });
         const context = browser.contexts()[0] ?? await browser.newContext();
         const page = await context.newPage();
         const consoleErrors: string[] = [];
         const blockedRequests: string[] = [];
-        page.on('console', (m) => { if (m.type() === 'error' && consoleErrors.length < 20) consoleErrors.push(m.text().slice(0, 300)); });
-        page.on('pageerror', (e) => { if (consoleErrors.length < 20) consoleErrors.push(e.message.slice(0, 300)); });
+        // The page is loaded once per viewport and once more for the focus check; record each message once.
+        const note = (list: string[], text: string) => { if (list.length < 20 && !list.includes(text)) list.push(text); };
+        page.on('console', (m) => { if (m.type() === 'error') note(consoleErrors, m.text().slice(0, 300)); });
+        page.on('pageerror', (e) => note(consoleErrors, e.message.slice(0, 300)));
         await page.route('**/*', (route) => {
           const req = route.request();
           const url = req.url();
           if (url.startsWith('data:') || url.startsWith('blob:') || url === 'about:blank') return route.continue();
           if (url.startsWith('https://') && ['image', 'font', 'stylesheet', 'media'].includes(req.resourceType())) return route.continue();
-          if (blockedRequests.length < 20) blockedRequests.push(`${req.resourceType()} ${url.slice(0, 200)}`);
+          note(blockedRequests, `${req.resourceType()} ${url.slice(0, 200)}`);
           return route.abort();
         });
         const shots: Record<string, { jpeg: Buffer; height: number; overflow: number }> = {};
@@ -122,7 +126,7 @@ export function kernelRenderer(apiKey: string): PageRenderer {
         };
       } finally {
         signal?.removeEventListener('abort', abort);
-        await browser.close().catch(() => {});
+        await browser?.close().catch(() => {});
         await kernel.browsers.deleteByID(session.session_id).catch(() => {});
       }
     },
