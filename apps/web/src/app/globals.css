@@ -811,6 +811,83 @@ svg {
 .scene-detail .eyebrow {
   font-size: 8px;
 }
+.judge-take {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  overflow-wrap: anywhere;
+}
+.judge-take-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.judge-take-label svg {
+  flex: none;
+  color: #5d7325;
+}
+.judge-take-note {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--muted);
+}
+.judge-take-verdict {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.judge-take-fit {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  font-style: italic;
+}
+.judge-notes {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.judge-notes h4 {
+  margin: 0 0 4px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.judge-notes ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.judge-notes li {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: 4px;
+}
+.judge-notes .strengths li > span:first-child {
+  color: #5d7325;
+  font-weight: 600;
+}
+.judge-notes .weaknesses li > span:first-child {
+  color: #9a4b2c;
+  font-weight: 600;
+}
 .purchase-panel {
   margin-top: 14px;
   border-top: 1px solid var(--line);
@@ -1545,6 +1622,13 @@ svg {
   .scene-detail summary {
     font-size: 10px;
     padding-top: 14px;
+  }
+  .judge-take-label,
+  .judge-notes h4 {
+    font-size: 10px;
+  }
+  .judge-take-verdict {
+    font-size: 13px;
   }
   .preview-badge {
     font-size: 8px;
