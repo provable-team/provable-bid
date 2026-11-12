@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="preview-title preview-desc"><title id="preview-title">Forma — front and back business card designs</title><desc id="preview-desc">Two original vector business cards with a 3.5 by 2 inch aspect ratio, arranged on a neutral canvas. Ultramarine and ivory, bold typography and architectural geometry. AI-created fictional sample by Codex.</desc><rect width="1600" height="1000" fill="#e5e6ec" /><text x="100" y="64" fill="#213bdb" font-family="Arial,Helvetica,sans-serif" font-size="17" letter-spacing="3">ARCHITECTURE / INTERIORS</text><text x="1500" y="64" text-anchor="end" fill="#213bdb" font-family="Arial,Helvetica,sans-serif" font-size="14" letter-spacing="2">TWO-SIDED / 3.5 × 2 IN</text><rect x="104" y="122" width="945" height="540" fill="#213bdb" opacity=".075" /><svg width="945" height="540" viewBox="0 0 1050 600" role="img" aria-labelledby="front-title front-desc" x="100" y="110" overflow="hidden">
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="preview-title preview-desc"><title id="preview-title">Forma — front and back business card designs</title><desc id="preview-desc">Two original vector business cards with a 3.5 by 2 inch aspect ratio, arranged on a neutral canvas. Ultramarine and ivory, bold typography and architectural geometry. AI-created fictional sample by Codex.</desc><rect width="1600" height="1000" fill="#e5e6ec" /><text x="100" y="64" fill="#213bdb" font-family="Arial,Helvetica,sans-serif" font-size="17" letter-spacing="3">ARCHITECTURE / INTERIORS</text><text x="1500" y="64" text-anchor="end" fill="#213bdb" font-family="Arial,Helvetica,sans-serif" font-size="14" letter-spacing="2">TWO-SIDED / 3.5 × 2 IN</text><rect x="84" y="192" width="700" height="400" fill="#213bdb" opacity=".075" /><svg width="700" height="400" viewBox="0 0 1050 600" role="img" aria-labelledby="front-title front-desc" x="80" y="180" overflow="hidden">
             <title id="front-title">Forma business card, front</title>
             <desc id="front-desc">A saturated ultramarine card with an oversized ivory FORMA wordmark. Three nested right-angle frames create an original architectural solid-and-void motif. The words Space, with intention sit at the lower left.</desc>
             <rect x="-37.5" y="-37.5" width="1125" height="675" fill="#213bdb" />
             <g fill="#f1efdf" font-family="Arial,Helvetica,sans-serif">
-              <text x="65" y="78" font-size="18" letter-spacing="3.1">ARCHITECTURE / INTERIORS</text>
-              <text x="984" y="78" text-anchor="end" font-size="17" letter-spacing="1.2">EST. 2026</text>
+              <text x="65" y="80" font-size="30" letter-spacing="1.4">ARCHITECTURE / INTERIORS</text>
+              <text x="984" y="80" text-anchor="end" font-size="30" letter-spacing="1">EST. 2026</text>
               <text x="51" y="280" font-size="226" font-weight="900" letter-spacing="-13" textLength="930" lengthAdjust="spacingAndGlyphs">FORMA</text>
               <text x="65" y="381" font-size="39" font-weight="600" letter-spacing="-.9">SPACE,</text>
               <text x="65" y="429" font-size="39" font-weight="600" letter-spacing="-.9">WITH</text>
               <text x="65" y="477" font-size="39" font-weight="600" letter-spacing="-.9">INTENTION.</text>
-              <text x="66" y="543" font-size="15" letter-spacing="2.5">FORM FOLLOWS POSSIBILITY</text>
+              <text x="66" y="543" font-size="30" letter-spacing="1.4">FORM FOLLOWS POSSIBILITY</text>
             </g>
             <g fill="none" stroke="#f1efdf" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter">
               <path d="M648 539V345H980V539Z" />
@@ -18,20 +18,20 @@
               <path d="M780 539V475H980" />
             </g>
             <path d="M648 312V300M980 312V300M648 306H980" fill="none" stroke="#f1efdf" stroke-width="1.1" opacity=".65" />
-          </svg><rect x="559" y="417" width="945" height="540" fill="#213bdb" opacity=".075" /><svg width="945" height="540" viewBox="0 0 1050 600" role="img" aria-labelledby="back-title back-desc" x="555" y="405" overflow="hidden">
+          </svg><rect x="824" y="432" width="700" height="400" fill="#213bdb" opacity=".075" /><svg width="700" height="400" viewBox="0 0 1050 600" role="img" aria-labelledby="back-title back-desc" x="820" y="420" overflow="hidden">
             <title id="back-title">Forma business card, back</title>
             <desc id="back-desc">An ivory card with bold ultramarine typography: Build what matters. A restrained plan-like geometric mark balances the contact details: New commissions, studio@example.com, example.com/forma. All brand and contact details are fictional.</desc>
             <rect x="-37.5" y="-37.5" width="1125" height="675" fill="#f1efdf" />
             <g fill="#213bdb" font-family="Arial,Helvetica,sans-serif">
-              <text x="65" y="80" font-size="16" letter-spacing="2.7">FORMA / STUDIO CONTACT</text>
+              <text x="65" y="80" font-size="30" letter-spacing="1.4">FORMA / STUDIO CONTACT</text>
               <text x="61" y="204" font-size="94" font-weight="700" letter-spacing="-4.5">BUILD</text>
               <text x="61" y="299" font-size="94" font-weight="700" letter-spacing="-4.5">WHAT</text>
               <text x="61" y="394" font-size="94" font-weight="700" letter-spacing="-4.5">MATTERS.</text>
-              <text x="663" y="178" font-size="17" letter-spacing="1.2">NEW COMMISSIONS</text>
-              <text x="663" y="224" font-size="25">studio@example.com</text>
-              <text x="663" y="266" font-size="23">example.com/forma</text>
+              <text x="663" y="178" font-size="30" letter-spacing="1">NEW COMMISSIONS</text>
+              <text x="663" y="231" font-size="32">studio@example.com</text>
+              <text x="663" y="278" font-size="32">example.com/forma</text>
               <path d="M65 473H984" fill="none" stroke="#213bdb" stroke-width="1.2" />
-              <text x="65" y="538" font-size="19" letter-spacing=".2">Architecture · Interiors · Objects</text>
+              <text x="65" y="538" font-size="30" letter-spacing=".2">Architecture · Interiors · Objects</text>
               <text x="984" y="540" text-anchor="end" font-size="41" font-weight="700" letter-spacing="-2">F—02</text>
             </g>
             <g fill="none" stroke="#213bdb" stroke-linecap="square">
@@ -40,4 +40,4 @@
               <path d="M823 419A45 45 0 0 1 868 374" stroke-width="1.1" />
               <path d="M644 330H634M644 419H634M639 330V419M665 441V451M981 441V451M665 446H981" stroke-width="1" />
             </g>
-          </svg><text x="100" y="975" fill="#213bdb" font-family="Arial,Helvetica,sans-serif" font-size="13" letter-spacing="2">FICTIONAL DESIGN SAMPLE / AI-CREATED WITH CODEX</text></svg>
+          </svg><text x="100" y="975" fill="#213bdb" font-family="Arial,Helvetica,sans-serif" font-size="13" letter-spacing="2">FICTIONAL DESIGN SAMPLE / CODEX / PRINT-LEGIBILITY REV. 2026-11-12</text><metadata>AI-created fictional sample by Codex. Print-legibility revision: 2026-11-12. Two card faces retain 3.5 x 2 inch trim proportions; this composed SVG is a gallery preview.</metadata></svg>
