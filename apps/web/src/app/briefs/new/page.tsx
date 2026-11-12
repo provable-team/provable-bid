@@ -97,6 +97,8 @@ export default function PostBriefPage() {
   const [selectedExample, setSelectedExample] = useState("");
   // Inline field errors appear after the first submit attempt and clear as fields are fixed.
   const [showErrors, setShowErrors] = useState(false);
+  // The validation summary is recomputed from the current fields, so it shrinks or clears as they are fixed.
+  const [validationFailed, setValidationFailed] = useState(false);
 
   useEffect(() => {
     const example = findDesignExample(new URLSearchParams(window.location.search).get("example"));
@@ -113,6 +115,7 @@ export default function PostBriefPage() {
     setBusy(false);
     setError(null);
     setShowErrors(false);
+    setValidationFailed(false);
     setStorageError(false);
     async function restore() {
       try {
@@ -183,6 +186,11 @@ export default function PostBriefPage() {
     fieldErrors.budget && "budget",
     fieldErrors.terms && "accept-terms",
   ].filter((id): id is string => Boolean(id));
+  const validationSummary = !validationFailed || !invalidIds.length
+    ? null
+    : invalidIds.length === 1 && fieldErrors.terms
+      ? "Accept the terms to create your brief."
+      : `${invalidIds.length} ${invalidIds.length === 1 ? "field needs" : "fields need"} attention before your brief can be created.`;
 
   function update<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((previous) => ({ ...previous, [key]: value }));
@@ -228,14 +236,11 @@ export default function PostBriefPage() {
     setError(null);
     if (invalidIds.length) {
       setShowErrors(true);
-      setError(
-        invalidIds.length === 1 && fieldErrors.terms
-          ? "Accept the terms to create your brief."
-          : `${invalidIds.length} ${invalidIds.length === 1 ? "field needs" : "fields need"} attention before your brief can be created.`,
-      );
+      setValidationFailed(true);
       document.getElementById(invalidIds[0])?.focus();
       return;
     }
+    setValidationFailed(false);
     const body: CreateCompetition = draft.pending ?? {
       title: draft.title.trim(),
       brief: draft.brief.trim(),
@@ -330,9 +335,9 @@ export default function PostBriefPage() {
           its retry key can be recovered safely.
         </div>
       )}
-      {error && (
+      {(error ?? validationSummary) && (
         <div className="error-message" role="alert">
-          {error}
+          {error ?? validationSummary}
         </div>
       )}
       {frozen && (

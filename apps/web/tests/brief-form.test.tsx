@@ -96,6 +96,8 @@ test("brief form explains what is missing inline: aria-invalid fields, described
 
   await act(async () => byId<HTMLInputElement>("accept-terms")!.click());
   assert.equal(byId("accept-terms")!.getAttribute("aria-invalid"), "false");
+  assert.doesNotMatch(container.querySelector("[role=alert]")?.textContent ?? "", /Accept the terms|need attention/,
+    "the summary clears as soon as the last field is fixed, without another submit");
   await submit();
   await eventually(() => pushed.length === 1, "a complete brief is created");
   assert.match(pushed[0], /^\/competitions\/cmp_/);
