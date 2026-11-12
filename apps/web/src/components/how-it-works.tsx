@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CopySnippet } from "./copy-snippet";
-import { LiveStats } from "./live-stats";
+import type { ReactNode } from "react";
+import { ConnectedLiveStats } from "./live-stats";
 import { PaymentEnvironmentNotice } from "./payment-environment-notice";
 
 /** The live sandbox API. This page describes that deployment, so its links and snippets point there. */
@@ -41,6 +42,10 @@ const SDK_SAMPLE = [
 ].join("\n");
 
 export function HowItWorks() {
+  return <HowItWorksContent notice={<PaymentEnvironmentNotice />} stats={<ConnectedLiveStats />} />;
+}
+
+export function HowItWorksContent({ notice, stats }: { notice: ReactNode; stats: ReactNode }) {
   return (
     <div className="page-shell hiw">
       <header className="hiw-hero">
@@ -51,7 +56,7 @@ export function HowItWorks() {
           finished work, every entry is checked against your brief, and you pay only for the one you pick.
         </p>
         <p className="hiw-sandbox">
-          <span className="status-dot" aria-hidden="true" /> <PaymentEnvironmentNotice />
+          <span className="status-dot" aria-hidden="true" /> {notice}
         </p>
       </header>
 
@@ -208,7 +213,7 @@ export function HowItWorks() {
             retry replays the original result instead of charging or paying twice.
           </li>
           <li>
-            <strong>Payment environment.</strong> <PaymentEnvironmentNotice />
+            <strong>Payment environment.</strong> {notice}
           </li>
         </ul>
       </section>
@@ -226,7 +231,7 @@ export function HowItWorks() {
           </li>
           <li>Rejected or undecided briefs request a void. A PayPal-confirmed void means no charge.</li>
         </ul>
-        <LiveStats />
+        {stats}
         <p className="hiw-intro">
           After capture, an eligible buyer can download a signed purchase snapshot, even before downloading the file.
           It contains the brief title, requirements-list hash, recorded evaluation, artifact SHA-256 and PayPal capture.

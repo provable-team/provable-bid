@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState, type CSSProperties } from "react";
+import { useApi } from "./api-provider";
 
 // Inline styles keep this strip self-contained (no global CSS); it reflows from one row to two columns on phones.
 const styles = {
@@ -60,9 +61,11 @@ export function statItems(s: LiveStatsData): { label: string; value: string }[] 
 export function LiveStats({
   apiBase = defaultApiBase,
   refreshMs = 60_000,
+  expectedMode,
 }: {
   apiBase?: string;
   refreshMs?: number;
+  expectedMode?: string;
 }) {
   const [stats, setStats] = useState<LiveStatsData | null>(null);
   const [failed, setFailed] = useState(false);
@@ -81,12 +84,13 @@ export function LiveStats({
         });
         if (!response.ok) throw new Error(String(response.status));
         const data = (await response.json()) as LiveStatsData;
+        if (expectedMode && data.mode !== expectedMode) throw new Error("Payment environment mismatch");
         if (active) {
           setStats(data);
           setFailed(false);
         }
       } catch {
-        if (active) setFailed(true);
+        if (active) { setStats(null); setFailed(true); }
       } finally {
         clearTimeout(timeout);
       }
@@ -98,7 +102,7 @@ export function LiveStats({
       controller?.abort();
       if (timer) clearInterval(timer);
     };
-  }, [apiBase, refreshMs]);
+  }, [apiBase, refreshMs, expectedMode]);
 
   const titleId = useId();
   const items = stats ? statItems(stats) : [];
@@ -133,4 +137,11 @@ export function LiveStats({
       </div>
     </section>
   );
+}
+
+/** Uses the same active connection and verified configuration as checkout. */
+export function ConnectedLiveStats() {
+  const { settings, config, loading, error } = useApi();
+  if (loading || error || !config) return <p>Live numbers are unavailable until the payment environment is confirmed.</p>;
+  return <LiveStats key={`${settings.baseUrl}:${config.mode}`} apiBase={settings.baseUrl} expectedMode={config.mode} />;
 }

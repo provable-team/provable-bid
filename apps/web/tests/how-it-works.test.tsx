@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { HowItWorks, LIVE_API } from "../src/components/how-it-works.js";
+import { HowItWorksContent, LIVE_API } from "../src/components/how-it-works.js";
 
-const html = renderToStaticMarkup(<HowItWorks />);
+const html = renderToStaticMarkup(<HowItWorksContent notice={null} stats={null} />);
 const text = html.replace(/<[^>]+>/g, " ").replace(/&#x27;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/\s+/g, " ");
 
 test("the page renders its key sections, with headings in order", () => {

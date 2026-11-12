@@ -52,6 +52,12 @@ test("live stats strip: loading, then the sandbox numbers in a polite live regio
   assert.match(container.textContent ?? "", /PayPal live · real money/);
   assert.doesNotMatch(container.textContent ?? "", /fake payments|sandbox · test money/);
   await act(async () => live.unmount());
+  reply = async () => new Response(JSON.stringify(stats), { headers: { "content-type": "application/json" } });
+  const mismatch = createRoot(container);
+  await act(async () => mismatch.render(<LiveStats apiBase="http://api.test" expectedMode="paypal_live" refreshMs={0} />));
+  assert.match(container.textContent ?? "", /Live numbers are unavailable right now/);
+  assert.doesNotMatch(container.textContent ?? "", /PayPal sandbox · test money|briefs opened/);
+  await act(async () => mismatch.unmount());
   reply = async () => new Response("no", { status: 503 });
   const again = createRoot(container);
   await act(async () => again.render(<LiveStats apiBase="http://api.test" refreshMs={0} />));
