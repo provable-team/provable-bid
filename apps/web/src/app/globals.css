@@ -1745,6 +1745,10 @@ svg {
     background 0.15s,
     color 0.15s;
 }
+/* The pill clips overflow, so the usual 4px-offset ring was cut off: draw it inside the button. */
+.viewport-toggle button:focus-visible {
+  outline-offset: -3px;
+}
 .viewport-toggle button[aria-pressed="false"]:hover {
   color: var(--ink);
 }
