@@ -22,6 +22,7 @@ import {
 } from "@/components/ui";
 import { CheckoutActions, PaymentStatus } from "@/components/payment-status";
 import { PurchaseDelivery } from "@/components/purchase-delivery";
+import { LedgerGrid } from "@/components/ledger-grid";
 import {
   command,
   money,
@@ -34,15 +35,43 @@ type Snapshot = {
   competition: Competition;
   owner: boolean;
   agents: Agent[];
-  allocations: Allocation[];
+  settlement: Settlement | null;
   gallery: Submission[];
   purchases: Purchase[];
   payments: Record<string, Payment>;
 };
+type Settlement = components["responses"]["Settlement"]["content"]["application/json"];
 type Checkout = components["schemas"]["Checkout"];
 type Decision =
   | { kind: "first" | "additional"; submission: Submission }
   | { kind: "reject" };
+
+function payoutStatus(state: Allocation["payout_state"]): string {
+  switch (state) {
+    case "simulated": return "Simulated";
+    case "not_scheduled": return "Not scheduled";
+    case "queued": return "Queued";
+    case "pending": return "Pending";
+    case "paid": return "Paid (test)";
+    case "failed": return "Failed";
+    case "blocked": return "Blocked";
+  }
+}
+
+function payoutText(allocation: Allocation): string {
+  const amount = money(allocation.amount.amount_minor);
+  const ledger = allocation.ledger_state === "held" ? " Allocation is on hold."
+    : allocation.ledger_state === "reversed" ? " Allocation was reversed." : "";
+  switch (allocation.payout_state) {
+    case "simulated": return `Simulated payout of ${amount}; no money was transferred.${ledger}`;
+    case "paid": return `Test payout of ${amount} confirmed by the provider.${ledger}`;
+    case "failed": return `Payout of ${amount} failed.${ledger}`;
+    case "blocked": return `Payout of ${amount} is blocked.${ledger}`;
+    case "not_scheduled": return `Payout of ${amount} is not scheduled.${ledger}`;
+    case "queued": return `Payout of ${amount} is queued.${ledger}`;
+    case "pending": return `Payout of ${amount} is pending.${ledger}`;
+  }
+}
 
 export default function CompetitionPage({
   params,
@@ -65,7 +94,7 @@ export default function CompetitionPage({
   const [stale, setStale] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<Checkout | null>(null);
-  const [tab, setTab] = useState<"work" | "brief" | "agents">("work");
+  const [tab, setTab] = useState<"work" | "brief" | "agents" | "settlement">("work");
   const [decision, setDecision] = useState<Decision | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const currentApi = useRef(api);
@@ -165,7 +194,7 @@ export default function CompetitionPage({
               }
             }
             let gallery: Submission[] = [];
-            let allocations: Allocation[] = [];
+            let settlement: Settlement | null = null;
             const payments: Record<string, Payment> = {};
             let canonicalPurchases: Purchase[] = [];
             if (owner) {
@@ -206,7 +235,7 @@ export default function CompetitionPage({
                 ),
               ]);
               gallery = results[0];
-              allocations = results[1].allocations;
+              settlement = results[1];
               canonicalPurchases = results[2];
               for (const payment of results[3]) payments[payment.id] = payment;
             }
@@ -214,7 +243,7 @@ export default function CompetitionPage({
               competition: comp,
               owner,
               agents: registry.items,
-              allocations,
+              settlement,
               gallery,
               purchases: canonicalPurchases,
               payments,
@@ -405,7 +434,8 @@ export default function CompetitionPage({
         )}
       </div>
     );
-  const { owner, agents, allocations, gallery, purchases, payments } = snapshot;
+  const { owner, agents, settlement, gallery, purchases, payments } = snapshot;
+  const allocations = settlement?.allocations ?? [];
   const comp = snapshot.competition;
   const blocked = stale || !config || !!connectionError;
   const first = purchases.find((p) => p.id === comp.first_purchase_id);
@@ -529,7 +559,7 @@ export default function CompetitionPage({
           {owner && (
             <>
               <div className="competition-tabs" aria-label="Competition views">
-                {(["work", "brief", "agents"] as const).map((key) => (
+                {(["work", "brief", "agents", "settlement"] as const).map((key) => (
                   <button
                     key={key}
                     aria-pressed={tab === key}
@@ -541,10 +571,12 @@ export default function CompetitionPage({
                       </>
                     ) : key === "brief" ? (
                       "The brief & checks"
-                    ) : (
+                    ) : key === "agents" ? (
                       <>
                         Agents <span>{agents.length}</span>
                       </>
+                    ) : (
+                      "Settlement"
                     )}
                   </button>
                 ))}
@@ -593,12 +625,12 @@ export default function CompetitionPage({
                           (a) => a.id === submission.agent_id,
                         );
                         const site = submission.artifacts[0];
-                        const allocation = allocations.find((a) =>
-                          a.agent_shares.some((x) => x.agent_id === submission.agent_id),
-                        );
                         const purchase = purchases.find(
                           (p) => p.submission_id === submission.id,
                         );
+                        const allocation = purchase
+                          ? allocations.find((a) => a.payment_id === purchase.payment_id)
+                          : undefined;
                         const payment = purchase
                           ? payments[purchase.payment_id]
                           : undefined;
@@ -706,13 +738,7 @@ export default function CompetitionPage({
                                   {allocation && (
                                     <p className="payout-line">
                                       <Icon name={allocation.payout_state === "paid" ? "check" : "clock"} size={14} />
-                                      {allocation.payout_state === "paid"
-                                        ? `${agent?.name ?? "The agent"} was paid ${money(allocation.amount.amount_minor)} by PayPal Payouts`
-                                        : allocation.payout_state === "simulated"
-                                          ? `Simulated payout of ${money(allocation.amount.amount_minor)} (demo mode)`
-                                          : allocation.payout_state === "blocked"
-                                            ? "Agent payout on hold while the payment is reviewed"
-                                            : `Paying ${agent?.name ?? "the agent"} ${money(allocation.amount.amount_minor)} via PayPal…`}
+                                      {payoutText(allocation)}
                                     </p>
                                   )}
                                 </div>
@@ -825,6 +851,53 @@ export default function CompetitionPage({
                     House agents are labelled and use the same public API as outside agents. Winners are paid by PayPal Payouts
                     to their operator&apos;s verified PayPal account.
                   </p>
+                </section>
+              )}
+              {tab === "settlement" && settlement && (
+                <section className="brief-details" aria-label="Buyer settlement">
+                  <h2>Payment and payout activity</h2>
+                  <p>
+                    Captures and agent payouts are separate events. {settlement.payout_mode === "simulated"
+                      ? "Payouts are simulated; no money is transferred."
+                      : config?.mode === "mock"
+                        ? "Mock payouts use no real money."
+                        : settlement.payout_mode === "paypal_sandbox"
+                          ? "PayPal sandbox payouts use test money."
+                        : "Payouts are disabled."} Unknown provider fees remain unknown until confirmed.
+                  </p>
+                  <LedgerGrid
+                    label="Buyer settlement"
+                    columns={[
+                      { field: "entry", headerName: "Entry" },
+                      { field: "payment", headerName: "Payment ID" },
+                      { field: "gross", headerName: "Captured", valueType: "currency" },
+                      { field: "commission", headerName: "Commission", valueType: "currency" },
+                      { field: "fee", headerName: "Provider fee", valueType: "currency" },
+                      { field: "payout", headerName: "Agent allocation", valueType: "currency" },
+                      { field: "payoutStatus", headerName: "Payout status" },
+                      { field: "ledgerStatus", headerName: "Ledger status" },
+                    ]}
+                    rows={[...new Set([
+                      ...settlement.accounting.map((item) => item.payment_id),
+                      ...allocations.map((item) => item.payment_id),
+                    ])].map((paymentId) => {
+                      const accounting = settlement.accounting.find((item) => item.payment_id === paymentId);
+                      const allocation = allocations.find((item) => item.payment_id === paymentId);
+                      const purchase = purchases.find((item) => item.payment_id === paymentId);
+                      const entry = gallery.find((item) => item.id === purchase?.submission_id);
+                      return {
+                        entry: entry?.title ?? "Entry unavailable",
+                        payment: paymentId,
+                        gross: accounting?.gross_minor ?? null,
+                        commission: accounting?.commission_minor ?? null,
+                        fee: accounting?.provider_expense_minor ?? null,
+                        payout: allocation?.amount.amount_minor ?? null,
+                        payoutStatus: allocation ? payoutStatus(allocation.payout_state) : "Not allocated",
+                        ledgerStatus: allocation?.ledger_state ?? "Not allocated",
+                      };
+                    })}
+                    emptyMessage="Settlement activity appears after a payment is captured."
+                  />
                 </section>
               )}
               <div className="gallery-footnote">
