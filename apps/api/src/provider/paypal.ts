@@ -1,7 +1,16 @@
+import {
+  ApiError, CheckoutPaymentIntent, Client, Environment, ItemCategory, OrdersController, PaymentsController,
+  PaypalExperienceUserAction, PaypalWalletContextShippingPreference,
+} from '@paypal/paypal-server-sdk';
+import type { ApiResponse, AuthorizationWithAdditionalData, Order, OrdersCapture, PaymentAuthorization, CapturedPayment } from '@paypal/paypal-server-sdk';
 import { fromMinor, toMinor } from '../money.js';
 import { ProviderError, type AuthorizationView, type CaptureView, type Intent, type OrderView, type PaymentProvider, type PayoutView } from './types.js';
 
-/** Real PayPal REST (sandbox by default). Raw fetch: Orders v2, Payments v2, Payouts v1, webhooks, identity. */
+/**
+ * Real PayPal (sandbox by default). Orders v2 and Payments v2 go through the APIMatic-generated PayPal Server SDK
+ * (@paypal/paypal-server-sdk). Payouts v1, webhook signature verification and Log in with PayPal aren't in the SDK,
+ * so they stay on REST.
+ */
 /**
  * testCardCheckout (sandbox only): pay with PayPal's test Visa instead of a PayPal login, so scripts can run the
  * whole money flow without a browser. The order is authorized/captured at creation; everything after uses the normal paths.
@@ -40,80 +49,117 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
     throw new ProviderError(message, res.status >= 500 || res.status === 429 ? 'unknown' : 'definitive', issue, res.status);
   }
 
-  const authView = (a: any): AuthorizationView => ({ id: a.id, status: a.status, createTime: a.create_time, expirationTime: a.expiration_time ?? null });
-  const captureView = (c: any): CaptureView => ({
-    id: c.id, status: c.status, amountMinor: toMinor(c.amount?.value ?? '0'),
-    feeMinor: c.seller_receivable_breakdown?.paypal_fee?.value ? toMinor(c.seller_receivable_breakdown.paypal_fee.value) : null,
+  // One long-lived SDK client. Its generated defaults are timeout 0 (no limit) and no retries; we set a timeout and
+  // keep retries off, because the API retries money calls itself with the same PayPal-Request-Id.
+  const client = new Client({
+    environment: env.live ? Environment.Production : Environment.Sandbox,
+    timeout: 30_000,
+    clientCredentialsAuthCredentials: { oAuthClientId: env.clientId, oAuthClientSecret: env.clientSecret },
   });
-  const orderView = (o: any): OrderView => {
-    const unit = o.purchase_units?.[0] ?? {};
-    const auth = unit.payments?.authorizations?.[0];
-    const cap = unit.payments?.captures?.[0];
+  const orders = new OrdersController(client);
+  const payments = new PaymentsController(client);
+  const PREFER = 'return=representation';
+
+  /** Runs an SDK call and maps failures to ProviderError, as `call` does: 5xx/429/network = unknown, other 4xx = definitive. */
+  async function sdk<T>(label: string, run: (o: { abortSignal: AbortSignal }) => Promise<ApiResponse<T>>): Promise<T> {
+    try {
+      return (await run({ abortSignal: AbortSignal.timeout(45_000) })).result;
+    } catch (e) {
+      if (e instanceof ApiError) {
+        // Typed errors carry the parsed payload on `result` (wire field names); a bare ApiError only has `body`.
+        let d = e.result as { name?: string; message?: string; details?: { issue?: string; description?: string }[] } | undefined;
+        if (!d && typeof e.body === 'string') try { d = JSON.parse(e.body); } catch { /* not JSON */ }
+        const issue = d?.details?.[0]?.issue ?? d?.name ?? `HTTP_${e.statusCode}`;
+        const message = `PayPal ${e.statusCode} ${issue}${d?.details?.[0]?.description ? `: ${d.details[0].description}` : d?.message ? `: ${d.message}` : ''}`;
+        throw new ProviderError(message, e.statusCode >= 500 || e.statusCode === 429 ? 'unknown' : 'definitive', issue, e.statusCode);
+      }
+      throw new ProviderError(`PayPal ${label} unreachable: ${(e as Error).message}`, 'unknown');
+    }
+  }
+
+  const authView = (a: PaymentAuthorization | AuthorizationWithAdditionalData): AuthorizationView =>
+    ({ id: a.id!, status: a.status ?? 'UNKNOWN', createTime: a.createTime ?? '', expirationTime: a.expirationTime ?? null });
+  const captureView = (c: CapturedPayment | OrdersCapture): CaptureView => ({
+    id: c.id!, status: c.status ?? 'UNKNOWN', amountMinor: toMinor(c.amount?.value ?? '0'),
+    feeMinor: c.sellerReceivableBreakdown?.paypalFee?.value ? toMinor(c.sellerReceivableBreakdown.paypalFee.value) : null,
+  });
+  const orderView = (o: Order): OrderView => {
+    const unit = o.purchaseUnits?.[0];
+    const auth = unit?.payments?.authorizations?.[0];
+    const cap = unit?.payments?.captures?.[0];
     return {
-      id: o.id, status: o.status, intent: o.intent, amountMinor: toMinor(unit.amount?.value ?? '0'),
-      referenceId: unit.reference_id ?? null, customId: unit.custom_id ?? null,
-      payerCountry: o.payer?.address?.country_code ?? o.payment_source?.paypal?.address?.country_code ?? null,
+      id: o.id!, status: o.status ?? 'UNKNOWN', intent: o.intent as Intent, amountMinor: toMinor(unit?.amount?.value ?? '0'),
+      referenceId: unit?.referenceId ?? null, customId: unit?.customId ?? null,
+      payerCountry: o.payer?.address?.countryCode ?? o.paymentSource?.paypal?.address?.countryCode ?? null,
       authorization: auth ? authView(auth) : null, capture: cap ? captureView(cap) : null,
     };
   };
+  const getOrder = async (id: string) => orderView(await sdk('get order', (r) => orders.getOrder({ id }, r)));
+  const getAuthorization = async (authorizationId: string) =>
+    authView(await sdk('get authorization', (r) => payments.getAuthorizedPayment({ authorizationId }, r)));
 
   return {
     mode: 'paypal_sandbox',
 
     async createOrder(o) {
       const value = fromMinor(o.amountMinor);
-      const order = await call<any>('POST', '/v2/checkout/orders', {
-        intent: o.intent,
-        purchase_units: [{
-          reference_id: o.referenceId, custom_id: o.customId, description: o.description.slice(0, 127),
-          amount: { currency_code: 'USD', value, breakdown: { item_total: { currency_code: 'USD', value } } },
-          items: [{ name: o.description.slice(0, 127), sku: o.referenceId.slice(0, 127), quantity: '1', category: 'DIGITAL_GOODS', unit_amount: { currency_code: 'USD', value } }],
+      const usd = { currencyCode: 'USD', value };
+      const order = await sdk('create order', (r) => orders.createOrder({ paypalRequestId: o.requestId, prefer: PREFER, body: {
+        intent: o.intent === 'AUTHORIZE' ? CheckoutPaymentIntent.Authorize : CheckoutPaymentIntent.Capture,
+        purchaseUnits: [{
+          referenceId: o.referenceId, customId: o.customId, description: o.description.slice(0, 127),
+          amount: { ...usd, breakdown: { itemTotal: usd } },
+          items: [{ name: o.description.slice(0, 127), sku: o.referenceId.slice(0, 127), quantity: '1', category: ItemCategory.DigitalGoods, unitAmount: usd }],
         }],
-        payment_source: env.testCardCheckout
-          ? { card: { number: '4032039317984658', expiry: '2030-12', security_code: '123', name: 'Sandbox Tester',
-              billing_address: { address_line_1: '1 Main St', admin_area_2: 'San Jose', admin_area_1: 'CA', postal_code: '95131', country_code: 'US' } } }
-          : { paypal: { experience_context: {
-              brand_name: 'provable.bid', shipping_preference: 'NO_SHIPPING', user_action: o.intent === 'AUTHORIZE' ? 'CONTINUE' : 'PAY_NOW',
-              return_url: o.returnUrl, cancel_url: o.cancelUrl,
+        paymentSource: env.testCardCheckout
+          ? { card: { number: '4032039317984658', expiry: '2030-12', securityCode: '123', name: 'Sandbox Tester',
+              billingAddress: { addressLine1: '1 Main St', adminArea2: 'San Jose', adminArea1: 'CA', postalCode: '95131', countryCode: 'US' } } }
+          : { paypal: { experienceContext: {
+              brandName: 'provable.bid', shippingPreference: PaypalWalletContextShippingPreference.NoShipping,
+              userAction: o.intent === 'AUTHORIZE' ? PaypalExperienceUserAction.Continue : PaypalExperienceUserAction.PayNow,
+              returnUrl: o.returnUrl, cancelUrl: o.cancelUrl,
             } } },
-      }, o.requestId);
-      if (env.testCardCheckout) return { orderId: order.id, approvalUrl: o.returnUrl };
-      const approval = order.links?.find((l: any) => l.rel === 'payer-action' || l.rel === 'approve')?.href;
+      } }, r));
+      if (env.testCardCheckout) return { orderId: order.id!, approvalUrl: o.returnUrl };
+      const approval = order.links?.find((l) => l.rel === 'payer-action' || l.rel === 'approve')?.href;
       if (!approval) throw new ProviderError('PayPal order has no approval link', 'definitive', 'NO_APPROVAL_LINK');
-      return { orderId: order.id, approvalUrl: approval };
+      return { orderId: order.id!, approvalUrl: approval };
     },
 
-    getOrder: async (orderId) => orderView(await call('GET', `/v2/checkout/orders/${encodeURIComponent(orderId)}`)),
+    getOrder,
 
-    async authorizeOrder(orderId, requestId) {
-      const o = orderView(await call('POST', `/v2/checkout/orders/${encodeURIComponent(orderId)}/authorize`, {}, requestId));
-      if (!o.authorization) throw new ProviderError('Authorize returned no authorization', 'unknown');
-      return o.authorization;
+    async authorizeOrder(id, requestId) {
+      const o = await sdk('authorize order', (r) => orders.authorizeOrder({ id, paypalRequestId: requestId, prefer: PREFER, body: {} }, r));
+      const auth = o.purchaseUnits?.[0]?.payments?.authorizations?.[0];
+      if (!auth) throw new ProviderError('Authorize returned no authorization', 'unknown');
+      return authView(auth);
     },
 
-    getAuthorization: async (id) => authView(await call('GET', `/v2/payments/authorizations/${encodeURIComponent(id)}`)),
+    getAuthorization,
 
-    captureAuthorization: async (id, amountMinor, requestId) => captureView(await call('POST', `/v2/payments/authorizations/${encodeURIComponent(id)}/capture`,
-      { amount: { currency_code: 'USD', value: fromMinor(amountMinor) }, final_capture: true }, requestId)),
+    captureAuthorization: async (authorizationId, amountMinor, requestId) => captureView(await sdk('capture authorization', (r) =>
+      payments.captureAuthorizedPayment({ authorizationId, paypalRequestId: requestId, prefer: PREFER,
+        body: { amount: { currencyCode: 'USD', value: fromMinor(amountMinor) }, finalCapture: true } }, r))),
 
-    async captureOrder(orderId, requestId) {
-      const existing = orderView(await call('GET', `/v2/checkout/orders/${encodeURIComponent(orderId)}`));
+    async captureOrder(id, requestId) {
+      const existing = await getOrder(id);
       if (existing.capture) return existing.capture; // already captured (e.g. test-card checkout, or a lost response)
-      const o = orderView(await call('POST', `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {}, requestId));
+      const o = orderView(await sdk('capture order', (r) => orders.captureOrder({ id, paypalRequestId: requestId, prefer: PREFER, body: {} }, r)));
       if (!o.capture) throw new ProviderError('Capture returned no capture', 'unknown');
       return o.capture;
     },
 
-    getCapture: async (id) => captureView(await call('GET', `/v2/payments/captures/${encodeURIComponent(id)}`)),
+    getCapture: async (captureId) => captureView(await sdk('get capture', (r) => payments.getCapturedPayment({ captureId }, r))),
 
-    async voidAuthorization(id, requestId) {
-      await call('POST', `/v2/payments/authorizations/${encodeURIComponent(id)}/void`, undefined, requestId);
-      return authView(await call('GET', `/v2/payments/authorizations/${encodeURIComponent(id)}`));
+    async voidAuthorization(authorizationId, requestId) {
+      await sdk('void authorization', (r) => payments.voidPayment({ authorizationId, paypalRequestId: requestId, prefer: PREFER }, r));
+      return getAuthorization(authorizationId);
     },
 
     async refundCapture(captureId, amountMinor, requestId) {
-      const r = await call<any>('POST', `/v2/payments/captures/${encodeURIComponent(captureId)}/refund`, { amount: { currency_code: 'USD', value: fromMinor(amountMinor) } }, requestId);
-      return { id: r.id, status: r.status };
+      const refund = await sdk('refund capture', (r) => payments.refundCapturedPayment({ captureId, paypalRequestId: requestId, prefer: PREFER,
+        body: { amount: { currencyCode: 'USD', value: fromMinor(amountMinor) } } }, r));
+      return { id: refund.id!, status: refund.status ?? 'UNKNOWN' };
     },
 
     async sendPayout(o) {
