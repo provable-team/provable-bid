@@ -4,6 +4,41 @@ import type { OperatorStudioRow } from "./operator-studio";
 // Pure helpers for the operator dashboard (no Studio runtime), so they can be tested on their own.
 
 /**
+ * Payout stages and their colours, by meaning: the same stage has the same colour in the pipeline, the donut, the
+ * latest-payout pill and the ledger pills. Validated with the dataviz palette check on the #fffef9 surface (light only;
+ * the site has no dark mode): CVD and normal-vision separation pass for every pair. "Waiting" is a deliberate neutral,
+ * and the light marks rely on the text labels and amounts beside them (and the ledger table), not on colour alone.
+ * Order matters: Studio 3.1 colours chart categories by palette position only, so charts list stages in this order.
+ */
+export const PAYOUT_STAGES = [
+  { key: "paid", label: "Paid", states: ["paid", "simulated"], color: "#6f8a1f" },
+  { key: "sent", label: "Sent", states: ["pending"], color: "#e5a51a" },
+  { key: "waiting", label: "Waiting", states: ["queued", "not_scheduled"], color: "#dfe0d6" },
+  // "Issue" (failed or on hold): short enough for one legend row on desktop; the pipeline spells it out.
+  { key: "attention", label: "Issue", states: ["failed", "blocked"], color: "#8a3b25" },
+] as const;
+export type PayoutStageKey = (typeof PAYOUT_STAGES)[number]["key"];
+/** The stage a contract payout state belongs to; anything unrecognised needs attention. */
+export const payoutStage = (state: unknown) =>
+  PAYOUT_STAGES.find((stage) => (stage.states as readonly string[]).includes(String(state))) ?? PAYOUT_STAGES[3];
+
+/**
+ * Allocated money per payout stage, always all four stages in the fixed order (zero when empty), so a chart of it
+ * keeps each stage on its own palette colour whichever stages the operator has.
+ */
+export function payoutStageSummary(allocations: { payout_state: string; allocation_usd: number | null }[]) {
+  return PAYOUT_STAGES.map((stage, index) => {
+    const rows = allocations.filter((a) => payoutStage(a.payout_state).key === stage.key);
+    return {
+      stage: stage.label,
+      stage_order: index + 1,
+      amount_usd: Math.round(rows.reduce((sum, a) => sum + (a.allocation_usd ?? 0), 0) * 100) / 100,
+      allocation_count: rows.length,
+    };
+  });
+}
+
+/**
  * One row per loaded allocation, from the operator's own ledger and nothing else. No operator, recipient, payment or
  * provider identifiers reach the in-browser engine; agent names are the operator's own agents.
  */

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AgAiEvent, AgLlmRequest } from "ag-studio";
 import { fromTurn, studioAiAdapter, toTurnRequest } from "../src/components/studio-ai-adapter";
-import { phoneLayout, studioAllocationData } from "../src/components/studio-dashboard-data";
+import { payoutStageSummary, phoneLayout, studioAllocationData } from "../src/components/studio-dashboard-data";
 
 test("dashboard data is the loaded ledger: dollars, paid only when PayPal said so, running total in created order", () => {
   const { allocations, missingAmounts } = studioAllocationData([
@@ -80,4 +80,14 @@ test("the adapter posts with the operator's credential, replays the turn as even
   const failed = failing.executeTurn(request);
   for await (const _ of failed.stream) assert.fail("no events for a failed turn");
   await assert.rejects(failed.complete, /Daily limit reached/);
+});
+
+test("payout stages: always all four, in the fixed colour order, unknown states need attention", () => {
+  const summary = payoutStageSummary([
+    { payout_state: "paid", allocation_usd: 19 }, { payout_state: "simulated", allocation_usd: 1 },
+    { payout_state: "pending", allocation_usd: 33.25 }, { payout_state: "mystery", allocation_usd: 5 }, { payout_state: "failed", allocation_usd: null },
+  ]);
+  assert.deepEqual(summary.map((s) => [s.stage, s.stage_order, s.amount_usd, s.allocation_count]), [
+    ["Paid", 1, 20, 2], ["Sent", 2, 33.25, 1], ["Waiting", 3, 0, 0], ["Issue", 4, 5, 2],
+  ]);
 });

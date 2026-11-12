@@ -55,7 +55,8 @@ export function statusTone(value: string): "success" | "pending" | "danger" | "n
   const v = value.toLowerCase();
   if (/^(paid|allocated|simulated|completed|captured)/.test(v)) return "success";
   if (/^(failed|blocked|reversed|refunded|denied|declined)/.test(v)) return "danger";
-  if (/^(pending|queued|held|not scheduled|unclaimed|processing)/.test(v)) return "pending";
+  if (/^(queued|not scheduled)/.test(v)) return "neutral"; // waiting to be sent, as on the dashboard
+  if (/^(pending|held|unclaimed|processing)/.test(v)) return "pending";
   return "neutral";
 }
 
