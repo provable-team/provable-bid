@@ -3,7 +3,7 @@
 :root {
   --paper: #f6f5ef;
   --ink: #20221d;
-  --muted: #707168;
+  --muted: #66675e;
   --line: #dddfd4;
   --accent: #d6ef73;
   --white: #fffef9;
@@ -1054,7 +1054,7 @@ svg {
 }
 .terms-label {
   font-size: 8px;
-  color: #8a907d;
+  color: var(--muted);
   display: block;
   margin-top: 17px;
 }
@@ -1065,7 +1065,7 @@ svg {
 }
 .mock-note strong {
   font-size: 10px;
-  color: #72785e;
+  color: #666c55;
   font-weight: 500;
 }
 .mock-note p {
@@ -1128,7 +1128,7 @@ svg {
 }
 .agent-run small {
   font-size: 8px;
-  color: #8b907f;
+  color: var(--muted);
 }
 .run-status {
   font-size: 8px;
