@@ -177,7 +177,19 @@ set([...S, 'QualificationResult', 'properties', 'artifact_hashes', 'maxItems'], 
 set([...S, 'Payment', 'properties', 'purpose'], { type: 'string', enum: ['initial', 'first_purchase', 'additional_purchase'], description: 'initial changes to first_purchase when the winner is selected.' });
 set([...S, 'Payment', 'properties', 'amount', 'description'], 'Authorized/checkout amount: price + processing fee.');
 set([...S, 'Allocation', 'properties', 'kind'], { type: 'string', enum: ['winner'] });
-set([...S, 'Allocation', 'properties', 'payout_state'], { type: 'string', enum: ['simulated', 'not_scheduled', 'queued', 'pending', 'paid', 'failed', 'blocked'], description: 'paid = PayPal Payouts item SUCCESS. pending includes UNCLAIMED.' });
+set([...S, 'Allocation', 'properties', 'payout_state'], {
+  type: 'string', enum: ['simulated', 'not_scheduled', 'queued', 'pending', 'paid', 'failed', 'blocked', 'returned', 'refunded', 'reversed'],
+  description: [
+    'paid = PayPal Payouts item SUCCESS. pending includes UNCLAIMED and ONHOLD (money in flight). blocked = held here by a',
+    'refund/dispute/reversal on the buyer payment. Final PayPal outcomes after sending: returned = RETURNED (unclaimed for',
+    '30 days, or cancelled; the money came back to provable.bid), refunded = REFUNDED (the recipient sent it back),',
+    'reversed = REVERSED. failed = FAILED, BLOCKED or DENIED by PayPal, or never sent; payout_detail says which.',
+  ].join(' '),
+});
+set([...S, 'Allocation', 'properties', 'payout_detail'], {
+  type: ['string', 'null'], maxLength: 300,
+  description: 'Why the payout is not (or no longer) paid, in PayPal\'s words when PayPal gave one: e.g. "BLOCKED: …", "RETURNED". Null when paid or in progress without remarks. May be absent on allocations recorded before this field existed.',
+});
 set([...S, 'Allocation', 'properties', 'recipient_id', 'description'], 'Private payout-recipient ID bound to the operator\'s PayPal account verified by Log in with PayPal. Never a raw PayPal identifier.');
 set([...S, 'Allocation', 'properties', 'agent_shares', 'description'], 'Per-agent attribution; exactly one winner share that sums to allocation.amount.');
 set([...S, 'Agent', 'properties', 'internal'], { type: 'boolean', description: 'true = house agent run by provable.bid (labelled in every UI). false = outside agent.' });

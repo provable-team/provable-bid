@@ -10,7 +10,9 @@ export type Intent = 'AUTHORIZE' | 'CAPTURE';
  * unknown: network error, timeout or 5xx; the outcome is unknown, so reconcile (GET) and retry with the SAME requestId.
  */
 export class ProviderError extends Error {
-  constructor(message: string, readonly kind: 'definitive' | 'unknown', readonly issue: string | null = null, readonly status: number | null = null) {
+  constructor(message: string, readonly kind: 'definitive' | 'unknown', readonly issue: string | null = null, readonly status: number | null = null,
+    /** HATEOAS links from PayPal's error body (e.g. the original batch on a duplicate sender_batch_id). */
+    readonly links: { href: string; rel?: string }[] = []) {
     super(message);
   }
 }
@@ -29,6 +31,10 @@ export interface OrderView {
 export interface AuthorizationView { id: string; status: string; createTime: string; expirationTime: string | null; }
 export interface CaptureView { id: string; status: string; amountMinor: number; feeMinor: number | null; }
 export interface PayoutView { batchId: string; batchStatus: string; itemStatus: string | null; feeMinor: number | null; error: string | null; }
+/** A refund (or a reversal, which PayPal reports as a refund resource) re-read from PayPal. */
+export interface RefundView { id: string; status: string; amountMinor: number; captureId: string | null; totalRefundedMinor: number | null; }
+/** A dispute re-read from the Disputes API. outcome is dispute_outcome.outcome_code once RESOLVED. */
+export interface DisputeView { id: string; status: string; outcome: string | null; captureIds: string[]; }
 export interface PayPalIdentity { payerId: string; name: string; email: string | null; }
 
 export interface PaymentProvider {
@@ -42,8 +48,13 @@ export interface PaymentProvider {
   getCapture(captureId: string): Promise<CaptureView>;
   voidAuthorization(authorizationId: string, requestId: string): Promise<AuthorizationView>;
   refundCapture(captureId: string, amountMinor: number, requestId: string): Promise<{ id: string; status: string }>;
-  sendPayout(o: { batchId: string; payerId: string; amountMinor: number; subject: string; note: string }): Promise<{ batchId: string; status: string }>;
+  getRefund(refundId: string): Promise<RefundView>;
+  /** batchId is our sender_batch_id. existing = PayPal already had a batch with it (an earlier attempt's response was lost). */
+  sendPayout(o: { batchId: string; payerId: string; amountMinor: number; subject: string; note: string }): Promise<{ batchId: string; status: string; existing?: boolean }>;
   getPayout(batchId: string): Promise<PayoutView>;
+  getDispute(disputeId: string): Promise<DisputeView>;
+  /** Every dispute PayPal has on one capture (GET /v1/customer/disputes?disputed_transaction_id=). */
+  listDisputes(captureId: string): Promise<DisputeView[]>;
   /** Ask PayPal whether a webhook delivery is genuine (POST /v1/notifications/verify-webhook-signature). */
   verifyWebhook(headers: Record<string, string | undefined>, event: unknown): Promise<boolean>;
   /** Log in with PayPal (operators). */
