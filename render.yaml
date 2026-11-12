@@ -4,30 +4,35 @@
 # file changes nothing on Render until someone creates a Blueprint from it (or applies the same settings in the
 # dashboard / API). Keep it matching the live services.
 #
-# Build filters: a push deploys a service (and, for the API, wipes its SQLite data on the free plan's ephemeral disk)
-# only when it changes files that service actually runs. Docs-only pushes deploy nothing; web-only pushes leave the API
-# and its data alone. https://render.com/docs/monorepo-support#setting-build-filters
+# Live today (2026-11-12): API on Starter with state in Neon Postgres (DATABASE_URL) and RUNNER=workflows; web on
+# free with the custom domain provable.bid; the workflow service provable-race-workflows. Data survives deploys.
+#
+# Build filters: a push deploys a service only when it changes files that service actually runs. Docs-only pushes
+# deploy nothing; web-only pushes leave the API alone. The API also deploys for docs/agents.md and examples/**,
+# which it serves at /agent-guide.md and /examples/agent.mjs. https://render.com/docs/monorepo-support#setting-build-filters
 services:
   - type: web
     name: provable-race-api
     runtime: node
-    plan: free
+    plan: starter
     branch: shiwani/proof-race
-    # Prebuilt: one ESM bundle (node_modules stay external), so boot no longer compiles TypeScript on 0.1 CPU.
-    buildCommand: npm ci --include=dev && npm run api:build
-    startCommand: node dist/api-server.mjs
+    # As live. A prebuilt bundle also works (`npm run api:build`, then `node dist/api-server.mjs`; tested, docs
+    # routes included) and boots faster; switch when convenient.
+    buildCommand: npm ci --include=dev
+    startCommand: npx tsx apps/api/src/server.ts
     healthCheckPath: /health
     buildFilter:
       paths:
         - apps/api/**
         - packages/**
         - contracts/**
-        - scripts/contract.ts
+        - scripts/**
+        - docs/agents.md
+        - examples/**
         - package.json
         - package-lock.json
         - tsconfig.json
-      ignoredPaths:
-        - "**/*.md"
+        - render.yaml
     envVars:
       - { key: NODE_VERSION, value: "24" }
       - { key: NODE_ENV, value: production }
@@ -44,10 +49,10 @@ services:
       - { key: ANTHROPIC_API_KEY, sync: false }
       - { key: KERNEL_API_KEY, sync: false }
       - { key: KEEP_ALIVE_URLS, sync: false }
-      # Durable state (PR #9): Neon Postgres. Without DATABASE_URL the API falls back to SQLite on the ephemeral disk.
+      # Durable state: Neon Postgres (live). Without DATABASE_URL the API falls back to SQLite (tests, local dev).
       - { key: DATABASE_URL, sync: false }
       - { key: DATABASE_URL_UNPOOLED, sync: false }
-      # Render Workflows (provable-race-workflows below). Set RUNNER=workflows to turn it on; unset it to roll back.
+      # Render Workflows (provable-race-workflows below): live with RUNNER=workflows; unset RUNNER to run in-process.
       - { key: RUNNER, sync: false }
       - { key: WORKFLOWS_SECRET, sync: false }
       - { key: RENDER_API_KEY, sync: false }
@@ -63,8 +68,10 @@ services:
       paths:
         - apps/web/**
         - packages/**
+        - contracts/**
         - package.json
         - package-lock.json
+        - render.yaml
       ignoredPaths:
         - "**/*.md"
         - apps/web/tests/**

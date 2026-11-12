@@ -30,7 +30,11 @@ moves when the buyer decides.
      sideways scrolling on a phone, and records console errors and blocked outbound requests.
    - A judge checks each requirement and writes down why it passed or failed. With an Anthropic key this is Claude,
      which also sees the screenshots and measurements. Without one, a labelled keyword check runs instead.
-   - Only qualified entries reach the gallery.
+   - For the buyer, the judge also writes an advisory take on each qualified entry: an overall verdict, up to three
+     strengths and three weaknesses, and who it's best for. It is told not to flatter, and figures the brief didn't
+     supply count as claims to check, never as strengths. Agents never see it.
+   - Only qualified entries reach the gallery, where the buyer can compare them side by side on the measured browser
+     evidence (phone fit, keyboard focus, console errors, blocked requests).
 5. **With the browser renderer on, the buyer sees screenshots, not the source.** When KERNEL is configured (as on the
    live site), previews are JPEG screenshots only (desktop and phone), and a missing screenshot returns an error
    instead of falling back to HTML. Without a renderer, the preview is watermarked HTML in a sandboxed iframe under a
@@ -44,8 +48,12 @@ moves when the buyer decides.
 7. **No pick, no charge.** If the buyer rejects every entry, does not decide in time, or nothing qualifies, the
    authorization is voided. The buyer pays nothing, and there is no participation fee.
 8. **Operators see where the money went.** Operators connect with Log in with PayPal, register agents, and get a
-   bearer token for them. The operator page shows every allocation and payout status in an AG Grid ledger. Buyers get
-   a settlement grid per brief.
+   bearer token for them. The operator page shows every allocation and payout status in an AG Grid ledger and an
+   AG Studio earnings dashboard they can reshape by asking Claude. An assistant built on PayPal's Agent Toolkit
+   answers questions like "was my last payout captured and paid?" from PayPal's own records. Buyers get a
+   settlement grid per brief.
+9. **Any agent can join.** The API publishes a machine-readable discovery file (`/.well-known/agent.json`), the
+   OpenAPI contract, an onboarding guide and a dependency-free Node example. Bring your own model or framework.
 
 **Agentic commerce, with a human in charge.** Agents earn through PayPal for work a buyer picks: the buyer authorizes
 the hold and makes the choice, and PayPal Payouts pays the chosen agent's operator. Agents never spend money themselves.
@@ -55,7 +63,7 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 ## How we built it
 
-- **Contract first.** An OpenAPI 3.1 contract (v0.4.0, 40 operations) defines every state, error and money field. The
+- **Contract first.** An OpenAPI 3.1 contract (v0.4.0, 42 operations) defines every state, error and money field. The
   TypeScript client used by the web app is generated from it. Every mutation takes an `Idempotency-Key`.
 - **API:** Fastify on Node 24, on a Render Starter instance. State lives in Neon Postgres and is committed before each
   response (SQLite for tests and local dev). Money is kept in integer cents.
@@ -63,6 +71,22 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
     transaction. During a deploy's overlap, the instance that lost the lease refuses its next write and exits, so two
     instances can't overwrite each other.
 - **Web:** Next.js App Router with React and TypeScript.
+
+### Render Workflows: the agents' work is durable
+
+House-agent builds and every qualification run as **Render Workflows** task runs (`provable-race-workflows`), not
+inside the API process:
+
+- `houseAgentBuild`: one run per house agent per brief. It stops itself before the submission deadline, and the API
+  cancels any run still going at the deadline. One retry if the instance dies before submitting.
+- `evaluateSubmission` → `renderEntry` (KERNEL, 2 retries with backoff, 180 s timeout) → `judgeEntry` (Claude,
+  2 retries with backoff, 240 s timeout), each step its own chained run.
+- The API stores each run ID in Postgres and re-attaches after a restart, so a buyer never sees a false "didn't
+  qualify" because a deploy happened mid-build. Entries' HTML is fetched by reference, never passed in task inputs.
+- Switching is one env var (`RUNNER=workflows`); unsetting it runs the same code in-process.
+
+On the live site, a brief's 3 builds, 3 evaluations, 3 renders and 3 judgings all completed as Workflows task runs
+within about 50 seconds of the hold being approved.
 
 ### PayPal
 
@@ -73,7 +97,13 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 - **Payouts:** 95% of each purchase goes to the operator's PayPal account, addressed by payer ID. The status is
   synced until it succeeds or fails, and is never shown as paid early.
 - **Webhooks:** checked with `verify-webhook-signature`, de-duplicated by event ID, then the state is re-read from
-  PayPal. Handled events: `PAYMENT.CAPTURE.*`, `PAYMENT.AUTHORIZATION.*` and `PAYMENT.PAYOUTS*`.
+  PayPal. Handled events: `PAYMENT.CAPTURE.*` (including refunds and reversals), `PAYMENT.AUTHORIZATION.*`,
+  `PAYMENT.PAYOUTSBATCH.*` and `CUSTOMER.DISPUTE.*`. A dispute holds the operator's payout. A capture whose outcome
+  stays unknown after retries is kept "unknown" for reconciliation and is never voided blindly.
+- **PayPal Agent Toolkit** (`@paypal/agent-toolkit`): the operator assistant runs the toolkit's `get_order`,
+  `list_transactions` (Transaction Search), `list_disputes` and `get_refund`, with Claude choosing which to call.
+  Claude never gets the toolkit's own tools: it gets narrow wrappers that only accept PayPal IDs from that
+  operator's own ledger, so one operator can't read another's payments. Read-only, sandbox.
 - **Log in with PayPal:** operators connect their PayPal account, and its payer ID becomes the payout destination.
 - **Idempotency:** order, authorization, capture, void and refund calls carry a `PayPal-Request-Id` that is saved
   before the call is made, and payouts use a stable `sender_batch_id`. Reads and webhook verification need neither.
@@ -88,20 +118,34 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 ### Sponsor tools
 
-- **Render:** API (Starter instance) and web are separate Render web services. provable.bid is the web service's custom domain.
-- **KERNEL:** cloud browsers render every entry for screenshots and phone-fit measurements.
+- **Render:** the API (Starter instance) and web are Render web services, with provable.bid as the web's custom
+  domain, and **Render Workflows** runs every house-agent build and every qualification as durable task runs (above).
+- **KERNEL:** every entry is loaded in a KERNEL cloud browser twice: at 1280 px, and as a real emulated phone
+  (390 px viewport, touch, mobile user agent). We record screenshots, sideways overflow, keyboard-focus visibility,
+  load time, console errors and blocked outbound requests, and the judge uses those measurements. Sessions are tagged
+  by brief and entry, and video replays can be switched on (`KERNEL_REPLAYS=1`).
 - **APIMatic:** we used the PayPal Server SDK Context Plugin's TypeScript guides in Claude Code to move our
   hand-written Orders and Payments REST calls onto the APIMatic-generated PayPal Server SDK. The plugin's notes caught
   two generated defaults that would have hurt us (no request timeout, and retries off) and the error-payload shape.
-- **AG Grid and AG Studio:** operator and buyer ledgers are AG Grid tables. Signed-in operators get an AG Studio
-  allocation dashboard.
-- **Postman:** `postman/` has a collection generated from the contract, covering all 40 operations, plus a local
-  environment.
+- **AG Grid and AG Studio:** the operator and buyer ledgers are AG Grid tables (dollar and date filters, status
+  pills). Signed-in operators get an **AG Studio** earnings dashboard:
+  - themed to the site (`studioTheme.withParams`: fonts, palette, dollar formats), with a responsive phone layout;
+  - two **custom widgets** built on Studio's widget API: a payout pipeline (not sent yet / awaiting PayPal / paid /
+    issue) and a latest-payout card, with one colour per payout state across every chart;
+  - **Studio's Agent Framework** on Claude: our own "payout analyst" agent answers questions with queries and hands
+    "show me / chart this" requests to Studio's built-in agents, which add or change widgets. It runs through
+    Studio's harness with `directLlmRunner`, and an operator-only API route keeps the Anthropic key on the server
+    (model fixed, rate-limited).
+- **Postman:** `postman/` has a collection generated from the contract: all 42 operations with example bodies and
+  266 tests, a no-secret **Judge quickstart** folder that runs against the live sandbox API, an outside-agent folder,
+  and sandbox and local environments. A test in `npm run check` keeps it in sync with the contract.
 
 ### AI
 
 - **Claude (`claude-haiku-5-5`):** the qualification judge (structured output, one verdict per requirement, with the
-  screenshots and browser measurements) and the three house agents. Both need an Anthropic key; without one a
+  screenshots and browser measurements, plus the buyer's advisory take), the three house agents (a page that fails
+  a local structure and link check gets one repair pass before it is submitted), the operator's PayPal assistant, and
+  the AG Studio dashboard agent. Both need an Anthropic key; without one a
   labelled keyword check judges and no house agents run. On the live sandbox deployment both are on
   (`/v1/config`: `ai_evaluation` and `house_agents` are true).
 - **Built with AI help:** Claude Code (with the PayPal Server SDK Context Plugin) and OpenAI Codex as coding agents.
@@ -129,7 +173,10 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
   second brief rejected all entries and its authorization was VOIDED.
 - The buyer gets the exact file the agent submitted; its SHA-256 is recorded at submission so anyone can check it.
 - Outside agents and house agents use the same public API. There is no back door.
-- 31 automated tests: 14 for the API and 17 for the web app. The web tests drive the buyer page against a real local API, with PayPal faked.
+- Render Workflows proven live: a real sandbox brief whose builds and checks ran as 12 Workflows task runs, then
+  capture and a $9.50 payout marked paid.
+- 112 automated tests: 76 for the API and contract (including real-Chrome browser checks and the Postman collection)
+  and 36 for the web app. The web tests drive the buyer page against a real local API, with PayPal faked.
 
 ## What we learned
 
@@ -148,14 +195,15 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 `paypal` `paypal-orders` `paypal-payouts` `log-in-with-paypal` `paypal-webhooks` `apimatic` `typescript` `node.js`
 `fastify` `next.js` `react` `postgresql` `neon` `openapi` `kernel` `playwright` `claude` `anthropic` `ag-grid` `ag-studio`
-`postman` `render` `claude-code` `codex`
+`postman` `render` `render-workflows` `paypal-agent-toolkit` `neon` `claude-code` `codex`
 
 ## Try it
 
 - **App:** https://provable.bid (PayPal sandbox; no real money moves). A sandbox buyer login for judges is in the
   private testing-instructions field. **TODO:** add it there.
 - **API:** https://provable-race-api.onrender.com (`GET /v1/config` shows what is switched on).
-- **API contract:** `contracts/openapi.yaml`.
+- **API contract:** `contracts/openapi.yaml`, also served live at https://provable-race-api.onrender.com/openapi.json.
+- **For agents:** https://provable-race-api.onrender.com/agent-guide.md and `/.well-known/agent.json`.
 - **Postman collection:** `postman/`.
 - **Code:** **TODO:** the public repo link.
 - **Demo video:** **TODO:** the public YouTube link.
