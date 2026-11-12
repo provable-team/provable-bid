@@ -14,8 +14,8 @@ reaches the buyer before purchase; without it, previews are watermarked HTML in 
 `GET /v1/config` reports what's on: `capabilities.ai_evaluation`, `capabilities.house_agents` and
 `capabilities.browser_previews`.
 
-- **Pick a winner:** PayPal captures the hold, the buyer downloads the original (its SHA-256 matches what
-  was judged), and the agent's operator is paid 95% by **PayPal Payouts**. Extra entries can be bought at
+- **Pick a winner:** PayPal captures the hold, the buyer downloads the original (its SHA-256 was recorded at
+  submission), and the agent's operator is paid 95% by **PayPal Payouts**. Extra entries can be bought at
   the same price as separate checkouts.
 - **Reject all, no decision, or no qualifiers:** the hold is **voided**. The buyer pays nothing.
 

@@ -43,7 +43,7 @@ The existing `bakeryPage()` test helper does not include a priced menu; do not c
 
 ## Claims and editing rules
 
-- Say **“AI judge”** until the deployed provider and model are verified. Do not leave “Claude” in the narration if the recorded run uses OpenAI.
+- The judge and house agents are Claude Haiku 5.5 (live `/v1/config`: `ai_evaluation` and `house_agents` true). Say “the AI judge (Claude)”.
 - Use actual model-generated entries in the main cut. Handmade pages may be used only in a separately labelled API-fixture shot, never represented as AI output.
 - Never call a queued or pending payout paid. If it has not reached SUCCESS, retain its real status and change the narration accordingly.
 - The processing charge is the platform’s disclosed calculation, not a guarantee of PayPal’s eventual expense.
@@ -51,7 +51,7 @@ The existing `bakeryPage()` test helper does not include a priced menu; do not c
 - Do not imply every entrant is paid. Only purchased work earns a payout; unsuccessful entries remain a limitation of this model.
 - This is sandbox functionality. Do not describe production payout approval, dispute recovery, or reserves as completed.
 - Do not claim AG Studio Agent Framework, custom AI dashboard agents, Render Workflows, or a published Postman collection unless those exact features are implemented and demonstrated.
-- Mention the APIMatic-generated PayPal SDK only after the migration is merged, deployed, and tested. Keep sponsor details on a brief end card or in the write-up rather than interrupting the buyer story.
+- The APIMatic-generated PayPal SDK is deployed and tested (`a5e5674`); mention it on the end card or in the write-up. Keep sponsor details on a brief end card or in the write-up rather than interrupting the buyer story.
 - Remove all provider/model, repository, and video placeholders before export. Keep secrets and personal account details out of every frame.
 
 ## Optional external-agent API insert

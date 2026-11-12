@@ -1,8 +1,6 @@
 # provable.bid — Devpost write-up (draft for review)
 
-> Draft by Shiwani's Claude Code agent for Yosun and Codex to review. Every number below was checked against
-> branch `shiwani/proof-race` (commit 51c7ab2) and the live API config on 2026-11-12. Lines marked
-> **TODO-verify** must be confirmed before submitting.
+> Lines marked **TODO** must be filled in before submitting; remove this note when pasting into Devpost.
 
 **Tagline:** Post a brief, let AI agents race to build it, and pay only for the website you pick.
 
@@ -39,7 +37,8 @@ moves when the buyer decides.
    strict content policy, so in that mode the buyer can see the markup before paying.
 6. **Picking a winner settles everything.**
    - The full authorization is captured.
-   - The buyer downloads the original HTML. Its SHA-256 fingerprint matches the one recorded at submission.
+   - The buyer downloads the original HTML. The server recorded its SHA-256 at submission and serves those exact
+     bytes, so the download can be checked against that fingerprint.
    - The winning agent's operator is paid 95% of the price through PayPal Payouts. provable.bid keeps 5%.
    - The buyer can also buy other qualified entries, each through its own PayPal CAPTURE checkout and payout.
 7. **No pick, no charge.** If the buyer rejects every entry, does not decide in time, or nothing qualifies, the
@@ -47,6 +46,9 @@ moves when the buyer decides.
 8. **Operators see where the money went.** Operators connect with Log in with PayPal, register agents, and get a
    bearer token for them. The operator page shows every allocation and payout status in an AG Grid ledger. Buyers get
    a settlement grid per brief.
+
+**Agentic commerce, with a human in charge.** Agents earn through PayPal for work a buyer picks: the buyer authorizes
+the hold and makes the choice, and PayPal Payouts pays the chosen agent's operator. Agents never spend money themselves.
 
 Three house agents, Atelier, Voltage and Meadow, enter through the same public API with their own credentials and are
 labelled as house agents everywhere. They need the Anthropic key; without it they don't run.
@@ -96,8 +98,9 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 - **Claude (`claude-haiku-5-5`):** the qualification judge (structured output, one verdict per requirement, with the
   screenshots and browser measurements) and the three house agents. Both need an Anthropic key; without one a
-  labelled keyword check judges and no house agents run. **TODO-verify:** confirm `ai_evaluation` and `house_agents`
-  are true on `/v1/config` before submitting.
+  labelled keyword check judges and no house agents run. On the live sandbox deployment both are on
+  (`/v1/config`: `ai_evaluation` and `house_agents` are true).
+- **Built with AI help:** Claude Code (with the PayPal Server SDK Context Plugin) and OpenAI Codex as coding agents.
 
 ## Challenges we ran into
 
@@ -119,9 +122,9 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 - A real PayPal sandbox run end to end: $10.87 hold, then capture, then a $9.50 payout that reached SUCCESS. A
   second brief rejected all entries and its authorization was VOIDED.
-- The buyer always gets the exact file the agent submitted, proven by SHA-256 at download.
+- The buyer gets the exact file the agent submitted; its SHA-256 is recorded at submission so anyone can check it.
 - Outside agents and house agents use the same public API. There is no back door.
-- 31 automated tests: 14 for the API and 17 for the web app. The web tests drive the buyer page against a live API.
+- 31 automated tests: 14 for the API and 17 for the web app. The web tests drive the buyer page against a real local API, with PayPal faked.
 
 ## What we learned
 
@@ -140,13 +143,14 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 `paypal` `paypal-orders` `paypal-payouts` `log-in-with-paypal` `paypal-webhooks` `apimatic` `typescript` `node.js`
 `fastify` `next.js` `react` `sqlite` `openapi` `kernel` `playwright` `claude` `anthropic` `ag-grid` `ag-studio`
-`postman` `render`
+`postman` `render` `claude-code` `codex`
 
 ## Try it
 
-- **App:** https://provable.bid (PayPal sandbox: use a sandbox buyer account; no real money moves).
+- **App:** https://provable.bid (PayPal sandbox; no real money moves). A sandbox buyer login for judges is in the
+  private testing-instructions field. **TODO:** add it there.
 - **API:** https://provable-race-api.onrender.com (`GET /v1/config` shows what is switched on).
 - **API contract:** `contracts/openapi.yaml`.
 - **Postman collection:** `postman/`.
-- **Code:** **TODO-verify:** the repo link, once Yosun decides on visibility and `main`.
-- **Demo video:** **TODO-verify:** add the link.
+- **Code:** **TODO:** the public repo link.
+- **Demo video:** **TODO:** the public YouTube link.
