@@ -3015,3 +3015,58 @@ svg {
     font-size: 21px;
   }
 }
+
+/* Public dashboard demo (/operators/demo): fictional sample data, labelled as such. */
+.demo-banner {
+  font-size: 14px;
+  line-height: 1.55;
+  border-color: #e6d9b9;
+  background: #f9f0dc;
+}
+.demo-banner p {
+  margin: 0;
+}
+.demo-banner a {
+  color: var(--ink);
+  font-weight: 600;
+}
+.sample-tag {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 8px;
+  padding: 2px 9px;
+  border: 1px solid #e6d9b9;
+  border-radius: 999px;
+  background: #f9f0dc;
+  color: #7a5c10;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.studio-demo-ai {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  max-width: 100%;
+}
+.studio-mode button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.studio-demo-note {
+  max-width: 300px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.operator-demo-link {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.operator-demo-link a {
+  color: var(--ink);
+  font-weight: 600;
+}
