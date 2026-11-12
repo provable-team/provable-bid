@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Night Market: A3 Poster</title>
+<style>
+  :root {
+    --ink: #0b0b2b;
+    --accent: #ff4d1a;
+    --accent-2: #ffd21f;
+    --paper: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #d9d9e3;
+    font-family: "Arial Black", "Helvetica Neue", Arial, "Segoe UI", sans-serif;
+    color: var(--paper);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+    overflow-x: hidden;
+  }
+  .poster {
+    position: relative;
+    width: 100%;
+    max-width: 760px;
+    background: var(--ink);
+    container-type: inline-size;
+    padding: 6cqi 6cqi 5cqi;
+    display: flex;
+    flex-direction: column;
+    gap: 4cqi;
+    isolation: isolate;
+    overflow: visible;
+  }
+  /* decorative stripes live in their own text-free layer */
+  .poster::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      repeating-linear-gradient(135deg, transparent 0 9cqi, rgba(255,77,26,.10) 9cqi 10cqi);
+    z-index: -1;
+    pointer-events: none;
+  }
+  .bar {
+    height: 2.4cqi;
+    background: linear-gradient(90deg, var(--accent) 0 33%, var(--accent-2) 33% 66%, #ff2e88 66%);
+    margin: -6cqi -6cqi 0;
+  }
+  .kicker {
+    font-family: Arial, "Helvetica Neue", sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .18em;
+    font-size: max(11px, 2.6cqi);
+    color: var(--accent-2);
+    margin: 0;
+  }
+  h1 {
+    margin: 0;
+    font-weight: 900;
+    line-height: .9;
+    text-transform: uppercase;
+    letter-spacing: -.01em;
+  }
+  h1 .big {
+    display: block;
+    font-size: 10.5cqi;
+    color: var(--paper);
+  }
+  h1 .huge {
+    display: block;
+    font-size: 15cqi;
+    color: var(--accent);
+    line-height: .92;
+  }
+  h1 .small {
+    display: block;
+    font-size: 6.6cqi;
+    color: var(--accent-2);
+    margin-top: 1cqi;
+  }
+  .when {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5cqi;
+  }
+  .when-item {
+    background: var(--accent-2);
+    color: var(--ink);
+    padding: 3cqi 4cqi;
+    display: flex;
+    flex-direction: column;
+    gap: .6cqi;
+  }
+  .when-item .label {
+    font-family: Arial, "Helvetica Neue", sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    font-size: max(11px, 2.4cqi);
+  }
+  .when-item .value {
+    font-weight: 900;
+    text-transform: uppercase;
+    font-size: 6.4cqi;
+    line-height: 1.05;
+  }
+  .free {
+    display: inline-block;
+    align-self: flex-start;
+    background: var(--accent);
+    color: var(--paper);
+    font-weight: 900;
+    text-transform: uppercase;
+    font-size: 7cqi;
+    padding: 2cqi 4cqi;
+    line-height: 1;
+  }
+  .intro {
+    font-family: Arial, "Helvetica Neue", sans-serif;
+    font-size: max(15px, 3.6cqi);
+    line-height: 1.5;
+    margin: 0;
+    max-width: 52ch;
+    color: #e8e8f5;
+  }
+  .scan {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3cqi;
+    align-items: center;
+    background: var(--paper);
+    color: var(--ink);
+    padding: 4cqi;
+  }
+  .qr {
+    width: 52%;
+    max-width: 260px;
+    justify-self: center;
+  }
+  .qr svg { display: block; width: 100%; height: auto; }
+  .scan-label {
+    font-weight: 900;
+    text-transform: uppercase;
+    font-size: 6cqi;
+    line-height: 1.05;
+    text-align: center;
+    margin: 0;
+    color: var(--ink);
+  }
+  .scan-label span { color: var(--accent); }
+  .foot {
+    font-family: Arial, "Helvetica Neue", sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-size: max(11px, 2.4cqi);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1cqi 3cqi;
+    justify-content: space-between;
+    color: var(--accent-2);
+    margin: 0;
+  }
+  @media (min-width: 640px) {
+    .when { grid-template-columns: 1fr 1fr 1fr; }
+    .scan { grid-template-columns: 1fr 1fr; }
+    .scan-label { text-align: left; }
+  }
+  @media (max-width: 380px) {
+    body { padding: 8px; }
+  }
+
+  @media print {
+    @page { size: A3 portrait; margin: 0; }
+    html, body {
+      width: 297mm;
+      height: auto;
+      background: var(--ink);
+      margin: 0;
+      padding: 0;
+      display: block;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .poster {
+      width: 297mm;
+      max-width: none;
+      min-height: 420mm;
+      padding: 18mm 18mm 16mm;
+      gap: 9mm;
+      container-type: normal;
+      font-size: 16px;
+    }
+    .bar { margin: -18mm -18mm 0; height: 7mm; }
+    .kicker { font-size: 11pt; }
+    h1 .big { font-size: 30mm; }
+    h1 .huge { font-size: 44mm; }
+    h1 .small { font-size: 20mm; }
+    .when-item .label { font-size: 9pt; }
+    .when-item .value { font-size: 19mm; }
+    .free { font-size: 22mm; padding: 5mm 10mm; }
+    .intro { font-size: 13pt; }
+    .scan { padding: 12mm; }
+    .scan-label { font-size: 20mm; }
+    .foot { font-size: 9pt; }
+    .qr { width: 80mm; max-width: none; }
+  }
+</style>
+</head>
+<body>
+<main class="poster" aria-label="Riverside Night Market poster">
+  <div class="bar" aria-hidden="true"></div>
+
+  <p class="kicker">Riverside</p>
+
+  <h1>
+    <span class="big">Riverside</span>
+    <span class="huge">Night</span>
+    <span class="huge">Market</span>
+  </h1>
+
+  <div class="when">
+    <div class="when-item">
+      <span class="label">Day</span>
+      <span class="value">Fridays</span>
+    </div>
+    <div class="when-item">
+      <span class="label">Time</span>
+      <span class="value">6pm to 11pm</span>
+    </div>
+    <div class="when-item">
+      <span class="label">Month</span>
+      <span class="value">June</span>
+    </div>
+  </div>
+
+  <p class="free">Free entry</p>
+
+  <p class="intro">The Riverside Night Market runs on Fridays in June, from 6pm to 11pm. Come down to the river on a Friday evening and wander the market.</p>
+
+  <section class="scan" aria-label="Scan for vendors">
+    <div class="qr" role="img" aria-label="Placeholder for a QR code, not a live code">
+      <svg viewBox="0 0 29 29" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+        <rect width="29" height="29" fill="#ffffff"/>
+        <!-- finder patterns -->
+        <g fill="#0b0b2b">
+          <rect x="1" y="1" width="7" height="7"/>
+          <rect x="21" y="1" width="7" height="7"/>
+          <rect x="1" y="21" width="7" height="7"/>
+        </g>
+        <g fill="#ffffff">
+          <rect x="2" y="2" width="5" height="5"/>
+          <rect x="22" y="2" width="5" height="5"/>
+          <rect x="2" y="22" width="5" height="5"/>
+        </g>
+        <g fill="#0b0b2b">
+          <rect x="3" y="3" width="3" height="3"/>
+          <rect x="23" y="3" width="3" height="3"/>
+          <rect x="3" y="23" width="3" height="3"/>
+        </g>
+        <!-- drawn placeholder modules -->
+        <g fill="#0b0b2b">
+          <rect x="9" y="1" width="2" height="2"/>
+          <rect x="12" y="1" width="1" height="3"/>
+          <rect x="15" y="2" width="3" height="1"/>
+          <rect x="9" y="4" width="1" height="3"/>
+          <rect x="11" y="5" width="2" height="2"/>
+          <rect x="14" y="5" width="2" height="1"/>
+          <rect x="17" y="4" width="2" height="3"/>
+          <rect x="1" y="10" width="2" height="2"/>
+          <rect x="4" y="9" width="3" height="1"/>
+          <rect x="9" y="9" width="2" height="2"/>
+          <rect x="13" y="8" width="1" height="3"/>
+          <rect x="16" y="9" width="3" height="2"/>
+          <rect x="21" y="10" width="2" height="3"/>
+          <rect x="25" y="9" width="3" height="1"/>
+          <rect x="2" y="14" width="3" height="2"/>
+          <rect x="7" y="13" width="2" height="3"/>
+          <rect x="11" y="14" width="3" height="1"/>
+          <rect x="15" y="13" width="2" height="2"/>
+          <rect x="19" y="14" width="1" height="3"/>
+          <rect x="23" y="13" width="4" height="2"/>
+          <rect x="1" y="18" width="3" height="2"/>
+          <rect x="9" y="18" width="2" height="3"/>
+          <rect x="13" y="17" width="3" height="2"/>
+          <rect x="18" y="19" width="2" height="2"/>
+          <rect x="22" y="17" width="2" height="3"/>
+          <rect x="26" y="18" width="2" height="2"/>
+          <rect x="10" y="22" width="2" height="2"/>
+          <rect x="14" y="23" width="3" height="2"/>
+          <rect x="19" y="22" width="2" height="3"/>
+          <rect x="24" y="24" width="3" height="2"/>
+          <rect x="10" y="26" width="3" height="2"/>
+          <rect x="16" y="27" width="2" height="1"/>
+          <rect x="25" y="27" width="2" height="1"/>
+        </g>
+      </svg>
+    </div>
+    <p class="scan-label">Scan for <span>vendors</span></p>
+  </section>
+
+  <p class="foot">
+    <span>Riverside Night Market</span>
+    <span>Fridays · 6pm to 11pm · June</span>
+  </p>
+</main>
+</body>
+</html>

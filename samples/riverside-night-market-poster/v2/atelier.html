@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Night Market: Fridays, 6pm to 11pm, June. Free entry</title>
+<style>
+  @page { size: A3 portrait; margin: 0; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #e9e2d7;
+    color: #2b2622;
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+    -webkit-text-size-adjust: 100%;
+    overflow-x: hidden;
+  }
+
+  body { padding: 16px; }
+
+  /* The sheet is the A3 page. Every size inside uses container units so the
+     artwork scales with the page on screen and in print. */
+  .sheet {
+    container-type: inline-size;
+    width: 100%;
+    max-width: 297mm;
+    margin: 0 auto;
+  }
+
+  .poster {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 141.41cqi;          /* 420 / 297 keeps the A3 proportion on screen */
+    padding: 9cqi 8cqi 8cqi;
+    background: #f4eee4;
+    border: 1px solid #d9cdbb;
+    gap: 6cqi;
+  }
+
+  .kicker-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2cqi;
+    font-size: max(11px, 3.2cqi);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #7a4a31;
+    margin: 0;
+  }
+
+  .title {
+    margin: 0;
+    font-weight: 400;
+    font-size: 15cqi;
+    line-height: 0.98;
+    letter-spacing: -0.01em;
+    overflow-wrap: break-word;
+  }
+  .title em {
+    font-style: italic;
+    color: #9a4f2e;
+  }
+
+  .rule {
+    height: 0;
+    border-top: 1px solid #2b2622;
+    margin: 0;
+  }
+
+  .when {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3.5cqi;
+  }
+  .when div {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.6cqi;
+    border-bottom: 1px solid #d3c5b1;
+    padding-bottom: 2.6cqi;
+  }
+  .when dt {
+    font-size: max(11px, 2.8cqi);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #6b5f54;
+  }
+  .when dd {
+    margin: 0;
+    font-size: 7.4cqi;
+    line-height: 1.1;
+  }
+
+  .free {
+    margin: 0;
+    font-size: 9cqi;
+    font-style: italic;
+    line-height: 1.1;
+    color: #9a4f2e;
+  }
+
+  .scan {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-items: start;
+    gap: 3cqi;
+  }
+  .scan svg {
+    width: 36cqi;
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+  .scan figcaption {
+    font-size: max(11px, 4.2cqi);
+    line-height: 1.2;
+    color: #2b2622;
+    letter-spacing: 0.02em;
+  }
+  .scan .note {
+    font-size: max(11px, 2.8cqi);
+    color: #6b5f54;
+    line-height: 1.3;
+    max-width: 60cqi;
+  }
+
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 4cqi;
+    margin: 0;
+  }
+
+  /* Screen: slightly tighter on phones so the layout keeps its character. */
+  @media (max-width: 600px) {
+    .poster { padding: 10cqi 9cqi 9cqi; }
+    .title { font-size: 16cqi; }
+    .when dd { font-size: 9cqi; }
+    .free { font-size: 11cqi; }
+  }
+
+  @media print {
+    html, body {
+      background: #f4eee4;
+      width: 297mm;
+      height: 420mm;
+      overflow: hidden;
+    }
+    body { padding: 0; }
+    .sheet {
+      max-width: none;
+      width: 297mm;
+      height: 420mm;
+      margin: 0;
+    }
+    .poster {
+      min-height: 0;
+      height: 420mm;
+      border: none;
+      padding: 22mm 22mm 20mm;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
+</style>
+</head>
+<body>
+  <main class="sheet">
+    <article class="poster">
+
+      <header class="kicker-row">
+        <span>A night market</span>
+        <span>Fridays in June</span>
+      </header>
+
+      <h1 class="title">Riverside<br><em>Night</em><br>Market</h1>
+
+      <div class="rule" role="presentation"></div>
+
+      <dl class="when">
+        <div>
+          <dt>Days</dt>
+          <dd>Fridays</dd>
+        </div>
+        <div>
+          <dt>Hours</dt>
+          <dd>6pm to 11pm</dd>
+        </div>
+        <div>
+          <dt>Month</dt>
+          <dd>June</dd>
+        </div>
+      </dl>
+
+      <p class="free">Free entry</p>
+
+      <div class="foot">
+        <figure class="scan">
+          <svg viewBox="0 0 100 100" role="img" aria-label="Drawn placeholder box for a QR code. It is not a scannable code.">
+            <rect x="1" y="1" width="98" height="98" fill="#fffdf8" stroke="#2b2622" stroke-width="1.5"/>
+            <!-- finder patterns -->
+            <rect x="8" y="8" width="26" height="26" fill="none" stroke="#2b2622" stroke-width="3"/>
+            <rect x="15" y="15" width="12" height="12" fill="#2b2622"/>
+            <rect x="66" y="8" width="26" height="26" fill="none" stroke="#2b2622" stroke-width="3"/>
+            <rect x="73" y="15" width="12" height="12" fill="#2b2622"/>
+            <rect x="8" y="66" width="26" height="26" fill="none" stroke="#2b2622" stroke-width="3"/>
+            <rect x="15" y="73" width="12" height="12" fill="#2b2622"/>
+            <!-- placeholder modules -->
+            <g fill="#2b2622">
+              <rect x="42" y="10" width="6" height="6"/>
+              <rect x="52" y="10" width="6" height="6"/>
+              <rect x="42" y="22" width="6" height="6"/>
+              <rect x="58" y="22" width="6" height="6"/>
+              <rect x="38" y="36" width="6" height="6"/>
+              <rect x="50" y="36" width="6" height="6"/>
+              <rect x="66" y="36" width="6" height="6"/>
+              <rect x="10" y="42" width="6" height="6"/>
+              <rect x="22" y="44" width="6" height="6"/>
+              <rect x="42" y="46" width="6" height="6"/>
+              <rect x="56" y="44" width="6" height="6"/>
+              <rect x="74" y="46" width="6" height="6"/>
+              <rect x="86" y="42" width="6" height="6"/>
+              <rect x="36" y="56" width="6" height="6"/>
+              <rect x="48" y="58" width="6" height="6"/>
+              <rect x="62" y="56" width="6" height="6"/>
+              <rect x="80" y="60" width="6" height="6"/>
+              <rect x="42" y="72" width="6" height="6"/>
+              <rect x="54" y="70" width="6" height="6"/>
+              <rect x="68" y="76" width="6" height="6"/>
+              <rect x="82" y="80" width="6" height="6"/>
+              <rect x="42" y="86" width="6" height="6"/>
+              <rect x="60" y="88" width="6" height="6"/>
+            </g>
+          </svg>
+          <figcaption>Scan for vendors</figcaption>
+          <span class="note">Placeholder box. Not a scannable code.</span>
+        </figure>
+      </div>
+
+    </article>
+  </main>
+</body>
+</html>

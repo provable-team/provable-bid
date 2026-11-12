@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crumb &amp; Co. Bakery | Business Card (3.5 x 2 in)</title>
+<style>
+:root{
+  --crust:#1a0f08;
+  --ember:#ff5a1f;
+  --cream:#fff1dc;
+  --honey:#ffb300;
+  --ink:#140b05;
+  --head:"Arial Black","Helvetica Neue",Arial,Helvetica,sans-serif;
+  --body:Arial,"Helvetica Neue",Helvetica,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#e9e4dd;color:var(--ink);font-family:var(--body);-webkit-text-size-adjust:100%}
+body{min-height:100vh;overflow-x:hidden}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 16px;display:grid;gap:24px;justify-items:center}
+.cards{display:grid;gap:24px;justify-items:center;width:100%}
+.note{max-width:520px;width:100%;background:#fff;border:2px solid var(--ink);padding:16px 18px;font-size:15px;line-height:1.5}
+.note h2{font-family:var(--head);font-size:17px;margin-bottom:6px}
+.note ul{padding-left:18px;margin-top:6px}
+.note li{margin-bottom:4px}
+
+/* Card: fluid on screen, exact 3.5 x 2 in in print */
+.card{
+  position:relative;
+  width:min(100%,528px);
+  aspect-ratio:3.5/2;
+  min-height:0;
+  container-type:inline-size;
+  padding:6cqw;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  overflow:visible;
+  box-shadow:0 10px 30px rgba(0,0,0,.25);
+}
+.front{background:var(--ember);color:var(--ink)}
+.front::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:9cqw;background:var(--crust);
+}
+.front .bottom{position:relative;z-index:1;padding-bottom:9cqw;display:flex;flex-direction:column;gap:1.6cqw}
+.front h1{
+  font-family:var(--head);
+  font-weight:900;
+  font-size:11cqw;
+  line-height:.95;
+  letter-spacing:-.02em;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+.front h1 span{display:block;font-size:8cqw;letter-spacing:.04em;color:var(--cream);margin-top:1.2cqw}
+.front .tag{
+  font-family:var(--head);font-size:4cqw;letter-spacing:.12em;text-transform:uppercase;color:var(--cream);
+  position:relative;z-index:1;padding-bottom:9cqw
+}
+.front .tag{position:absolute;left:6cqw;bottom:2.4cqw;margin:0;color:var(--cream);z-index:1;font-size:3.8cqw;letter-spacing:.08em}
+.front .bottom{padding-bottom:0}
+.front .top{font-family:var(--head);font-size:3.8cqw;letter-spacing:.12em;text-transform:uppercase}
+
+.back{background:var(--crust);color:var(--cream)}
+.back .label{
+  font-family:var(--head);font-size:3.6cqw;letter-spacing:.14em;text-transform:uppercase;color:var(--honey)
+}
+.back .hours .big{
+  font-family:var(--head);font-weight:900;font-size:7.4cqw;line-height:1.05;text-transform:uppercase;white-space:nowrap;margin-top:1.4cqw
+}
+.back .hours .med{font-size:6cqw;font-weight:700;margin-top:1.2cqw;line-height:1.2}
+.back .hours .med small{font-size:4.2cqw;color:var(--honey);font-weight:700;letter-spacing:.02em}
+.back .rule{height:.6cqw;background:var(--ember);margin:3.4cqw 0 3cqw}
+.back .order .url{
+  font-family:var(--head);font-size:5.2cqw;line-height:1.2;color:var(--ink);background:var(--honey);
+  padding:2.4cqw 3cqw;margin-top:1.6cqw;display:block;word-break:break-word
+}
+.back .order .url b{font-weight:900}
+
+@media (min-width:900px){
+  .wrap{grid-template-columns:minmax(0,1fr) 300px;align-items:start;justify-items:stretch;max-width:1180px}
+  .cards{justify-items:center}
+  .note{position:sticky;top:24px}
+}
+
+@media print{
+  @page{size:3.5in 2in;margin:0}
+  html,body{background:#fff;margin:0;padding:0;width:3.5in}
+  .wrap{display:block;padding:0;max-width:none;margin:0}
+  .note,.no-print{display:none!important}
+  .cards{display:block;width:3.5in}
+  .card{
+    width:3.5in;height:2in;aspect-ratio:auto;min-height:0;
+    box-shadow:none;margin:0;page-break-after:always;break-after:page;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .card.back{page-break-after:auto;break-after:auto}
+  .front::after{height:9cqw}
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="cards">
+
+    <!-- FRONT -->
+    <section class="card front" aria-label="Front of card">
+      <p class="top">Tuesday to Sunday &middot; 7am to 3pm</p>
+      <div class="bottom">
+        <h1>Crumb &amp; Co. <span>Bakery</span></h1>
+      </div>
+    </section>
+
+    <!-- BACK -->
+    <section class="card back" aria-label="Back of card">
+      <div class="hours">
+        <p class="label">Hours</p>
+        <p class="big">Tuesday to Sunday</p>
+        <p class="med">7am to 3pm <small>(Tue-Sun)</small></p>
+      </div>
+      <div class="rule" aria-hidden="true"></div>
+      <div class="order">
+        <p class="label">Order ahead</p>
+        <p class="url">Preorders at <b>crumbandco.example</b></p>
+      </div>
+    </section>
+
+  </div>
+
+  <aside class="note" aria-label="Print instructions">
+    <h2>Print notes</h2>
+    <p>Trim size: 3.5 &times; 2 in (US business card). Front is page 1, back is page 2.</p>
+    <ul>
+      <li>Print at 100% / actual size, not "fit to page".</li>
+      <li>Set margins to none and turn off headers and footers.</li>
+      <li>Use card stock and print both pages, then cut to 3.5 &times; 2 in.</li>
+    </ul>
+  </aside>
+</main>
+</body>
+</html>

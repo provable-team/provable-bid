@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crumb & Co. Bakery | Business Card (Front and Back)</title>
+<style>
+  :root {
+    --cream: #f6f0e6;
+    --paper: #fbf7f0;
+    --ink: #2b2118;
+    --muted: #6b5a4a;
+    --accent: #9a4a2c;
+    --rule: #d9c9b4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #ece4d7;
+    color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+    -webkit-text-size-adjust: 100%;
+    overflow-x: hidden;
+  }
+  .sheet {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 20px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .note {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--muted);
+    max-width: 640px;
+    margin: 0;
+  }
+  .note strong { color: var(--ink); }
+  .label {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .pair {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    align-items: center;
+  }
+  .slot { width: 100%; max-width: 560px; }
+
+  /* Card: scales fluidly; all type is sized in container units (cqi) */
+  .card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3.5 / 2;
+    container-type: inline-size;
+    background: var(--paper);
+    box-shadow: 0 1px 2px rgba(43,33,24,.12), 0 10px 30px rgba(43,33,24,.12);
+    margin: 0;
+    padding: 6cqi 7cqi;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: visible;
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 3.2cqi;
+    border: 0.25cqi solid var(--rule);
+    pointer-events: none;
+  }
+  .card > * { position: relative; }
+
+  /* Front */
+  .front { background: var(--cream); }
+  .front .brand {
+    margin: auto 0;
+    font-size: 15cqi;
+    line-height: 0.98;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .front .brand .amp { color: var(--accent); font-style: italic; }
+  .front .sub {
+    display: flex;
+    align-items: center;
+    gap: 3cqi;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 3.4cqi;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+  .front .sub::before {
+    content: "";
+    width: 9cqi;
+    height: 0.3cqi;
+    background: var(--accent);
+    flex: none;
+  }
+
+  /* Back */
+  .back .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4cqi;
+  }
+  .back .name {
+    font-size: 5.6cqi;
+    line-height: 1.1;
+    margin: 0;
+    font-weight: 400;
+  }
+  .back .kicker {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 3.2cqi;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+    white-space: nowrap;
+  }
+  .hours {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 0.25cqi solid var(--rule);
+  }
+  .hours li {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4cqi;
+    padding: 2.4cqi 0;
+    border-bottom: 0.25cqi solid var(--rule);
+    font-size: 6cqi;
+    line-height: 1.15;
+  }
+  .hours .k {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 3.2cqi;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .preorder {
+    margin: 0;
+    font-size: 4.6cqi;
+    line-height: 1.25;
+    color: var(--ink);
+  }
+  .preorder .url {
+    color: var(--accent);
+    font-style: italic;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  /* Print: exact 3.5 x 2 in pages, one card per page */
+  @page { size: 3.5in 2in; margin: 0; }
+  @media print {
+    html, body { background: #fff; margin: 0; padding: 0; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .note, .label, .screen-only { display: none !important; }
+    .sheet { padding: 0; max-width: none; gap: 0; display: block; }
+    .pair { display: block; gap: 0; }
+    .slot { max-width: none; width: 3.5in; height: 2in; margin: 0; page-break-after: always; break-after: page; }
+    .slot:last-child { page-break-after: auto; break-after: auto; }
+    .card {
+      width: 3.5in;
+      height: 2in;
+      aspect-ratio: auto;
+      box-shadow: none;
+      margin: 0;
+      page-break-inside: avoid;
+    }
+  }
+</style>
+</head>
+<body>
+<main class="sheet">
+
+  <p class="note screen-only">
+    <strong>Crumb &amp; Co. Bakery business card.</strong> Trim size: 3.5 &times; 2 in (US business card). Front and back are each one printed page.
+    To print, open the print dialog, set scale to 100% (or Actual size), set margins to None, and turn off headers and footers. Print on card stock cut to 3.5 &times; 2 in.
+  </p>
+
+  <div class="pair">
+
+    <section class="slot" aria-label="Card front">
+      <p class="label screen-only">Front</p>
+      <div class="card front">
+        <h1 class="brand">Crumb <span class="amp">&amp;</span> Co.<br>Bakery</h1>
+        <p class="sub">Tuesday to Sunday</p>
+      </div>
+    </section>
+
+    <section class="slot" aria-label="Card back">
+      <p class="label screen-only">Back</p>
+      <div class="card back">
+        <div class="top">
+          <p class="name">Crumb &amp; Co. Bakery</p>
+        </div>
+        <ul class="hours">
+          <li><span class="k">Open</span><span>Tuesday to Sunday</span></li>
+          <li><span class="k">Hours</span><span>7am to 3pm</span></li>
+        </ul>
+        <p class="preorder">Preorders at <span class="url">crumbandco.example</span></p>
+      </div>
+    </section>
+
+  </div>
+
+</main>
+</body>
+</html>

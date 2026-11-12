@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crumb &amp; Co. Bakery | Business Card (3.5 x 2 in, front and back)</title>
+<style>
+  :root {
+    --cream: #fff6ea;
+    --peach: #ffd8c2;
+    --butter: #fff0b8;
+    --mint: #d6f0e4;
+    --berry: #b9466b;
+    --brown: #7a4a32;
+    --ink: #4a3428;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, "Trebuchet MS", system-ui, sans-serif;
+    color: var(--ink);
+    background: #f6efe7;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .wrap {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
+  }
+  .note {
+    max-width: 520px;
+    margin: 0 auto 24px;
+    font-size: 15px;
+    line-height: 1.5;
+    background: #fff;
+    border-radius: 18px;
+    padding: 14px 18px;
+    box-shadow: 0 2px 10px rgba(74, 52, 40, 0.08);
+  }
+  .note h1 {
+    font-size: 18px;
+    margin: 0 0 6px;
+  }
+  .note p { margin: 0 0 6px; }
+  .sheet {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+  }
+  @media (min-width: 900px) {
+    .sheet { flex-direction: row; justify-content: center; align-items: flex-start; }
+  }
+
+  /* Each slot keeps the 3.5 x 2 in proportion and scales all type with cqw */
+  .slot {
+    container-type: inline-size;
+    width: min(100%, 420px);
+    max-width: 100%;
+  }
+  .card {
+    width: 100%;
+    aspect-ratio: 7 / 4;
+    border-radius: 6cqw;
+    padding: 6cqw;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    position: relative;
+    box-shadow: 0 6px 18px rgba(74, 52, 40, 0.14);
+  }
+  .front {
+    background: var(--peach);
+    background-image:
+      radial-gradient(circle at 12% 18%, var(--butter) 0 7cqw, transparent 7.2cqw),
+      radial-gradient(circle at 90% 84%, var(--mint) 0 9cqw, transparent 9.2cqw);
+  }
+  .back {
+    background: var(--cream);
+    background-image:
+      radial-gradient(circle at 96% 8%, var(--mint) 0 8cqw, transparent 8.2cqw),
+      radial-gradient(circle at 4% 92%, var(--butter) 0 6cqw, transparent 6.2cqw);
+  }
+
+  .loaf {
+    width: 24cqw;
+    height: auto;
+    display: block;
+    margin-bottom: 3cqw;
+  }
+  .name {
+    margin: 0;
+    font-size: 9cqw;
+    line-height: 1.1;
+    font-weight: 800;
+    color: var(--brown);
+    letter-spacing: 0.2px;
+  }
+  .rule {
+    width: 30cqw;
+    height: 0.8cqw;
+    min-height: 2px;
+    border-radius: 99px;
+    background: var(--berry);
+    margin: 3.5cqw 0 0;
+  }
+  .label {
+    margin: 0;
+    font-size: 4.2cqw;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--berry);
+  }
+  .hours {
+    margin: 1.2cqw 0 0;
+    font-size: 6.6cqw;
+    line-height: 1.25;
+    font-weight: 700;
+    color: var(--brown);
+  }
+  .hours span { display: block; }
+  .wheat {
+    width: 13cqw;
+    height: auto;
+    display: block;
+    margin-bottom: 2cqw;
+  }
+  .order {
+    margin: 1.2cqw 0 0;
+    font-size: 5cqw;
+    line-height: 1.3;
+    font-weight: 600;
+    color: var(--ink);
+    background: #fff;
+    border-radius: 99px;
+    padding: 2cqw 4cqw;
+    overflow-wrap: anywhere;
+  }
+
+  .screen-only-hint { display: block; }
+
+  /* Print: two pages, front then back, each exactly 3.5 x 2 in */
+  @page {
+    size: 3.5in 2in;
+    margin: 0;
+  }
+  @media print {
+    html, body {
+      width: 3.5in;
+      background: none;
+    }
+    .no-print, .note { display: none !important; }
+    .wrap {
+      max-width: none;
+      padding: 0;
+      margin: 0;
+    }
+    .sheet {
+      display: block;
+      gap: 0;
+    }
+    .slot {
+      width: 3.5in;
+      height: 2in;
+      max-width: none;
+      overflow: hidden;
+      break-inside: avoid;
+    }
+    .slot.front { break-after: page; page-break-after: always; }
+    .slot.back { break-after: auto; page-break-after: auto; }
+    .card {
+      width: 3.5in;
+      height: 2in;
+      aspect-ratio: auto;
+      border-radius: 0;
+      box-shadow: none;
+    }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <section class="note no-print" aria-label="Print notes">
+    <h1>Crumb &amp; Co. Bakery business card</h1>
+    <p>Trim size: 3.5 x 2 in (US business card). The front and back are two pages in the print layout.</p>
+    <p>To print: open the print dialog, set the paper size to 3.5 x 2 in if offered, set margins to None, scale to 100%, and turn on background graphics. Print one page per card side.</p>
+  </section>
+
+  <div class="sheet">
+
+    <div class="slot front-slot">
+      <article class="card front" aria-label="Front of business card">
+        <svg class="loaf" viewBox="0 0 120 72" role="img" aria-label="Loaf of bread illustration">
+          <path d="M14 58 C4 50 6 30 22 26 C30 10 52 4 64 10 C78 2 104 10 108 28 C118 34 118 56 104 60 Z" fill="#e6a46f"/>
+          <path d="M20 54 C14 46 16 34 28 32 C36 22 52 18 62 22 C74 16 96 20 100 34 C108 38 106 52 98 54 Z" fill="#f5c58f"/>
+          <path d="M34 34 L40 46 M52 28 L56 42 M70 28 L74 42 M86 34 L90 46" stroke="#c7814a" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+        <h1 class="name">Crumb &amp; Co. Bakery</h1>
+        <div class="rule" aria-hidden="true"></div>
+      </article>
+    </div>
+
+    <div class="slot back-slot">
+      <article class="card back" aria-label="Back of business card">
+        <svg class="wheat" viewBox="0 0 40 60" role="img" aria-label="Wheat stalk illustration">
+          <path d="M20 58 L20 14" stroke="#7a4a32" stroke-width="2.5" stroke-linecap="round"/>
+          <ellipse cx="14" cy="22" rx="4" ry="7" fill="#e6b15c" transform="rotate(-25 14 22)"/>
+          <ellipse cx="26" cy="22" rx="4" ry="7" fill="#e6b15c" transform="rotate(25 26 22)"/>
+          <ellipse cx="14" cy="34" rx="4" ry="7" fill="#e6b15c" transform="rotate(-25 14 34)"/>
+          <ellipse cx="26" cy="34" rx="4" ry="7" fill="#e6b15c" transform="rotate(25 26 34)"/>
+          <ellipse cx="20" cy="10" rx="4" ry="7" fill="#e6b15c"/>
+        </svg>
+        <p class="label">Open</p>
+        <p class="hours">
+          <span>Tuesday to Sunday (Tue-Sun)</span>
+          <span>7am to 3pm</span>
+        </p>
+        <p class="order">Preorders at crumbandco.example</p>
+      </article>
+    </div>
+
+  </div>
+</main>
+</body>
+</html>
