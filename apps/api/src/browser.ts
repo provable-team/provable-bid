@@ -235,7 +235,7 @@ export const PRINT_BUDGET_MS = 5_000;
  * print media at the declared @page size, scans the layout (PRINT_SCAN) and prints to PDF (page.pdf with the CSS page
  * size; headless Chromium only) for the page count. Without print CSS: `{ checked: false }`, nothing else is done.
  */
-export async function measurePrint(page: Page): Promise<PrintMeasurement> {
+export async function measurePrint(page: Page, deadline = Date.now() + PRINT_BUDGET_MS): Promise<PrintMeasurement> {
   const css = await page.evaluate(PRINT_CSS_PROBE) as { print: boolean; size: string | null };
   if (!css.print) return { checked: false };
   const size = parsePageSize(css.size);
@@ -247,10 +247,18 @@ export async function measurePrint(page: Page): Promise<PrintMeasurement> {
   if (size) await page.setViewportSize({ width: px(size[0]), height: px(size[1]) });
   const scan = await page.evaluate(`${PRINT_SCAN}(${JSON.stringify(size ? { pageW: px(size[0]), pageH: px(size[1]) } : { pageW: 0, pageH: 0 })})`) as PrintScan;
   let pages: number | null = null, printed: [number, number] | null = null, source: PrintMeasurement['pages_source'];
+  // The PDF gets whatever is left of the budget (a big page over a remote CDP link can be slow): the layout scan above
+  // is kept either way, and the page count falls back to the page-sized boxes.
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const pdf = pdfPages(await page.pdf({ preferCSSPageSize: true, printBackground: false }));
-    if (pdf.pages > 0) { pages = pdf.pages; printed = pdf.size_mm; source = 'pdf'; }
+    const printing = page.pdf({ preferCSSPageSize: true, printBackground: false });
+    printing.catch(() => {}); // a late rejection (the context closes) must not go unhandled
+    const left = deadline - Date.now() - 250;
+    const out = left > 0 ? await Promise.race([printing, new Promise<null>(r => { timer = setTimeout(() => r(null), left); })]) : null;
+    const pdf = out ? pdfPages(out) : null;
+    if (pdf && pdf.pages > 0) { pages = pdf.pages; printed = pdf.size_mm; source = 'pdf'; }
   } catch { /* printing to PDF needs headless Chromium: fall back to the page-sized boxes */ }
+  finally { clearTimeout(timer); }
   if (pages === null && scan.pageBoxes > 0) { pages = scan.pageBoxes; source = 'page_boxes'; }
 
   const issues: string[] = [];
@@ -277,7 +285,7 @@ export async function measurePrint(page: Page): Promise<PrintMeasurement> {
 /** measurePrint within PRINT_BUDGET_MS. Never rejects: a failure or timeout is `{ checked: false, error }`. */
 export function boundedPrint(page: Page, budgetMs = PRINT_BUDGET_MS): Promise<PrintMeasurement> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const measured = measurePrint(page).catch((e: Error) => ({ checked: false, error: `print measurement failed: ${(e?.message ?? String(e)).split('\n')[0].slice(0, 160)}` }));
+  const measured = measurePrint(page, Date.now() + budgetMs).catch((e: Error) => ({ checked: false, error: `print measurement failed: ${(e?.message ?? String(e)).split('\n')[0].slice(0, 160)}` }));
   const late = new Promise<PrintMeasurement>(resolve => { timer = setTimeout(() => resolve({ checked: false, error: `print measurement took over ${budgetMs} ms` }), budgetMs); });
   return Promise.race([measured, late]).finally(() => clearTimeout(timer));
 }

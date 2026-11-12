@@ -52,7 +52,8 @@ const RUN = process.argv.find(a => a.startsWith('--run='))?.slice(6) ?? 'v2';
 const args = process.argv.slice(2);
 const only = args.find(a => a.startsWith('--only='))?.slice(7).split(',').filter(Boolean) ?? [];
 const checksOnly = args.includes('--local-checks-only') || args.includes('--print-check-only');
-const selected = (slug: string, agent?: string) => !only.length || only.some(o => o === slug || (agent && o === `${slug}/${agent}`));
+// A brief is selected by its slug or by any of its slug/agent entries (the local checks then cover the brief's run folder).
+const selected = (slug: string, agent?: string) => !only.length || only.some(o => o === slug || (agent ? o === `${slug}/${agent}` : o.startsWith(`${slug}/`)));
 
 const git = (...a: string[]) => { try { return execFileSync('git', a, { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { return null; } };
 const briefs: Brief[] = JSON.parse(readFileSync(join(SAMPLES, 'briefs.json'), 'utf8')).briefs;

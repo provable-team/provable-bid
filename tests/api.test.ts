@@ -1109,7 +1109,7 @@ test('print measurements reach the judge as evidence with the print rule; pages 
   const measured = text.slice(text.indexOf('<browser_measurements>'), text.indexOf('</browser_measurements>'));
   assert.match(measured, /declares an @page size of 297 x 420 mm; it prints as 1 page\(s\) of 297 x 420 mm .*1 printed page\(s\) are expected/);
   assert.match(measured, /- text "Riverside Night Market" \(p\.foot\) is cut off by main\.sheet: 24px of it is outside the box/);
-  assert.match(measured, /printed or physical deliverable .* is not met when .* clipped, cut off or off the page, the wrong page count, text within 3 mm of a page edge .* under 7 pt/);
+  assert.match(measured, /printed or physical deliverable .* every print problem listed above must fail at least one requirement: .* is not met when .* clipped, cut off or off the page, the wrong page count, text within 3 mm of a page edge .* under 7 pt/);
   assert.match(measured, /If the brief is for a web page, ignore the print measurements\./);
   assert.ok(text.indexOf('</browser_measurements>') < text.indexOf('<submission>'), 'measurements stay outside the untrusted submission');
   assert.match(judgeText({ title: 't', brief: 'b', requirements, browser: { ...base, print: { ...PRINT_BAD, issues: [] } } }, ''), /Print problems measured: none/);
