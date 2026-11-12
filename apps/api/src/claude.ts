@@ -219,6 +219,12 @@ Hard rules (pages that break them are disqualified automatically):
 - Every in-page link must have a real destination in this document. Make CTAs perform a useful local action (for example reveal a form or scroll to the requested section); do not use a decorative button as the finished interaction.
 - Do not invent customer testimonials, awards, usage numbers or business facts. Use buyer-provided facts and honest product-specific copy instead.
 - For a named existing product or service, take setup steps, API paths, authentication, fees and payment behavior only from the supplied brief and requirements. Referenced URLs have not been fetched: do not claim to have read them or infer their contents from familiar products. Keep missing factual details out of the page rather than inventing them.
+- Only facts from the brief and requirements. That includes small taglines, badges and labels: do not add "open air", "no ticket needed", "free entry", "all welcome", "rain or shine", dates, years, prices, counts or similar claims unless the brief states them. Rephrase supplied facts, never extend them, and keep the buyer's own names and wording intact (do not rename an event or make awkward combinations of its words).
+- Every piece of text must be fully visible and readable at 390px and at 1280px wide: nothing clipped, cut off, hidden behind another element or overlapping it. Never put text inside a box with a fixed aspect-ratio or fixed height combined with overflow: hidden/clip/auto/scroll; such a box cannot grow, so text that needs more room is cut off. Let text containers grow with their content (use min-height or an aspect-ratio with overflow visible), and if decoration must be clipped, clip it in a separate text-free layer. Keep illustrations, shapes and background art from sitting on top of or crowding text, and keep footers or badges in normal flow rather than absolutely positioned over other content.
+Fixed-format designs (posters, flyers, business cards, anything with a print size):
+- On screen, show the design as a preview that keeps its proportions where the content fits and grows taller where it does not; never trade legibility for an exact ratio. Size type so the smallest text stays at least 11px on a 390px phone.
+- In print, use @page with the exact size and margin: 0, size each page to exactly that page size, and make every page's content fit inside it with nothing spilling to an extra page. Keep all text and key marks inside a safe area at least 3 mm (0.125 in) inside the trim edge, and inside any decorative frame or border you draw, with clear space around it; long single words such as URLs and emails must fit the safe-area width at their print size (wrap or shrink them, never let them cross a frame or the trim). Print text is at least 7pt (secondary labels included; prefer 8pt or more on cards), and headlines scale with the page.
+- Before you answer, check the layout mentally at 390px, 1280px and print: each block of text fits its container at every size, and nothing overlaps.
 - Give it a <title>.`;
 
 export type HouseProfile = { id: string; name: string; style: string; description: string };
@@ -262,7 +268,8 @@ export function streamingHouseAgent(profile: HouseProfile, generate: PageGenerat
         };
         let output = await generate(ctx, profile, showText, revision);
         let preflight = preflightHouseHtml(output.text, output.stopReason);
-        if (preflight.issues.length && repairs < MAX_PREFLIGHT_REPAIRS && !ctx.signal.aborted &&
+        // Blocking issues and layout warnings both earn the one repair; only blocking issues stop submission.
+        if ((preflight.issues.length || preflight.warnings.length) && repairs < MAX_PREFLIGHT_REPAIRS && !ctx.signal.aborted &&
           (ctx.timeLeftMs?.() ?? Infinity) >= REVISION_MIN_MS) {
           repairs++;
           step = progressTracker(ctx.competition.requirements);
@@ -270,7 +277,10 @@ export function streamingHouseAgent(profile: HouseProfile, generate: PageGenerat
           structure = structureTracker();
           ctx.progress?.(STEP.planning, { immediate: true });
           output = await generate(ctx, profile, showText, { html: preflight.html, source: 'preflight',
-            failed: preflight.issues.map(reason => ({ requirement: 'Complete, usable self-contained HTML', reason })) });
+            failed: [
+              ...preflight.issues.map(reason => ({ requirement: 'Complete, usable self-contained HTML', reason })),
+              ...preflight.warnings.map(reason => ({ requirement: 'All text fully visible at every size and in print', reason })),
+            ] });
           preflight = preflightHouseHtml(output.text, output.stopReason);
         }
         if (preflight.issues.length) throw new Error(`own page fails preflight: ${preflight.issues.join(' ')}`);
