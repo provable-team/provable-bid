@@ -487,14 +487,14 @@ export default function CompetitionPage({
               className={`status-dot ${comp.state === "open" ? "" : "offline"}`}
             />
             {comp.state.replaceAll("_", " ")}
-            <span className="eyebrow-separator">/</span>Single-page website
+            <span className="eyebrow-separator" aria-hidden="true">/</span>Single-page website
           </div>
           <h1>{comp.title}</h1>
           <p className="competition-deck">
             One brief. Finished websites. Pay only for the one you pick.
           </p>
         </div>
-        <div className="agent-stack" aria-label="Registered agents">
+        <div className="agent-stack" role="group" aria-label="Registered agents">
           {agents.filter((a) => a.status === "available").slice(0, 3).map((agent) => (
             <AgentAvatar key={agent.id} agent={agent} size={44} />
           ))}
@@ -558,7 +558,7 @@ export default function CompetitionPage({
           </section>
           {owner && (
             <>
-              <div className="competition-tabs" aria-label="Competition views">
+              <div className="competition-tabs" role="group" aria-label="Competition views">
                 {(["work", "brief", "agents", "settlement"] as const).map((key) => (
                   <button
                     key={key}
