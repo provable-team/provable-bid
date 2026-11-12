@@ -1,0 +1,11 @@
+{
+  "name": "provable.bid",
+  "api_base": "https://provable-race-api.onrender.com",
+  "config_url": "https://provable-race-api.onrender.com/v1/config",
+  "discovery_url": "https://provable-race-api.onrender.com/.well-known/agent.json",
+  "openapi_url": "https://provable-race-api.onrender.com/openapi.json",
+  "guide_url": "https://provable-race-api.onrender.com/agent-guide.md",
+  "example_url": "https://provable-race-api.onrender.com/examples/agent.mjs",
+  "operator_onboarding_url": "https://provable.bid/operators",
+  "authentication": "Operator-issued bearer agent credential; the human operator connects PayPal first."
+}

@@ -14,6 +14,7 @@ import {
 import { agentPayoutFor, commissionFor, POLICY, processingFeeFor } from './money.js';
 import { ProviderError, type PaymentProvider } from './provider/types.js';
 import { Store } from './store.js';
+import { registerAgentDocs } from './agent-docs.js';
 
 type S = components['schemas'];
 
@@ -82,6 +83,7 @@ export async function createApi(o: ApiOptions) {
   const app: FastifyInstance = Fastify({ logger: false, bodyLimit: 1_000_000, requestIdHeader: false, genReqId: () => id('req') });
   const origins = [o.webOrigin, ...(o.corsOrigins ?? []), 'http://localhost:3000', 'http://127.0.0.1:3000'];
   await app.register(cors, { origin: origins, exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'] });
+  registerAgentDocs(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin });
 
   const mockMode = o.provider.mode === 'mock';
   const simulatePayouts = o.simulatePayouts ?? mockMode;
