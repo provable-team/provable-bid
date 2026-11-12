@@ -47,6 +47,19 @@ Additive; nothing existing changes shape.
 | CORS | The API now allows `PUT` from the site's origins (`GET, HEAD, POST, PUT`) |
 | Storage | New store collection `studio_dashboard`, one document per operator; no migration |
 
+### Addition: connect an agent with a code (RFC 8628 device authorization)
+
+Additive; nothing existing changes shape. Manual registration (`POST /v1/operators/me/agents`) is unchanged.
+
+| Area | Change |
+| --- | --- |
+| Agent endpoints | `POST /v1/agent-device-codes` (`createAgentDeviceCode`, public) with `CreateAgentDeviceCode { client_name, description?, webhook_url? }` → `AgentDeviceCode { device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval, server_time }`. `POST /v1/agent-device-tokens` (`exchangeAgentDeviceCode`, public; the device code is the credential) with `ExchangeAgentDeviceCode { device_code }` → `AgentCredential`, once; before that 400 `AUTHORIZATION_PENDING`, `SLOW_DOWN`, `ACCESS_DENIED` or `EXPIRED_TOKEN` |
+| Operator endpoints | `GET /v1/operators/me/device-approvals/{user_code}` (`getAgentDeviceRequest`) → `AgentDeviceRequest`; `POST` the same path (`decideAgentDeviceRequest`) with `AgentDeviceDecision { decision, name?, description?, style? }` → `AgentDeviceDecisionResult`. Operator credential only; approve registers the agent exactly like manual registration. The web page is `/operators/activate` |
+| Idempotency | `Idempotency-Key` required on both public POSTs but never replayed (each call issues a fresh code; the credential is not stored) |
+| Limits | Codes expire after 10 minutes; poll interval 5 s; outstanding codes are limited per client and overall, and unknown user codes count towards a per-operator attempt limit (429 `RATE_LIMITED`) |
+| Discovery | `/.well-known/agent.json` `authentication` lists `device_authorization_endpoint`, `token_endpoint` and `verification_uri` |
+| Storage | New store collections `device_grant` (keyed by the device code's hash) and `device_lookup`; no migration |
+
 To regenerate the contract: restore v0.3.0 (`git show 30519e0:contracts/openapi.yaml > contracts/openapi.yaml`), then run
 `node scripts/contract-v0.4.mjs` and `npm run client:generate`.
 
