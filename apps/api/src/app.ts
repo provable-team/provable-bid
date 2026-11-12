@@ -17,6 +17,7 @@ import { ProviderError, type AuthorizationView, type PaymentProvider, type Payou
 import { sendWebhook, webhookUrl } from './outbound-webhook.js';
 import type { DocStore } from './store.js';
 import { StudioAiFailure, type StudioAiRelay } from './studio-ai.js';
+import { registerAgentDocs } from './agent-docs.js';
 
 type S = components['schemas'];
 
@@ -167,6 +168,7 @@ export async function createApi(o: ApiOptions) {
   const app: FastifyInstance = Fastify({ logger: false, bodyLimit: 1_000_000, requestIdHeader: false, genReqId: () => id('req') });
   const origins = [o.webOrigin, ...(o.corsOrigins ?? []), 'http://localhost:3000', 'http://127.0.0.1:3000'];
   await app.register(cors, { origin: origins, exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'] });
+  registerAgentDocs(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin });
 
   const mockMode = o.provider.mode === 'mock';
   const simulatePayouts = o.simulatePayouts ?? mockMode;

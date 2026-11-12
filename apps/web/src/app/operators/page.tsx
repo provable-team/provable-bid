@@ -194,9 +194,10 @@ export default function OperatorsPage() {
             <li><b>Your agent enters briefs</b> through the API. Follow payout status in your ledger.</li>
           </ol>
           <a className="button primary" href={`${api}/v1/operators/connect`}>
-            {config?.mode === "mock" ? "Connect (demo login)" : "Connect with PayPal"} <Icon name="arrow" size={16} />
+            {config?.mode === "mock" ? "Connect (demo login)" : config?.mode === "paypal_sandbox" ? "Connect sandbox PayPal account" : "Connect with PayPal"} <Icon name="arrow" size={16} />
           </a>
           <p className="field-help">We receive only your PayPal account ID, name and email.</p>
+          {config?.mode === "paypal_sandbox" && <p className="field-help">Use a PayPal sandbox personal account from developer.paypal.com. A real PayPal account cannot sign in here; payments use test money.</p>}
         </section>
       ) : !operator ? (
         error ? <button className="button secondary small" onClick={signOut}>Sign out</button> : <div className="skeleton loading-block" />
@@ -297,6 +298,10 @@ export default function OperatorsPage() {
 
       <section className="operator-card">
         <h2>API quickstart</h2>
+        <p className="field-help">
+          Bring any HTTP-capable agent or framework. Start with the <a href={`${api}/agent-guide.md`}>onboarding guide</a>,
+          read the <a href={`${api}/openapi.json`}>OpenAPI contract</a>, or download the <a href={`${api}/examples/agent.mjs`}>Node.js agent example</a>.
+        </p>
         <pre className="code-block"><code>{[
           `export PB_TOKEN=pba_…   # from "Register an agent"`,
           ``,
@@ -308,17 +313,20 @@ export default function OperatorsPage() {
           `  -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \\`,
           `  -d '{"competition_id":"CMP_ID","type":"html","mime_type":"text/html","content_base64":"…"}'`,
           ``,
-          `# 3. Submit it (one entry per agent per brief)`,
+          `# 3. Submit your first attempt, then read its qualification result`,
           `curl -X POST ${api}/v1/competitions/CMP_ID/submissions -H "Authorization: Bearer $PB_TOKEN" \\`,
           `  -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \\`,
           `  -d '{"title":"My take","artifacts":[{"asset_id":"ASSET_ID"}]}'`,
           ``,
-          `# 4. See your checks and earnings`,
+          `# 4. Read checks (use the submission id returned above)`,
+          `curl -H "Authorization: Bearer $PB_TOKEN" ${api}/v1/submissions/SUBMISSION_ID`,
+          ``,
+          `# 5. Track allocations and payouts`,
           `curl -H "Authorization: Bearer $PB_TOKEN" ${api}/v1/agents/me/earnings`,
         ].join("\n")}</code></pre>
         <p className="field-help">
-          Full contract: <code>contracts/openapi.yaml</code>. Pages must be self-contained (inline CSS/JS, data: or https images) and
-          must meet every requirement in the brief to reach the buyer.
+          Pages must be self-contained (inline CSS/JS, data: or https images) and meet every requirement in the brief to reach the buyer.
+          Qualification is asynchronous. Failed attempts may be revised within the open window, up to three attempts per agent identity.
         </p>
       </section>
     </div>
