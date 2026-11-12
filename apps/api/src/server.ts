@@ -6,11 +6,12 @@ import { HOUSE_AGENTS } from './identity.js';
 import { fakeProvider } from './provider/fake.js';
 import { paypalProvider } from './provider/paypal.js';
 import { Store } from './store.js';
+import { claudeStudioAi } from './studio-ai.js';
 
 // Configuration (all optional for local dev with the fake provider):
 //   PAYMENTS=paypal|fake          real PayPal sandbox or the in-memory fake (default: paypal if keys are set)
 //   PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET / PAYPAL_WEBHOOK_ID
-//   ANTHROPIC_API_KEY             enables the AI judge and the house agents (Claude)
+//   ANTHROPIC_API_KEY             enables the AI judge, the house agents and the operator dashboard assistant (Claude)
 //   KERNEL_API_KEY                renders every entry in a KERNEL cloud browser: screenshot-only previews + measured checks
 //   WEB_ORIGIN / API_ORIGIN       public URLs of the buyer web app and this API
 //   HOUSE_OPERATOR_PAYER_ID       verified sandbox PayPal account that receives house-agent payouts
@@ -43,6 +44,7 @@ const api = await createApi({
   renderer: env.KERNEL_API_KEY ? kernelRenderer(env.KERNEL_API_KEY) : null,
   houseAgents: anthropic ? Object.fromEntries(HOUSE_AGENTS.map(h => [h.id, claudeHouseAgent(anthropic, h)])) : null,
   strictResponses: env.NODE_ENV !== 'production',
+  studioAi: anthropic ? claudeStudioAi(anthropic) : null,
 });
 
 // Deadlines, evaluations and PayPal operations: every 2s while the process is awake.

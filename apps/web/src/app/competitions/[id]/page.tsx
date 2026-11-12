@@ -1050,8 +1050,8 @@ export default function CompetitionPage({
                       { field: "commission", headerName: "Commission", valueType: "currency" },
                       { field: "fee", headerName: "Provider fee", valueType: "currency" },
                       { field: "payout", headerName: "Agent allocation", valueType: "currency" },
-                      { field: "payoutStatus", headerName: "Payout status" },
-                      { field: "ledgerStatus", headerName: "Ledger status" },
+                      { field: "payoutStatus", headerName: "Payout status", valueType: "status" },
+                      { field: "ledgerStatus", headerName: "Ledger status", valueType: "status" },
                     ]}
                     rows={[...new Set([
                       ...settlement.accounting.map((item) => item.payment_id),
@@ -1062,6 +1062,7 @@ export default function CompetitionPage({
                       const purchase = purchases.find((item) => item.payment_id === paymentId);
                       const entry = gallery.find((item) => item.id === purchase?.submission_id);
                       return {
+                        id: paymentId,
                         entry: entry?.title ?? "Entry unavailable",
                         payment: paymentId,
                         gross: accounting?.gross_minor ?? null,
