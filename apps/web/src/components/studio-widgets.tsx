@@ -95,7 +95,7 @@ function PayoutPipeline({ widgetApi, dataMapping }: AgWidgetParams<PayoutPipelin
         <div>
           <span className="pb-widget-eyebrow">Payout pipeline</span>
           <strong className="pb-pipeline-total">{money(total)}</strong>
-          <span className="pb-widget-note">allocated{count ? ` across ${totalCount} win${totalCount === 1 ? "" : "s"}` : ""}</span>
+          <span className="pb-widget-note">historically recorded{count ? ` across ${totalCount} win${totalCount === 1 ? "" : "s"}` : ""}</span>
         </div>
         <span className="pb-pipeline-rate">{Math.round(share(paid.amount))}% {simulatedOnly ? "recorded" : "paid"}</span>
       </div>
@@ -158,8 +158,8 @@ export const payoutPipelineDefinition: PipelineDefinition = {
   minSize: { width: 240, height: 140 },
   ai: {
     label: "Payout pipeline",
-    description: "Shows how much allocated money is waiting to be sent, sent and awaiting PayPal, paid, or needs attention, as one stacked bar with an amount per stage.",
-    usage: "Use to show payout progress for allocations. Needs a payout status field and an amount field; do not use for other categories.",
+    description: "Shows historically recorded allocation amounts by current payout state: waiting, sent, paid, or needs attention. Includes reversed ledger obligations; this is not an outstanding-balance widget.",
+    usage: "Use to show historical payout activity. For current money owed use allocations.outstanding_usd; never infer it from this historical total. Needs a payout status field and amount field.",
     configuration: "Map stage to allocations.payout_state, amount to allocations.allocation_usd (sum), and optionally count to allocations.allocation_count (sum). Give it the full page width.",
   },
 };

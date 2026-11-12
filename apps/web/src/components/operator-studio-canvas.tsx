@@ -72,8 +72,8 @@ const initialState: AgReportState<DashboardRegistry> = {
     widgets: {
       "allocated-total": {
         type: "value",
-        dataMapping: { value: [{ id: "allocations.allocation_usd", aggregation: "sum" }], sparklineX: [{ id: "allocations.created_on" }] },
-        format: valueLabel("Allocated to you"),
+        dataMapping: { value: [{ id: "allocations.net_allocated_usd", aggregation: "sum" }], sparklineX: [{ id: "allocations.created_on" }] },
+        format: valueLabel("Net allocated to you"),
       },
       "paid-total": {
         type: "value",
@@ -102,18 +102,18 @@ const initialState: AgReportState<DashboardRegistry> = {
       "earnings-over-time": {
         type: "area-chart",
         dataMapping: { categoryKey: [{ id: "allocations.created_on" }], valueKey: [{ id: "allocations.cumulative_usd", aggregation: "max" }] },
-        format: { ...title("Earnings over time", "Running total allocated, USD, by day"), style: { custom: { categoryAxisMode: "continuous" } } },
+        format: { ...title("Earnings over time", "Running net allocation total, USD, by day"), style: { custom: { categoryAxisMode: "continuous" } } },
       },
       "by-agent": {
         type: "bar-chart-grouped",
-        dataMapping: { categoryKey: [{ id: "allocations.agent" }], valueKey: [{ id: "allocations.allocation_usd", aggregation: "sum" }] },
-        format: title("By agent", "Allocated, USD"),
-        sort: [{ field: { id: "allocations.allocation_usd", aggregation: "sum" }, direction: "desc" }],
+        dataMapping: { categoryKey: [{ id: "allocations.agent" }], valueKey: [{ id: "allocations.net_allocated_usd", aggregation: "sum" }] },
+        format: title("By agent", "Net allocated, USD"),
+        sort: [{ field: { id: "allocations.net_allocated_usd", aggregation: "sum" }, direction: "desc" }],
       },
       "by-status": {
         type: "donut-chart",
         dataMapping: { categoryKey: [{ id: "allocations.payout_state" }], valueKey: [{ id: "allocations.allocation_usd", aggregation: "sum" }] },
-        format: title("By payout state", "Allocated, USD"),
+        format: title("By payout state", "Recorded allocation amounts, USD"),
       },
     },
     // The canvas is never drawn narrower than the page's minimum width, so lower it for phones; match the site's
@@ -154,12 +154,14 @@ const AI_TEXT = {
 
 const ANALYST_INSTRUCTIONS = `You are the payout analyst on a provable.bid agent operator's earnings dashboard.
 The data is one table, "allocations": one row per winning entry by one of this operator's agents.
-- allocation_usd: the operator's share of a buyer's payment (95% of the price), in US dollars. Allocated money is owed, not necessarily received.
+- allocation_usd: the originally recorded allocation amount, in US dollars. This is history and includes reversed obligations; it is not necessarily still owed.
+- net_allocated_usd: allocation_usd unless ledger_state is reversed, then 0. Use this for net earnings/allocations and earnings charts; held allocations remain included but are on hold.
+- outstanding_usd: net_allocated_usd unless payout_state is paid or simulated, then 0. Sum this for money still owed/unpaid; never compute outstanding as net allocated minus paid, because paid transfers may predate reversals.
 - paid_usd: allocation_usd when PayPal reported the payout as paid (or the demo recorded it as simulated), else 0.
 - payout_state: paid (PayPal Payouts success), pending (sent, awaiting PayPal, includes unclaimed), queued or not_scheduled (not sent yet), failed, blocked (on hold, e.g. a dispute), simulated (demo mode, no money moved).
 - ledger_state: allocated, held or reversed. agent: the winning agent's name. created_at: when the allocation was made; created_on: its day.
-- cumulative_usd: running total of allocation_usd in created order (use aggregation max over time).
-Rules: answer from the data only (run execute_query); never invent amounts. Always format money with $ and two decimals. Say "allocated" for money owed and "paid" only for paid payouts. In PayPal sandbox the money is test money.
+- cumulative_usd: running total of net_allocated_usd in created order using current ledger states (use aggregation max over time).
+Rules: answer from the data only (run execute_query); never invent amounts. Always format money with $ and two decimals. Distinguish historical recorded allocations, net allocations excluding reversals, outstanding obligations, and paid transfers. A reversed obligation can still have a paid transfer; reversing it does not recall that payout. In PayPal sandbox the money is test money.
 When the user asks to show, chart, plot, compare, add, change, move or remove something, they want the dashboard changed: delegate to the lead agent with a precise brief naming the widget type, fields, aggregations and any date filter (for example a widget filter on created_at for "this week"), then say in one or two sentences what was added and what it shows. Answer pure questions (how much, which, why) yourself with execute_query. Keep replies short.`;
 
 // ---------------------------------------------------------------- component
@@ -183,9 +185,11 @@ export default function OperatorStudioCanvas({ rows, licenseKey, assistant }: {
         // Raw contract states, shown in the site's words.
         { id: "payout_state", name: "Payout status", format: "textFormat", createValueFormatter: () => (value: string) => payoutShortLabel(value), description: "paid, pending, queued, not_scheduled, failed, blocked or simulated." },
         { id: "ledger_state", name: "Ledger status", format: "textFormat", description: "allocated, held or reversed." },
-        { id: "allocation_usd", name: "Allocated (USD)", ...usd, description: "The operator's share of the buyer's payment, in dollars." },
+        { id: "allocation_usd", name: "Recorded allocation (USD)", ...usd, description: "The original allocation amount, including reversed obligations; historical, not necessarily still owed." },
+        { id: "net_allocated_usd", name: "Net allocated (USD)", ...usd, description: "Current allocation amount: zero for reversed ledger entries, includes held allocations. Use for earnings totals and charts." },
+        { id: "outstanding_usd", name: "Outstanding (USD)", ...usd, description: "Still owed/unpaid: zero for reversed ledger entries and paid/simulated payouts. Held allocations remain included but on hold." },
         { id: "paid_usd", name: "Paid (USD)", ...usd, description: "The allocation, when PayPal reported the payout as paid; else 0." },
-        { id: "cumulative_usd", name: "Running total (USD)", ...usd, description: "Running total of allocations in created order." },
+        { id: "cumulative_usd", name: "Running net total (USD)", ...usd, description: "Running net allocation total in created order, excluding reversed obligations using their current ledger state." },
         { id: "allocation_count", name: "Allocations", format: "integerFormat", description: "1 per allocation; sum it to count wins." },
       ],
     }],
@@ -247,7 +251,7 @@ export default function OperatorStudioCanvas({ rows, licenseKey, assistant }: {
       <div className="studio-dashboard-head">
         <div>
           <h3>Earnings dashboard</h3>
-          <p className="muted">From your loaded allocations only. Allocated is what you are owed; paid is what PayPal reported as paid.</p>
+          <p className="muted">From your loaded allocations only. Net allocated excludes reversals; paid shows confirmed transfers, which a ledger reversal does not recall. Payout activity shows historical recorded amounts.</p>
         </div>
         {ai && (
           <div className="studio-mode" role="group" aria-label="Dashboard mode">
