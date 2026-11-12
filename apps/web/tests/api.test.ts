@@ -88,6 +88,7 @@ test("incompatible payment policies are rejected before buyer data is used", () 
       ai_evaluation: false,
       house_agents: false,
       operator_onboarding: "paypal_login",
+      browser_previews: false,
     },
     server_time: "2026-11-10T18:00:00.000Z",
   };

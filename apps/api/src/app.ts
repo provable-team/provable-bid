@@ -4,6 +4,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 import type { AgentAdapter, EvaluatorAdapter } from '../../../packages/agent-interface/src/index.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
 import { operations, resolve, validator, validateResponse } from '../../../scripts/contract.js';
+import type { PageRenderer, RenderResult } from './browser.js';
 import { gateHtml, prepareHtml } from './html.js';
 import {
   HOUSE_AGENTS, HOUSE_OPERATOR_ID, hashToken, newSecret, newToken, resolvePrincipal,
@@ -39,7 +40,12 @@ export type Operation = {
   state: 'queued' | 'running' | 'waiting' | 'unknown' | 'succeeded' | 'failed';
   attempts: number; next_at: number; last_error: string | null; created_at: string; updated_at: string;
 };
-type StoredAsset = { metadata: S['Asset']; original_base64: string; preview: string };
+type StoredAsset = {
+  metadata: S['Asset']; original_base64: string; preview: string;
+  /** Real-browser render (KERNEL): JPEG screenshots (base64) and measurements. Once present, buyers only ever get images. */
+  shots?: { desktop: string; phone: string; desktopHeight: number; phoneHeight: number };
+  browser?: { renderer: string; phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[] };
+};
 
 export interface ApiOptions {
   store: Store;
@@ -52,6 +58,8 @@ export interface ApiOptions {
   corsOrigins?: string[];
   adminToken?: string | null;
   houseOperatorPayerId?: string | null;
+  /** Real-browser renderer for screenshot previews and measured checks (KERNEL). Null: HTML previews, no measurements. */
+  renderer?: PageRenderer | null;
   /** House agents (null when no model key is configured). They use the public API with their own credentials. */
   houseAgents?: Record<string, AgentAdapter> | null;
   now?: () => number;
@@ -334,7 +342,7 @@ export async function createApi(o: ApiOptions) {
     const metadata: S['Asset'] = {
       id: assetId, competition_id: c.id, owner_agent_id: who.agent_id, type: 'html', mime_type: 'text/html',
       size_bytes: prepared.original.length, sha256: prepared.sha256, width: null, height: null,
-      preview: { url: `${o.apiOrigin}/v1/assets/${assetId}/preview`, mime_type: 'text/html', width: null, height: null, text_excerpt: prepared.title },
+      preview: { url: `${o.apiOrigin}/v1/assets/${assetId}/preview`, phone_url: null, mime_type: 'text/html', width: null, height: null, text_excerpt: prepared.title },
       created_at: stamp(), server_time: stamp(),
     };
     assets.set(assetId, { metadata, original_base64: input.content_base64, preview: prepared.preview.toString('utf8') });
@@ -381,7 +389,8 @@ export async function createApi(o: ApiOptions) {
       case 'getConfig': return ok({
         mode: o.provider.mode, currency: 'USD', terms_version: policy.terms_version, policy,
         capabilities: { authorization: true, additional_checkout: true, external_agents: true, payouts: simulatePayouts ? 'simulated' : 'paypal_sandbox',
-          ai_evaluation: o.evaluator.version.startsWith('claude'), house_agents: !!o.houseAgents && Object.keys(o.houseAgents).length > 0, operator_onboarding: 'paypal_login' },
+          ai_evaluation: o.evaluator.version.startsWith('claude'), house_agents: !!o.houseAgents && Object.keys(o.houseAgents).length > 0, operator_onboarding: 'paypal_login',
+          browser_previews: !!o.renderer },
         server_time: stamp(),
       });
 
@@ -459,6 +468,8 @@ export async function createApi(o: ApiOptions) {
         const me = who(); const asset = fetchOne(assets, params.asset_id);
         const bound = [...submissions.values()].find(s => s.artifacts.some(a => a.asset_id === asset.metadata.id));
         demand(me.role === 'admin' || (me.role === 'agent' && asset.metadata.owner_agent_id === me.agent_id) || (bound && canReadSubmission(bound, me)), 'NOT_FOUND', 'Resource not found.', 404);
+        // Rendered in a real browser: images only, so the markup never leaves the server before purchase.
+        if (asset.shots) return { status: 200, body: Buffer.from(query.view === 'phone' ? asset.shots.phone : asset.shots.desktop, 'base64'), type: 'image/jpeg', cache: 'no-store' };
         return { status: 200, body: asset.preview, type: 'text/html', cache: 'no-store' };
       }
       case 'submitWork': {
@@ -745,8 +756,34 @@ export async function createApi(o: ApiOptions) {
         const gate = gateHtml(Buffer.from(files[0].bytes).toString('utf8'));
         if (gate) result = { status: 'failed', failure_code: gate.code, checks: [], reason: gate.reason, evaluator_version: 'gates-v1', artifact_hashes: digests(s) };
         else {
+          // Render in a real browser first: buyers will only ever see these screenshots, and the judge gets measured facts.
+          const assetId = s.artifacts[0].asset_id;
+          let rendered: RenderResult | null = null;
+          if (o.renderer) {
+            // Render the watermarked preview (same layout as the original; the watermark is a fixed overlay).
+            try { rendered = await o.renderer.render(assets.get(assetId)!.preview, AbortSignal.timeout(75_000)); }
+            catch (e) { log(`browser render failed on ${s.id}`, (e as Error).message); }
+          }
+          if (rendered) {
+            const r = rendered;
+            await exclusive(async () => {
+              const asset = assets.get(assetId)!;
+              asset.shots = { desktop: r.desktop.toString('base64'), phone: r.phone.toString('base64'), desktopHeight: r.desktopHeight, phoneHeight: r.phoneHeight };
+              asset.browser = { renderer: o.renderer!.name, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests };
+              const preview: S['Preview'] = { ...asset.metadata.preview, mime_type: 'image/jpeg', phone_url: `${asset.metadata.preview.url}?view=phone`, width: 1280, height: r.desktopHeight };
+              asset.metadata.preview = preview;
+              const current = submissions.get(s.id);
+              if (current) current.artifacts = current.artifacts.map(a => a.asset_id === assetId ? { ...a, preview } : a);
+            });
+          }
           try {
-            const r = await o.evaluator.qualify({ title: c.title, brief: c.brief, requirements: c.requirements, artifacts: files, signal: AbortSignal.timeout(90_000) });
+            const r = await o.evaluator.qualify({
+              title: c.title, brief: c.brief, requirements: c.requirements, artifacts: files, signal: AbortSignal.timeout(90_000),
+              ...(rendered ? {
+                screenshots: { desktop: new Uint8Array(rendered.desktop), phone: new Uint8Array(rendered.phone) },
+                browser: { phoneOverflowPx: rendered.phoneOverflowPx, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests },
+              } : {}),
+            });
             result = { ...r, artifact_hashes: digests(s) }; // bind to the server-computed digests, never evaluator claims
           } catch (e) {
             log(`evaluator failed on ${s.id}`, (e as Error).message);

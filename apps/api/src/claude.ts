@@ -30,17 +30,29 @@ Return exactly one check per requirement, using the given requirement IDs.`;
 export function claudeEvaluator(client: Anthropic): EvaluatorAdapter {
   return {
     version: `claude-judge-v1:${MODEL}`,
-    async qualify({ title, brief, requirements, artifacts, signal }) {
+    async qualify({ title, brief, requirements, artifacts, signal, screenshots, browser }) {
       const html = Buffer.from(artifacts[0].bytes).toString('utf8');
+      const shots = screenshots ? [
+        { type: 'text' as const, text: 'Screenshots taken in a real browser (KERNEL). First: desktop, 1280px wide. Second: phone, 390px wide.' },
+        { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: Buffer.from(screenshots.desktop).toString('base64') } },
+        { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: Buffer.from(screenshots.phone).toString('base64') } },
+      ] : [];
+      const measured = browser
+        ? `<browser_measurements>\nHorizontal overflow at 390px wide: ${browser.phoneOverflowPx}px (0 means it fits a phone without sideways scrolling).\nConsole errors: ${browser.consoleErrors.length ? browser.consoleErrors.join(' | ') : 'none'}\nBlocked outbound requests: ${browser.blockedRequests.length ? browser.blockedRequests.join(' | ') : 'none'}\n</browser_measurements>\nTreat these measurements as ground truth for layout and phone requirements.`
+        : '';
       const response = await client.beta.messages.parse({
         model: MODEL, max_tokens: 16000, ...FALLBACK,
         output_config: { effort: 'low', format: betaZodOutputFormat(Verdict) },
         system: JUDGE_SYSTEM,
         messages: [{ role: 'user', content: [
-          `<brief title="${title.replace(/"/g, "'")}">\n${brief}\n</brief>`,
-          `<requirements>\n${requirements.map(r => `- ${r.id}: ${r.description}`).join('\n')}\n</requirements>`,
-          `<submission>\n${html}\n</submission>`,
-        ].join('\n\n') }],
+          ...shots,
+          { type: 'text', text: [
+            `<brief title="${title.replace(/"/g, "'")}">\n${brief}\n</brief>`,
+            `<requirements>\n${requirements.map(r => `- ${r.id}: ${r.description}`).join('\n')}\n</requirements>`,
+            measured,
+            `<submission>\n${html}\n</submission>`,
+          ].filter(Boolean).join('\n\n') },
+        ] }],
       }, { signal });
       if (response.stop_reason === 'refusal') throw new Error(`Judge declined (${response.stop_details?.category ?? 'no category'})`);
       const verdict = response.parsed_output;
@@ -64,11 +76,15 @@ export function heuristicEvaluator(): EvaluatorAdapter {
   const stop = new Set('the a an and or of to in on for with has have is are be it its this that page shows show clearly visible should must include includes section sections'.split(' '));
   return {
     version: 'heuristic-v1',
-    async qualify({ requirements, artifacts }) {
+    async qualify({ requirements, artifacts, browser }) {
       const html = Buffer.from(artifacts[0].bytes).toString('utf8');
       const text = visibleText(html).toLowerCase();
       const checks = requirements.map(r => {
         const d = r.description.toLowerCase();
+        if (/mobile|phone|responsive|375/.test(d) && browser) {
+          const ok = browser.phoneOverflowPx <= 2;
+          return { requirement_id: r.id, passed: ok, reason: ok ? 'Measured in a real browser at 390px: fits without sideways scrolling.' : `Measured in a real browser at 390px: scrolls sideways by ${browser.phoneOverflowPx}px.` };
+        }
         if (/mobile|phone|responsive|375/.test(d)) {
           const ok = /<meta[^>]+name=["']?viewport/i.test(html);
           return { requirement_id: r.id, passed: ok, reason: ok ? 'Has a responsive viewport meta tag.' : 'No viewport meta tag, so it is not built for phones.' };

@@ -567,7 +567,7 @@ export interface paths {
         };
         /**
          * View the watermarked preview, subject to submission visibility
-         * @description Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. The preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected. It still contains the page markup, so it does not hide the source. Render it in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes.
+         * @description Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. Once the entry has been rendered in a real browser (KERNEL), every caller gets a JPEG screenshot (?view=desktop, the default, or ?view=phone) and never the markup. Before that, or without a renderer, the preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected, and the markup is visible. Authenticated, no-store, nosniff. Never the original bytes.
          */
         get: operations["getAssetPreview"];
         put?: never;
@@ -889,6 +889,8 @@ export interface components {
                 house_agents: boolean;
                 /** @enum {string} */
                 operator_onboarding: "paypal_login" | "disabled";
+                /** @description Entries are rendered in a real browser (KERNEL): screenshot-only previews, plus measured phone overflow and console errors for the judge. */
+                browser_previews: boolean;
             };
             server_time: components["schemas"]["Timestamp"];
         };
@@ -1118,13 +1120,20 @@ export interface components {
         Preview: {
             /**
              * Format: uri
-             * @description Authenticated preview endpoint. Clients fetch with the bearer token and render the HTML in a sandboxed iframe (no allow-same-origin). A watermarked derivative, not the downloadable original; it still contains the page markup.
+             * @description Authenticated preview endpoint (desktop). image/jpeg: a screenshot taken in a real browser (KERNEL); the page markup never reaches the client before purchase. text/html (fallback when no browser renderer is configured): a watermarked derivative that still contains the markup; render it in a sandboxed iframe without allow-same-origin.
              */
             url: string;
+            /**
+             * Format: uri
+             * @description Screenshot at 390px wide (same endpoint with ?view=phone); null for HTML previews.
+             */
+            phone_url: string | null;
             /** @enum {string} */
-            mime_type: "text/html";
-            width: null;
-            height: null;
+            mime_type: "image/jpeg" | "text/html";
+            /** @description Desktop screenshot width (1280); null for HTML previews. */
+            width: number | null;
+            /** @description Desktop screenshot height (full page, capped at 2400); null for HTML previews. */
+            height: number | null;
             /** @description The page <title>, if any. */
             text_excerpt: string | null;
         };
@@ -1495,7 +1504,7 @@ export interface components {
                 "application/json": components["schemas"]["Asset"];
             };
         };
-        /** @description Watermarked preview HTML (it still contains the page markup). */
+        /** @description A JPEG screenshot from a real browser, or (fallback) watermarked preview HTML that still contains the page markup. */
         PreviewBytes: {
             headers: {
                 "X-Request-Id": components["headers"]["RequestId"];
@@ -1504,6 +1513,7 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                "image/jpeg": string;
                 "text/html": string;
             };
         };
@@ -2359,7 +2369,9 @@ export interface operations {
     };
     getAssetPreview: {
         parameters: {
-            query?: never;
+            query?: {
+                view?: "desktop" | "phone";
+            };
             header?: never;
             path: {
                 asset_id: components["parameters"]["AssetId"];

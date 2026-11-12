@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
 import { createApi } from '../apps/api/src/app.js';
 import { heuristicEvaluator } from '../apps/api/src/claude.js';
+import type { PageRenderer } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
 import { agentPayoutFor, paypalCheckoutFee, processingFeeFor } from '../apps/api/src/money.js';
 import { fakeProvider } from '../apps/api/src/provider/fake.js';
@@ -36,14 +37,14 @@ const brief = {
   accepted_terms_version: 'race-v1',
 };
 
-async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean } = {}) {
+async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer } = {}) {
   let now = T0;
   const store = new Store(opts.dbPath ?? ':memory:');
   const fake = fakeProvider({ webOrigin: WEB, now: () => now });
   const notices: { url: string; body: string; sig: string }[] = [];
   const api = await createApi({
     store, provider: fake.provider, evaluator: opts.evaluator ?? heuristicEvaluator(), webOrigin: WEB, apiOrigin: 'http://api.test',
-    adminToken: ADMIN, houseOperatorPayerId: 'HOUSEPAYER0001', houseAgents: opts.houseAgents ?? null, now: () => now,
+    adminToken: ADMIN, houseOperatorPayerId: 'HOUSEPAYER0001', houseAgents: opts.houseAgents ?? null, now: () => now, renderer: opts.renderer ?? null,
     strictResponses: true, simulatePayouts: opts.simulatePayouts ?? false, log: () => {},
     notify: async (url, body, sig) => { notices.push({ url, body, sig }); },
   });
@@ -55,7 +56,7 @@ async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAda
     if (method === 'POST' && key !== null) h['idempotency-key'] = key ?? `command_${++sequence}_key`;
     const r = await api.app.inject({ method, url: path, headers: h, ...(body !== undefined ? { payload: body } : {}) });
     const type = String(r.headers['content-type'] ?? '');
-    const data = type.startsWith('text/html') ? r.body : r.statusCode === 302 ? null : r.json();
+    const data = type.startsWith('text/html') ? r.body : type.startsWith('image/') ? r.rawPayload : r.statusCode === 302 ? null : r.json();
     const op = operations.find(o => o.method === method.toLowerCase() && new RegExp(`^${o.path.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(path.split('?')[0]));
     assert.ok(op, `contract operation for ${method} ${path}`);
     if (r.statusCode !== 302) validateResponse(op, r.statusCode, type, data);
@@ -406,6 +407,47 @@ test('PayPal returns the buyer to the allowed site they started on, never to an 
   const third = (await f.post('/v1/competitions', brief, b)).data;
   const fromEvil = await f.request('POST', `/v1/competitions/${third.id}/checkout`, undefined, b, undefined, { origin: 'https://evil.example' });
   assert.ok(returnOf(fromEvil.data).startsWith(`${WEB}/competitions/`), 'unknown origins fall back to the canonical site');
+});
+
+test('KERNEL-rendered entries: screenshot-only previews, and phone requirements judged by the measured overflow', async t => {
+  const overflowFor = new Map<string, number>();
+  let failNext = false;
+  const renderer: PageRenderer = { name: 'fake-kernel', async render(html) {
+    if (failNext) { failNext = false; throw new Error('browser unavailable'); }
+    return { desktop: Buffer.from(`DESKTOP-JPEG:${html.length}`), phone: Buffer.from('PHONE-JPEG'), desktopHeight: 1900, phoneHeight: 2400,
+      phoneOverflowPx: [...overflowFor].find(([needle]) => html.includes(needle))?.[1] ?? 0, consoleErrors: [], blockedRequests: [] };
+  } };
+  const f = await fixture(t, { renderer });
+  assert.equal((await f.get('/v1/config', null)).data.capabilities.browser_previews, true);
+  const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const ben = await f.agent(await f.operator('PAYERBEN0002', 'Ben'), 'Beta');
+  const { c } = await f.open(b);
+  const good = await f.enter(ann.token, c.id, page());
+  overflowFor.set('too-wide-marker', 350);
+  const wide = await f.enter(ben.token, c.id, page('<div class="too-wide-marker" style="width:740px">wide</div>'));
+  await f.settle();
+
+  const gallery = (await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items;
+  assert.deepEqual(gallery.map((s: any) => s.id), [good.id], 'the page that scrolls sideways on a phone does not qualify');
+  const art = gallery[0].artifacts[0];
+  assert.equal(art.preview.mime_type, 'image/jpeg'); assert.equal(art.preview.width, 1280); assert.equal(art.preview.height, 1900);
+  const desktop = await f.get(new URL(art.preview.url).pathname, b);
+  assert.equal(desktop.headers['content-type'], 'image/jpeg'); assert.match(desktop.data.toString(), /^DESKTOP-JPEG:/);
+  const phoneUrl = new URL(art.preview.phone_url);
+  const phone = await f.get(`${phoneUrl.pathname}${phoneUrl.search}`, b);
+  assert.equal(phone.data.toString(), 'PHONE-JPEG');
+  assert.ok(!desktop.data.toString().includes('<html'), 'buyers never receive the markup once screenshots exist');
+  const failed = (await f.get(`/v1/submissions/${wide.id}`, ben.token)).data.qualification;
+  assert.equal(failed.failure_code, 'requirements_not_met');
+  assert.match(failed.checks.find((x: any) => x.requirement_id === 'req_mobile').reason, /scrolls sideways by 350px/);
+
+  // Renderer outage: the entry is still judged, with the HTML preview as a fallback.
+  const c2 = (await f.open(b)).c;
+  failNext = true;
+  await f.enter(ann.token, c2.id, page()); await f.settle();
+  const fallback = (await f.get(`/v1/competitions/${c2.id}/submissions`, b)).data.items[0].artifacts[0].preview;
+  assert.equal(fallback.mime_type, 'text/html'); assert.equal(fallback.phone_url, null);
 });
 
 test('preview CSP precedes agent markup even when a script sits before <head>', () => {

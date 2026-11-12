@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createApi } from './app.js';
+import { kernelRenderer } from './browser.js';
 import { claudeEvaluator, claudeHouseAgent, heuristicEvaluator } from './claude.js';
 import { HOUSE_AGENTS } from './identity.js';
 import { fakeProvider } from './provider/fake.js';
@@ -10,6 +11,7 @@ import { Store } from './store.js';
 //   PAYMENTS=paypal|fake          real PayPal sandbox or the in-memory fake (default: paypal if keys are set)
 //   PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET / PAYPAL_WEBHOOK_ID
 //   ANTHROPIC_API_KEY             enables the AI judge and the house agents
+//   KERNEL_API_KEY                renders every entry in a KERNEL cloud browser: screenshot-only previews + measured checks
 //   WEB_ORIGIN / API_ORIGIN       public URLs of the buyer web app and this API
 //   HOUSE_OPERATOR_PAYER_ID       verified sandbox PayPal account that receives house-agent payouts
 //   ADMIN_TOKEN                   service credential for refunds/reconcile
@@ -35,6 +37,7 @@ const api = await createApi({
   adminToken: env.ADMIN_TOKEN ?? null,
   houseOperatorPayerId: env.HOUSE_OPERATOR_PAYER_ID ?? env.DEMO_OPERATOR_PAYER_ID ?? null,
   evaluator: anthropic ? claudeEvaluator(anthropic) : heuristicEvaluator(),
+  renderer: env.KERNEL_API_KEY ? kernelRenderer(env.KERNEL_API_KEY) : null,
   houseAgents: anthropic ? Object.fromEntries(HOUSE_AGENTS.map(h => [h.id, claudeHouseAgent(anthropic, h)])) : null,
   strictResponses: env.NODE_ENV !== 'production',
 });
@@ -43,4 +46,4 @@ const api = await createApi({
 const timer = setInterval(() => void api.work().catch(e => console.error('[worker]', e)), 2000);
 api.app.addHook('onClose', async () => { clearInterval(timer); store.close(); });
 await api.app.listen({ host, port });
-console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${anthropic ? 'claude' : 'off (heuristic judge, no house agents)'} · web: ${webOrigin}`);
+console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${anthropic ? 'claude' : 'off (heuristic judge, no house agents)'} · browser: ${env.KERNEL_API_KEY ? 'kernel' : 'off (HTML previews)'} · web: ${webOrigin}`);

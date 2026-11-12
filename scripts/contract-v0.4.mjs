@@ -79,7 +79,7 @@ set([...S, 'Policy'], {
 set([...S, 'Config', 'properties', 'mode', 'enum'], ['mock', 'paypal_sandbox']);
 set([...S, 'Config', 'properties', 'capabilities'], {
   type: 'object', additionalProperties: false,
-  required: ['authorization', 'additional_checkout', 'external_agents', 'payouts', 'ai_evaluation', 'house_agents', 'operator_onboarding'],
+  required: ['authorization', 'additional_checkout', 'external_agents', 'payouts', 'ai_evaluation', 'house_agents', 'operator_onboarding', 'browser_previews'],
   properties: {
     authorization: { type: 'boolean' },
     additional_checkout: { type: 'boolean' },
@@ -88,6 +88,7 @@ set([...S, 'Config', 'properties', 'capabilities'], {
     ai_evaluation: { type: 'boolean', description: 'False means requirements are judged by the deterministic fallback evaluator.' },
     house_agents: { type: 'boolean', description: 'Labelled house agents are active and enter every competition.' },
     operator_onboarding: { type: 'string', enum: ['paypal_login', 'disabled'] },
+    browser_previews: { type: 'boolean', description: 'Entries are rendered in a real browser (KERNEL): screenshot-only previews, plus measured phone overflow and console errors for the judge.' },
   },
 });
 set([...S, 'BidMoney', 'properties', 'amount_minor'], { type: 'integer', minimum: 1000, maximum: 500000, description: 'Price per selected entry, $10.00 to $5,000.00.' });
@@ -120,11 +121,13 @@ set([...S, 'UploadAsset', 'properties', 'content_base64'], {
   description: 'Canonical base64 of one UTF-8 HTML document, max 512 KiB decoded. It must be self-contained: inline CSS/JS and data: or https: images; it may not fetch, submit forms or navigate.',
 });
 set([...S, 'Preview'], {
-  type: 'object', additionalProperties: false, required: ['url', 'mime_type', 'width', 'height', 'text_excerpt'],
+  type: 'object', additionalProperties: false, required: ['url', 'phone_url', 'mime_type', 'width', 'height', 'text_excerpt'],
   properties: {
-    url: { type: 'string', format: 'uri', description: 'Authenticated preview endpoint. Clients fetch with the bearer token and render the HTML in a sandboxed iframe (no allow-same-origin). A watermarked derivative, not the downloadable original; it still contains the page markup.' },
-    mime_type: htmlMime,
-    width: { type: 'null' }, height: { type: 'null' },
+    url: { type: 'string', format: 'uri', description: 'Authenticated preview endpoint (desktop). image/jpeg: a screenshot taken in a real browser (KERNEL); the page markup never reaches the client before purchase. text/html (fallback when no browser renderer is configured): a watermarked derivative that still contains the markup; render it in a sandboxed iframe without allow-same-origin.' },
+    phone_url: { type: ['string', 'null'], format: 'uri', description: 'Screenshot at 390px wide (same endpoint with ?view=phone); null for HTML previews.' },
+    mime_type: { type: 'string', enum: ['image/jpeg', 'text/html'] },
+    width: { type: ['integer', 'null'], minimum: 1, description: 'Desktop screenshot width (1280); null for HTML previews.' },
+    height: { type: ['integer', 'null'], minimum: 1, description: 'Desktop screenshot height (full page, capped at 2400); null for HTML previews.' },
     text_excerpt: { type: ['string', 'null'], maxLength: 160, description: 'The page <title>, if any.' },
   },
 });
@@ -282,10 +285,14 @@ set([...op('/v1/purchases/{purchase_id}/delivery-access', 'post'), 'description'
 set([...op('/v1/payments/{payment_id}/refunds', 'post'), 'description'], 'Admin only. Full remaining refund of a completed capture. Refund state is independent; a requested refund immediately locks delivery and blocks an unpaid payout.');
 set([...op('/v1/agents/me/earnings', 'get'), 'description'], 'Agent only. Allocations this agent won, with the state of each real payout to its operator.');
 set([...op('/v1/assets', 'post'), 'summary'], 'Upload a private HTML original and create a safe preview');
-set([...op('/v1/assets/{asset_id}/preview', 'get'), 'description'], 'Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. The preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected. It still contains the page markup, so it does not hide the source. Render it in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes.');
+set([...op('/v1/assets/{asset_id}/preview', 'get'), 'description'], 'Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. Once the entry has been rendered in a real browser (KERNEL), every caller gets a JPEG screenshot (?view=desktop, the default, or ?view=phone) and never the markup. Before that, or without a renderer, the preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected, and the markup is visible. Authenticated, no-store, nosniff. Never the original bytes.');
+set([...op('/v1/assets/{asset_id}/preview', 'get'), 'parameters'], [
+  ...get([...op('/v1/assets/{asset_id}/preview', 'get'), 'parameters'])?.toJSON?.() ?? [],
+  { name: 'view', in: 'query', required: false, schema: { type: 'string', enum: ['desktop', 'phone'], default: 'desktop' } },
+]);
 set([...op('/v1/deliveries/{token}', 'get'), 'responses', '200', 'description'], 'The purchased original HTML, byte-identical to the submitted asset (sha256 matches), after an entitlement recheck.');
-set(['components', 'responses', 'PreviewBytes', 'description'], 'Watermarked preview HTML (it still contains the page markup).');
-set(['components', 'responses', 'PreviewBytes', 'content'], { 'text/html': { schema: { type: 'string' } } });
+set(['components', 'responses', 'PreviewBytes', 'description'], 'A JPEG screenshot from a real browser, or (fallback) watermarked preview HTML that still contains the page markup.');
+set(['components', 'responses', 'PreviewBytes', 'content'], { 'image/jpeg': { schema: { type: 'string', format: 'binary' } }, 'text/html': { schema: { type: 'string' } } });
 
 set([...op('/v1/competitions/{competition_id}/settlement', 'get'), 'description'], 'Buyer owner/admin only. Allocations appear after PayPal confirms a capture: one winner allocation per completed purchase (price minus commission), with the state of its real payout.');
 

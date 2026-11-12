@@ -1760,3 +1760,24 @@ svg {
   line-height: 1.6;
   overflow-x: auto;
 }
+.shot-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  background: #f1f1ea;
+  display: flex;
+  justify-content: center;
+  scrollbar-width: thin;
+}
+.shot-scroll img {
+  display: block;
+  width: 100%;
+  height: auto;
+  align-self: flex-start;
+}
+.shot-scroll.phone img {
+  width: auto;
+  max-width: min(100%, 300px);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
