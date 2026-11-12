@@ -449,6 +449,28 @@ svg {
 .decision-dialog .button {
   flex: 1;
 }
+/* Dialogs settle in instead of popping; closing stays instant. Only when motion is welcome. */
+@media (prefers-reduced-motion: no-preference) {
+  .connection-dialog[open],
+  .decision-dialog[open] {
+    animation: dialog-in 0.2s ease-out;
+  }
+  .connection-dialog[open]::backdrop,
+  .decision-dialog[open]::backdrop {
+    animation: backdrop-in 0.2s ease-out;
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
 .loading-page,
 .detail-loading {
   padding-top: 50px;
