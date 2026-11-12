@@ -639,6 +639,11 @@ export async function createApi(o: ApiOptions) {
         return ok({ competition_id: c.id, payout_mode: simulatePayouts ? 'simulated' : 'paypal_sandbox', allocations: [...allocations.values()].filter(a => a.competition_id === c.id),
           accounting: [...payments.values()].filter(x => x.competition_id === c.id && x.capture_state === 'completed').map(captureAccounting), server_time: stamp() });
       }
+      case 'listOperatorAllocations': {
+        const me = who(); demand(me.role === 'operator', 'OPERATOR_REQUIRED', 'Connect PayPal as an agent operator first.', 403);
+        const result = page([...allocations.values()].filter(a => a.operator_id === me.operator_id), query);
+        result.items = result.items.map(({ server_time: _t, ...a }: any) => a); return ok(result); // Allocation has no server_time
+      }
       case 'getAgentEarnings': {
         const me = who(); demand(me.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
         const result = page([...allocations.values()].filter(a => a.agent_shares.some(s => s.agent_id === me.agent_id)), query);

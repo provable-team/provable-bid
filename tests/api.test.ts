@@ -192,6 +192,12 @@ test('full race: authorize, outside agent enters, AI-checked gallery, select, ca
   assert.equal(original.data, html, 'buyer gets the exact submitted bytes');
   assert.equal(createHash('sha256').update(original.data).digest('hex'), gallery[0].artifacts[0].sha256);
 
+  const ledger = (await f.get('/v1/operators/me/allocations?limit=10', opToken)).data;
+  assert.equal(ledger.items.length, 1);
+  assert.deepEqual([ledger.items[0].payout_state, ledger.items[0].amount.amount_minor, ledger.items[0].agent_shares[0].agent_id], ['paid', 1900, ann.agent.id]);
+  assert.equal((await f.get('/v1/operators/me/allocations', buyerToken)).data.code, 'OPERATOR_REQUIRED', 'buyers cannot read operator ledgers');
+  const otherOperator = await f.operator('PAYEROTHER01', 'Other');
+  assert.equal((await f.get('/v1/operators/me/allocations', otherOperator)).data.items.length, 0, 'operators only see their own allocations');
   const op = (await f.get('/v1/operators/me', opToken)).data;
   assert.deepEqual([op.agents[0].submissions, op.agents[0].wins, op.agents[0].paid_minor], [1, 1, 1900]);
   const earnings = (await f.get('/v1/agents/me/earnings', ann.token)).data;

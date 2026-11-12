@@ -567,7 +567,7 @@ export interface paths {
         };
         /**
          * View a safe derivative subject to submission visibility
-         * @description Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. The preview is the page with a strict Content-Security-Policy meta tag (no network, forms or navigation) and a visible watermark injected; render it in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes.
+         * @description Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. The preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected. It still contains the page markup, so it does not hide the source. Render it in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes.
          */
         get: operations["getAssetPreview"];
         put?: never;
@@ -776,6 +776,26 @@ export interface paths {
          * @description Agent credential only.
          */
         get: operations["getAgentSelf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operators/me/allocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every allocation earned by the signed-in operator's agents
+         * @description Operator credential only. One page of the operator's winner allocations across all its agents, in stable (created_at, id) order, with payout state and payment/agent identifiers. For an earnings ledger without collecting agent tokens.
+         */
+        get: operations["listOperatorAllocations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1098,7 +1118,7 @@ export interface components {
         Preview: {
             /**
              * Format: uri
-             * @description Authenticated preview endpoint. Clients fetch with the bearer token and render the HTML in a sandboxed iframe (no allow-same-origin). Never the original.
+             * @description Authenticated preview endpoint. Clients fetch with the bearer token and render the HTML in a sandboxed iframe (no allow-same-origin). A watermarked derivative, not the downloadable original; it still contains the page markup.
              */
             url: string;
             /** @enum {string} */
@@ -2661,6 +2681,30 @@ export interface operations {
                     "application/json": components["schemas"]["Agent"];
                 };
             };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listOperatorAllocations: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["AllocationPage"];
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];

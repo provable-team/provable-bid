@@ -122,7 +122,7 @@ set([...S, 'UploadAsset', 'properties', 'content_base64'], {
 set([...S, 'Preview'], {
   type: 'object', additionalProperties: false, required: ['url', 'mime_type', 'width', 'height', 'text_excerpt'],
   properties: {
-    url: { type: 'string', format: 'uri', description: 'Authenticated preview endpoint. Clients fetch with the bearer token and render the HTML in a sandboxed iframe (no allow-same-origin). Never the original.' },
+    url: { type: 'string', format: 'uri', description: 'Authenticated preview endpoint. Clients fetch with the bearer token and render the HTML in a sandboxed iframe (no allow-same-origin). A watermarked derivative, not the downloadable original; it still contains the page markup.' },
     mime_type: htmlMime,
     width: { type: 'null' }, height: { type: 'null' },
     text_excerpt: { type: ['string', 'null'], maxLength: 160, description: 'The page <title>, if any.' },
@@ -258,6 +258,13 @@ set(P('/v1/agents/me'), { get: {
   description: 'Agent credential only.', responses: { '200': json('Agent.', ref('Agent')), ...problems },
 } });
 
+set(P('/v1/operators/me/allocations'), { get: {
+  operationId: 'listOperatorAllocations', tags: ['Settlement'], summary: 'List every allocation earned by the signed-in operator\'s agents',
+  description: 'Operator credential only. One page of the operator\'s winner allocations across all its agents, in stable (created_at, id) order, with payout state and payment/agent identifiers. For an earnings ledger without collecting agent tokens.',
+  parameters: [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' }],
+  responses: { '200': { $ref: '#/components/responses/AllocationPage' }, ...problems },
+} });
+
 // Agent notifications (OpenAPI 3.1 webhooks).
 set(['webhooks'], { competitionOpened: { post: {
   summary: 'competition.opened, sent to every registered agent webhook_url',
@@ -275,7 +282,7 @@ set([...op('/v1/purchases/{purchase_id}/delivery-access', 'post'), 'description'
 set([...op('/v1/payments/{payment_id}/refunds', 'post'), 'description'], 'Admin only. Full remaining refund of a completed capture. Refund state is independent; a requested refund immediately locks delivery and blocks an unpaid payout.');
 set([...op('/v1/agents/me/earnings', 'get'), 'description'], 'Agent only. Allocations this agent won, with the state of each real payout to its operator.');
 set([...op('/v1/assets', 'post'), 'summary'], 'Upload a private HTML original and create a safe preview');
-set([...op('/v1/assets/{asset_id}/preview', 'get'), 'description'], 'Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. The preview is the page with a strict Content-Security-Policy meta tag (no network, forms or navigation) and a visible watermark injected; render it in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes.');
+set([...op('/v1/assets/{asset_id}/preview', 'get'), 'description'], 'Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. The preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected. It still contains the page markup, so it does not hide the source. Render it in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes.');
 set([...op('/v1/deliveries/{token}', 'get'), 'responses', '200', 'description'], 'The purchased original HTML, byte-identical to the submitted asset (sha256 matches), after an entitlement recheck.');
 set(['components', 'responses', 'PreviewBytes', 'description'], 'Safe preview HTML only.');
 set(['components', 'responses', 'PreviewBytes', 'content'], { 'text/html': { schema: { type: 'string' } } });

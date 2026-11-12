@@ -1082,10 +1082,11 @@ paths:
       tags:
         - Assets
       summary: View a safe derivative subject to submission visibility
-      description: Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get
-        404. The preview is the page with a strict Content-Security-Policy meta tag (no network, forms or
-        navigation) and a visible watermark injected; render it in a sandboxed iframe. Authenticated,
-        no-store, nosniff. Never the original bytes.
+      description: "Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get
+        404. The preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR,
+        forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible
+        watermark are injected. It still contains the page markup, so it does not hide the source. Render it
+        in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes."
       responses:
         "200":
           $ref: "#/components/responses/PreviewBytes"
@@ -1497,6 +1498,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/me/allocations:
+    get:
+      operationId: listOperatorAllocations
+      tags:
+        - Settlement
+      summary: List every allocation earned by the signed-in operator's agents
+      description: Operator credential only. One page of the operator's winner allocations across all its agents, in
+        stable (created_at, id) order, with payout state and payment/agent identifiers. For an earnings ledger
+        without collecting agent tokens.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          $ref: "#/components/responses/AllocationPage"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -2767,7 +2801,8 @@ components:
           type: string
           format: uri
           description: Authenticated preview endpoint. Clients fetch with the bearer token and render the HTML in a
-            sandboxed iframe (no allow-same-origin). Never the original.
+            sandboxed iframe (no allow-same-origin). A watermarked derivative, not the downloadable original;
+            it still contains the page markup.
         mime_type:
           type: string
           enum:
