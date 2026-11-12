@@ -49,8 +49,14 @@ const initialState: AgReportState = {
           categoryKey: [{ id: "allocations.payout_state" }],
           valueKey: [{ id: "allocations.allocation_usd", aggregation: "sum" }],
         },
-        format: { title: { enabled: true, text: "Known allocation amount by payout status (USD)" } },
+        format: { title: { enabled: true, text: "Amount by payout status (USD)" } },
       },
+    },
+    // The canvas is never drawn narrower than the page's minimum width, so lower it for phones; match the site's
+    // paper background and card borders instead of Studio's default grey canvas.
+    layout: {
+      minWidth: 280, backgroundColor: "#f6f5ef", widgetBackgroundColor: "#fffef9",
+      widgetBorderEnabled: true, widgetBorderColor: "#dddfd4", widgetBorderWidth: 1, widgetBorderRadius: 7,
     },
     widgetLayout: {
       "allocation-total": { xTrack: 0, yTrack: 0, xSpan: 12, ySpan: 6 },
@@ -82,9 +88,27 @@ export default function OperatorStudioCanvas({ rows, licenseKey }: { rows: Opera
       <h2>Sandbox allocation dashboard</h2>
       <p>Summarizes loaded records only. Allocation amounts are not amounts received; payout status is shown separately.</p>
       {missingAmounts > 0 && <p role="status">{missingAmounts} loaded allocation{missingAmounts === 1 ? " has" : "s have"} no valid amount and {missingAmounts === 1 ? "is" : "are"} excluded from amount totals.</p>}
-      <div style={{ width: "100%", height: 620 }}>
+      <div className="studio-canvas">
         <AgStudioProvider licenseKey={licenseKey}>
-          <AgStudio data={data} initialState={initialState} mode="view" />
+          <AgStudio
+            data={data}
+            initialState={initialState}
+            mode="view"
+            // No filters are configured, so the view-mode Filters panel would only say "No filters available".
+            panels={{ view: {} }}
+            // On narrow canvases, stack the widgets full width instead of keeping the two-column layout.
+            responsiveLayoutBreakpoints={[{
+              maxWidth: 600,
+              layout: (candidates, { columns }) => {
+                let y = 0;
+                return candidates.map(({ layout }) => {
+                  const next = { ...layout, xTrack: 0, xSpan: columns, yTrack: y };
+                  y += layout.ySpan;
+                  return next;
+                });
+              },
+            }]}
+          />
         </AgStudioProvider>
       </div>
     </section>

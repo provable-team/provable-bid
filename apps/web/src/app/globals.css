@@ -2278,3 +2278,15 @@ svg {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* AG Studio allocation dashboard: fixed height on desktop, stacked and taller on phones, never wider than the page. */
+.studio-canvas {
+  width: 100%;
+  height: 620px;
+  overflow-x: auto;
+}
+@media (max-width: 600px) {
+  .studio-canvas {
+    height: 1100px;
+  }
+}
