@@ -150,6 +150,16 @@ export async function createApi(o: ApiOptions) {
     const c = fetchOne(competitions, s.competition_id);
     return p.role === 'admin' || (p.role === 'agent' && s.agent_id === p.agent_id) || (p.role === 'buyer' && c.buyer_id === p.id && s.qualification_status === 'qualified');
   }
+  /**
+   * A submission as `p` may see it. The judge's advisory narrative is for the competition's buyer (and admins), and
+   * only on qualified entries; agents, including the entry's own author, never get it.
+   */
+  function submissionView(s: S['Submission'], p: Principal): S['Submission'] {
+    const v = view(s);
+    const forBuyer = p.role === 'admin' || (p.role === 'buyer' && fetchOne(competitions, s.competition_id).buyer_id === p.id);
+    if (v.qualification?.narrative && !(forBuyer && v.qualification_status === 'qualified' && v.qualification.status === 'qualified')) delete v.qualification.narrative;
+    return v;
+  }
   function requireOpen(c: S['Competition']) {
     demand(c.state === 'open' && time() < Date.parse(c.submission_deadline!), 'DEADLINE_PASSED', 'Submission window is not open.');
   }
@@ -493,16 +503,16 @@ export async function createApi(o: ApiOptions) {
       case 'submitWork': {
         const me = who(); demand(me.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
         const c = fetchOne(competitions, params.competition_id); readCompetition(c, me);
-        return ok(view(submit(c, me, body.title, body.artifacts)), 201);
+        return ok(submissionView(submit(c, me, body.title, body.artifacts), me), 201);
       }
       case 'listSubmissions': {
         const me = who(); const c = fetchOne(competitions, params.competition_id);
         demand(me.id === c.buyer_id || me.role === 'agent' || me.role === 'admin', 'NOT_FOUND', 'Resource not found.', 404);
-        return ok(page(compSubmissions(c).filter(s => canReadSubmission(s, me)), query));
+        return ok(page(compSubmissions(c).filter(s => canReadSubmission(s, me)).map(s => submissionView(s, me)), query, false));
       }
       case 'getSubmission': {
         const me = who(); const s = fetchOne(submissions, params.submission_id);
-        demand(canReadSubmission(s, me), 'NOT_FOUND', 'Resource not found.', 404); return ok(view(s));
+        demand(canReadSubmission(s, me), 'NOT_FOUND', 'Resource not found.', 404); return ok(submissionView(s, me));
       }
 
       // ---------------- competitions
@@ -903,6 +913,7 @@ export async function createApi(o: ApiOptions) {
               } : {}),
             });
             result = { ...r, artifact_hashes: digests(s) }; // bind to the server-computed digests, never evaluator claims
+            if (result.status !== 'qualified') delete result.narrative; // buyers never see failed entries, so neither is a narrative kept
           } catch (e) {
             log(`evaluator failed on ${s.id}`, (e as Error).message);
             result = { status: 'error', failure_code: null, checks: [], reason: 'The evaluator could not finish.', evaluator_version: o.evaluator.version, artifact_hashes: digests(s) };
