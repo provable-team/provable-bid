@@ -1,18 +1,36 @@
 # Postman collection
 
-Import `provable-v0.4.postman_collection.json` and `provable-local.postman_environment.json` into Postman. Select the local environment. The collection is generated from the v0.4 OpenAPI contract and includes all 40 operations, including the `__mock` folder; the latter is available only when the backend uses the fake payment provider.
+Import `provable-v0.4.postman_collection.json` and one environment into Postman:
 
-Start the local backend with `npm run api:fake` after setting up its dependencies as described in the [backend guide](../apps/api/README.md). `baseUrl` defaults to `http://127.0.0.1:4010`; change it deliberately when targeting another server. Set `bearerToken` in the active environment to a credential for the request's intended buyer, agent, operator, or admin. The collection sends no bearer token on operations marked public in the contract. Keep credentials in Postman's local values; do not commit or share them. Enter resource IDs and the delivery `token` from real responses as needed.
+- `provable-bid-sandbox.postman_environment.json`: the hosted demo API (`https://provable-race-api.onrender.com`), PayPal **sandbox**, test money only.
+- `provable-local.postman_environment.json`: a local backend on `http://127.0.0.1:4010` with the fake payment provider (`npm run api:fake`, see the [backend guide](../apps/api/README.md)).
 
-Request bodies and most query/header values are generated examples, not valid ready-to-run fixtures. Replace them with valid data; optional query parameters are disabled initially. Buyer and operator setup may require browser or PayPal flows. Sending mutation requests can create purchases, move money or change state on a real backend; use a fake/local server for exploration.
+Neither environment holds a credential. Keep tokens in Postman's current (local) values; do not commit or share them, and do not export a collection or environment after a run without clearing token values.
 
-Before each new command, set a unique `idempotencyKey` in the active environment. Reuse **the same key and body** for retries of that command, including after an unknown result; use a new key for a different command. The collection does not auto-generate or rotate keys. PayPal webhook requests require authentic provider signatures; placeholder headers are not valid signatures.
+## Folders
 
-To regenerate after changing the OpenAPI contract, install the repository dependencies, then from the repo root run:
+- **Judge quickstart**: runnable with no secret and no PayPal approval. Reads the config (saves `terms_version`), starts an anonymous buyer session (saves `buyer_token`), creates a private draft brief, reads it back, lists competitions and agents, then fetches the public agent discovery files (`/.well-known/agent.json`, `/openapi.json`, `/agent-guide.md`, `/examples/agent.mjs`). Every request asserts the contract's success status, Content-Type and required fields, plus flow-specific checks.
+- **Outside agent**: the agent flow (verify token, find an open brief, upload a page, submit it, check qualification and earnings). Set `agent_token` to an operator-issued `pba_...` credential; without one the folder's requests are skipped. Locally, with the fake provider, run **Manual** first to open a competition.
+- **Manual: fund the draft with PayPal sandbox**: checkout, then a human approves `approval_url` with a PayPal sandbox account, then authorize. Not part of the quickstart. With the fake provider, checkout is approved automatically.
+- **API reference**: all contract operations. Set `bearerToken` to the credential each request needs (the quickstart fills it with its buyer token when it is empty). Tests accept any status the contract documents and check the matching success shape or `application/problem+json` problem. `__mock` routes exist only with the fake payment provider. Sending mutation requests changes state on the target server.
+
+A collection-level test checks that every response has `X-Request-Id`.
+
+```sh
+npx newman@6 run postman/provable-v0.4.postman_collection.json -e postman/provable-bid-sandbox.postman_environment.json --folder "Judge quickstart"
+```
+
+## Idempotency keys
+
+Quickstart, outside agent and manual requests send `{{$guid}}`, a fresh key per send. API reference requests send `{{idempotencyKey}}`: leave the variable empty for a fresh key per request, or set it to a fixed value to retry one command (reuse **the same key and body** for retries of that command, including after an unknown result; use a new key for a different command). PayPal webhook requests require authentic provider signatures; placeholder headers are not valid signatures.
+
+## Regenerating
+
+The collection is generated; do not edit the JSON by hand. Hand-written parts (example bodies, the quickstart, outside agent and manual folders, the collection description) live in `curated.cjs`; `prepare-collection.cjs` merges them and derives each request's contract checks from `contracts/openapi.yaml`. After changing the contract or `curated.cjs`, install the repository dependencies, then from the repo root run:
 
 ```sh
 npx --yes --package=openapi-to-postmanv2@6.4.3 openapi2postmanv2 -s contracts/openapi.yaml -o /tmp/provable-converted.json -p
 node postman/prepare-collection.cjs /tmp/provable-converted.json postman/provable-v0.4.postman_collection.json
 ```
 
-The preparation step checks that every contract operation appears once, removes autogenerated response examples, sets explicit public-route auth, and replaces resource IDs and command keys with variables. Update the example environment if new variables appear in the regenerated collection. Review generated bodies and security metadata whenever the contract changes.
+The preparation step fails if an operation is missing or duplicated, or if a request body has no example in `curated.cjs`. It removes autogenerated response examples, sets explicit public-route auth and replaces resource IDs with variables. `tests/postman.test.ts` (part of `npm run check`) verifies that the reference folder matches the contract, that every request has tests, that every example body validates against its contract schema, and that no file carries a credential. Update the environments if new variables appear.
