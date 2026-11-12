@@ -239,3 +239,18 @@ test('MCP HTTP: stateless transport answers 405 to GET/DELETE and 406 without th
   const discovery = await f.api.app.inject('/.well-known/agent.json');
   assert.equal(discovery.json().mcp_url, 'http://api.test/mcp');
 });
+
+test('MCP HTTP: a browser MCP client on the site passes the CORS preflight with the MCP headers', async t => {
+  const f = await setup(t);
+  const preflight = await f.api.app.inject({ method: 'OPTIONS', url: '/mcp', headers: {
+    origin: 'http://buyer.test', 'access-control-request-method': 'POST',
+    'access-control-request-headers': 'authorization,content-type,mcp-protocol-version,mcp-session-id',
+  } });
+  assert.equal(preflight.statusCode, 204);
+  assert.equal(preflight.headers['access-control-allow-origin'], 'http://buyer.test');
+  assert.match(String(preflight.headers['access-control-allow-methods']), /\bPOST\b/);
+  const allowed = String(preflight.headers['access-control-allow-headers']).toLowerCase().split(/,\s*/);
+  for (const h of ['authorization', 'content-type', 'idempotency-key', 'mcp-protocol-version', 'mcp-session-id']) assert.ok(allowed.includes(h), `${h} allowed`);
+  const other = await f.api.app.inject({ method: 'OPTIONS', url: '/mcp', headers: { origin: 'https://evil.test', 'access-control-request-method': 'POST' } });
+  assert.equal(other.headers['access-control-allow-origin'], undefined, 'other origins stay refused');
+});

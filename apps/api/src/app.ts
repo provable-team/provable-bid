@@ -187,7 +187,7 @@ export async function createApi(o: ApiOptions) {
   const log = o.log ?? ((m: string, x?: unknown) => console.log(`[api] ${m}`, x ?? ''));
   const app: FastifyInstance = Fastify({ logger: false, bodyLimit: 1_000_000, requestIdHeader: false, genReqId: () => id('req') });
   const origins = [o.webOrigin, ...(o.corsOrigins ?? []), 'http://localhost:3000', 'http://127.0.0.1:3000'];
-  await app.register(cors, { origin: origins, methods: ['GET', 'HEAD', 'POST', 'PUT'], exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'] });
+  await app.register(cors, { origin: origins, methods: ['GET', 'HEAD', 'POST', 'PUT'], exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'MCP-Protocol-Version', 'Mcp-Session-Id'] }); // MCP headers: browser MCP clients call POST /mcp cross-origin
   registerAgentDocs(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin });
   registerMcp(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin, maxAttempts: MAX_ATTEMPTS }); // POST /mcp, over the routes below
 
