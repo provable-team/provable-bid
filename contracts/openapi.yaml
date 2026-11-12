@@ -72,7 +72,8 @@ tags:
   - name: Agents
     description: Public agent profiles (outside and house agents).
   - name: Studio
-    description: The operator dashboard's AI assistant (AG Studio Agent Framework), relayed to Claude.
+    description: "The operator dashboard: its saved AG Studio layout, and its AI assistant (AG Studio Agent
+      Framework) relayed to Claude."
 paths:
   /health:
     get:
@@ -1664,6 +1665,82 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/operators/me/studio-dashboard:
+    get:
+      operationId: getStudioDashboard
+      tags:
+        - Studio
+      summary: Read the operator's saved dashboard layout
+      description: Operator credential only. The AG Studio dashboard state this operator last saved, with its
+        version. When nothing is saved, 200 with state null and version 0 (the page then shows the default
+        layout).
+      responses:
+        "200":
+          description: The saved dashboard, or state null.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioDashboard"
+        "400": &a4
+          $ref: "#/components/responses/Problem"
+        "401": &a6
+          $ref: "#/components/responses/Problem"
+        "403": &a7
+          $ref: "#/components/responses/Problem"
+        "404": &a11
+          $ref: "#/components/responses/Problem"
+        "409": &a12
+          $ref: "#/components/responses/Problem"
+        "422": &a13
+          $ref: "#/components/responses/Problem"
+        "429": &a14
+          $ref: "#/components/responses/Problem"
+        "503": &a15
+          $ref: "#/components/responses/Problem"
+        default: &a16
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: saveStudioDashboard
+      tags:
+        - Studio
+      summary: Save the operator's dashboard layout
+      description: "Operator credential only. Replaces the saved AG Studio dashboard state (layout, widgets, format;
+        never data rows). version must equal the stored version (0 for the first save), else 409
+        INVALID_STATE: reload and save again. State larger than 200,000 bytes as JSON: 413 PAYLOAD_TOO_LARGE.
+        Requires an Idempotency-Key: retrying the latest save with the same key and body returns its result
+        again; the same key with a different body is 409 IDEMPOTENCY_CONFLICT."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioDashboardSave"
+      responses:
+        "200":
+          description: Saved.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioDashboardSaved"
+        "400": *a4
+        "401": *a6
+        "403": *a7
+        "404": *a11
+        "409": *a12
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422": *a13
+        "429": *a14
+        "503": *a15
+        default: *a16
 components:
   securitySchemes:
     bearerAuth:
@@ -3942,6 +4019,93 @@ components:
             cache_write_tokens:
               type: integer
               minimum: 0
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    StudioDashboardSave:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - version
+      properties:
+        state:
+          type: object
+          additionalProperties: true
+          required:
+            - pages
+          description: "AG Studio's serialized report state (AgReportState): pages with their widgets, widget layout and
+            format. The server stores it as given and does not interpret Studio's schema; at most 200,000
+            bytes as JSON (413 PAYLOAD_TOO_LARGE). It never holds data rows."
+          properties:
+            pages:
+              type: array
+              minItems: 1
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: true
+            selectedPageId:
+              type: string
+              maxLength: 200
+        version:
+          type: integer
+          minimum: 0
+          description: "The version this save replaces: the version last read or saved, 0 when nothing is saved yet. 409
+            INVALID_STATE when the stored version differs (saved meanwhile from another window or device)."
+    StudioDashboard:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - version
+        - updated_at
+        - server_time
+      properties:
+        state:
+          oneOf:
+            - type: object
+              additionalProperties: true
+              required:
+                - pages
+              description: "AG Studio's serialized report state (AgReportState): pages with their widgets, widget layout and
+                format. The server stores it as given and does not interpret Studio's schema; at most 200,000
+                bytes as JSON (413 PAYLOAD_TOO_LARGE). It never holds data rows."
+              properties:
+                pages:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items:
+                    type: object
+                    additionalProperties: true
+                selectedPageId:
+                  type: string
+                  maxLength: 200
+            - type: "null"
+          description: The saved state, or null when the operator has not saved a dashboard (use the default layout).
+        version:
+          type: integer
+          minimum: 0
+          description: Increases by one with every save; 0 when nothing is saved.
+        updated_at:
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    StudioDashboardSaved:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - updated_at
+        - server_time
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        updated_at:
+          $ref: "#/components/schemas/Timestamp"
         server_time:
           $ref: "#/components/schemas/Timestamp"
 webhooks:

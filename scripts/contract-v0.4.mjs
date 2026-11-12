@@ -60,7 +60,7 @@ set(['tags'], [
   { name: 'Mock', description: 'Fake-provider development controls; absent from sandbox/production.' },
   { name: 'Assets', description: 'Agent-owned immutable private originals and server-generated watermarked previews.' },
   { name: 'Agents', description: 'Public agent profiles (outside and house agents).' },
-  { name: 'Studio', description: 'The operator dashboard\'s AI assistant (AG Studio Agent Framework), relayed to Claude.' },
+  { name: 'Studio', description: 'The operator dashboard: its saved AG Studio layout, and its AI assistant (AG Studio Agent Framework) relayed to Claude.' },
 ]);
 
 // ---------------------------------------------------------------- schemas
@@ -445,6 +445,52 @@ set(P('/v1/operators/me/studio-ai/turns'), { post: {
   requestBody: { required: true, content: { 'application/json': { schema: ref('StudioAiTurnRequest') } } },
   responses: { '200': json('The model\'s turn.', ref('StudioAiTurn')), ...problems },
 } });
+
+// Operator dashboard layout: AG Studio's serialized report state (pages, widgets, layout, format), saved per operator
+// so edits by hand or by the assistant survive reloads and devices. Never the data rows: Studio's state holds none,
+// and the dashboard's data sources are always the operator's live allocations.
+const dashboardState = {
+  type: 'object', additionalProperties: true, required: ['pages'],
+  description: 'AG Studio\'s serialized report state (AgReportState): pages with their widgets, widget layout and format. The server stores it as given and does not interpret Studio\'s schema; at most 200,000 bytes as JSON (413 PAYLOAD_TOO_LARGE). It never holds data rows.',
+  properties: {
+    pages: { type: 'array', minItems: 1, maxItems: 50, items: { type: 'object', additionalProperties: true } },
+    selectedPageId: { type: 'string', maxLength: 200 },
+  },
+};
+set([...S, 'StudioDashboardSave'], {
+  type: 'object', additionalProperties: false, required: ['state', 'version'],
+  properties: {
+    state: dashboardState,
+    version: { type: 'integer', minimum: 0, description: 'The version this save replaces: the version last read or saved, 0 when nothing is saved yet. 409 INVALID_STATE when the stored version differs (saved meanwhile from another window or device).' },
+  },
+});
+set([...S, 'StudioDashboard'], {
+  type: 'object', additionalProperties: false, required: ['state', 'version', 'updated_at', 'server_time'],
+  properties: {
+    state: { oneOf: [dashboardState, { type: 'null' }], description: 'The saved state, or null when the operator has not saved a dashboard (use the default layout).' },
+    version: { type: 'integer', minimum: 0, description: 'Increases by one with every save; 0 when nothing is saved.' },
+    updated_at: { oneOf: [ref('Timestamp'), { type: 'null' }] },
+    server_time: ref('Timestamp'),
+  },
+});
+set([...S, 'StudioDashboardSaved'], {
+  type: 'object', additionalProperties: false, required: ['version', 'updated_at', 'server_time'],
+  properties: { version: { type: 'integer', minimum: 1 }, updated_at: ref('Timestamp'), server_time: ref('Timestamp') },
+});
+set(P('/v1/operators/me/studio-dashboard'), {
+  get: {
+    operationId: 'getStudioDashboard', tags: ['Studio'], summary: 'Read the operator\'s saved dashboard layout',
+    description: 'Operator credential only. The AG Studio dashboard state this operator last saved, with its version. When nothing is saved, 200 with state null and version 0 (the page then shows the default layout).',
+    responses: { '200': json('The saved dashboard, or state null.', ref('StudioDashboard')), ...problems },
+  },
+  put: {
+    operationId: 'saveStudioDashboard', tags: ['Studio'], summary: 'Save the operator\'s dashboard layout',
+    description: 'Operator credential only. Replaces the saved AG Studio dashboard state (layout, widgets, format; never data rows). version must equal the stored version (0 for the first save), else 409 INVALID_STATE: reload and save again. State larger than 200,000 bytes as JSON: 413 PAYLOAD_TOO_LARGE. Requires an Idempotency-Key: retrying the latest save with the same key and body returns its result again; the same key with a different body is 409 IDEMPOTENCY_CONFLICT.',
+    parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }],
+    requestBody: { required: true, content: { 'application/json': { schema: ref('StudioDashboardSave') } } },
+    responses: { '200': json('Saved.', ref('StudioDashboardSaved')), '413': { $ref: '#/components/responses/Problem' }, ...problems },
+  },
+});
 
 // Agent notifications (OpenAPI 3.1 webhooks).
 set(['webhooks'], { competitionOpened: { post: {

@@ -56,10 +56,10 @@ async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAda
   });
   t.after(async () => { await api.idle(); await api.app.close(); });
   let sequence = 0;
-  async function request(method: 'GET' | 'POST', path: string, body?: any, token: string | null = null, key?: string | null, headers: Record<string, string> = {}) {
+  async function request(method: 'GET' | 'POST' | 'PUT', path: string, body?: any, token: string | null = null, key?: string | null, headers: Record<string, string> = {}) {
     const h: Record<string, string> = { ...headers };
     if (token) h.authorization = `Bearer ${token}`;
-    if (method === 'POST' && key !== null) h['idempotency-key'] = key ?? `command_${++sequence}_key`;
+    if (method !== 'GET' && key !== null) h['idempotency-key'] = key ?? `command_${++sequence}_key`;
     const r = await api.app.inject({ method, url: path, headers: h, ...(body !== undefined ? { payload: body } : {}) });
     const type = String(r.headers['content-type'] ?? '');
     const data = type.startsWith('text/html') ? r.body : type.startsWith('image/') ? r.rawPayload : r.statusCode === 302 ? null : r.json();
@@ -71,6 +71,7 @@ async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAda
   }
   const post = (path: string, body: any, token: string | null, key?: string) => request('POST', path, body, token, key);
   const get = (path: string, token: string | null) => request('GET', path, undefined, token);
+  const put = (path: string, body: any, token: string | null, key?: string | null) => request('PUT', path, body, token, key);
   async function settle() { for (let i = 0; i < 4; i++) { await api.work(); await api.idle(); } }
   async function advance(seconds: number) { now += seconds * 1000; await settle(); }
   async function buyer() { return (await post('/v1/buyer-sessions', undefined, null)).data.token as string; }
@@ -121,7 +122,7 @@ async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAda
     const pay = (await get(`/v1/payments/${c.initial_payment_id}`, b)).data;
     return { c, pick: pick.data, pay };
   }
-  return { api, fake, store, notices, request, post, get, settle, advance, buyer, operator, agent, open, enter, hook, captured, now: () => now };
+  return { api, fake, store, notices, request, post, get, put, settle, advance, buyer, operator, agent, open, enter, hook, captured, now: () => now };
 }
 
 /** PayPal's links on a refund resource: the capture is only in rel=up. */
@@ -1415,6 +1416,84 @@ test('a failed dashboard turn clears its in-flight reservation so the same key c
   assert.equal((await f.post('/v1/operators/me/studio-ai/turns', turn, operator, 'studio_retry_key')).status, 503);
   assert.equal((await f.post('/v1/operators/me/studio-ai/turns', turn, operator, 'studio_retry_key')).status, 200);
   assert.equal(calls, 2);
+});
+
+test('saved dashboard: operator-only, per operator, versioned, size-limited, retried by key, survives a restart', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provable-dashboard-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'api.db');
+  const f = await fixture(t, { dbPath });
+  const path = '/v1/operators/me/studio-dashboard';
+  const ann = await f.operator('PAYERDASH001', 'Ann');
+  const state = { pages: [{ id: 'earnings', widgets: { 'by-agent': { type: 'bar-chart-grouped', dataMapping: { categoryKey: [{ id: 'allocations.agent' }] } } },
+    widgetLayout: { 'by-agent': { xTrack: 0, yTrack: 0, xSpan: 12, ySpan: 16 } } }], selectedPageId: 'earnings', version: '3.1.0' };
+
+  // Operator credential only.
+  assert.equal((await f.get(path, null)).status, 401);
+  assert.equal((await f.get(path, await f.buyer())).status, 403);
+  assert.equal((await f.put(path, { state, version: 0 }, null)).status, 401);
+  const agent = await f.agent(ann, 'Alpha');
+  assert.equal((await f.put(path, { state, version: 0 }, agent.token)).status, 403);
+
+  const empty = await f.get(path, ann);
+  assert.equal(empty.status, 200);
+  assert.deepEqual([empty.data.state, empty.data.version, empty.data.updated_at], [null, 0, null], 'nothing saved: the page uses its default layout');
+  assert.match(String(empty.headers['cache-control']), /no-store/);
+
+  // Validation: an object with pages; a key is required; at most 200,000 bytes.
+  for (const bad of [{ state: 'x', version: 0 }, { state: [], version: 0 }, { state: {}, version: 0 }, { state: { pages: [] }, version: 0 }, { state, version: -1 }, { state }]) {
+    assert.equal((await f.put(path, bad, ann)).status, 400, JSON.stringify(bad));
+  }
+  assert.equal((await f.put(path, { state, version: 0 }, ann, null)).status, 400, 'Idempotency-Key required');
+  const big = { ...state, pages: [{ ...state.pages[0], notes: 'x'.repeat(200_001) }] };
+  const tooBig = await f.put(path, { state: big, version: 0 }, ann);
+  assert.equal(tooBig.status, 413);
+  assert.equal(tooBig.data.code, 'PAYLOAD_TOO_LARGE');
+  assert.equal((await f.put(path, { state: { ...state, pages: [{ ...state.pages[0], notes: 'x'.repeat(2_000_000) }] }, version: 0 }, ann)).status, 413, 'beyond the body limit too');
+  assert.equal((await f.get(path, ann)).data.version, 0, 'rejected saves store nothing');
+
+  // Round trip.
+  const first = await f.put(path, { state, version: 0 }, ann, 'dashboard_save_1');
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(first.data.version, 1);
+  const read = await f.get(path, ann);
+  assert.deepEqual(read.data.state, state);
+  assert.equal(read.data.version, 1);
+  assert.equal(read.data.updated_at, first.data.updated_at);
+
+  // A retried save (same key and body) returns the same result; the same key with another body conflicts.
+  const retry = await f.put(path, { state, version: 0 }, ann, 'dashboard_save_1');
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.version, 1);
+  const moved = { ...state, pages: [{ ...state.pages[0], widgetLayout: { 'by-agent': { xTrack: 12, yTrack: 0, xSpan: 12, ySpan: 16 } } }] };
+  const reused = await f.put(path, { state: moved, version: 1 }, ann, 'dashboard_save_1');
+  assert.equal(reused.status, 409);
+  assert.equal(reused.data.code, 'IDEMPOTENCY_CONFLICT');
+
+  // Optimistic concurrency: a save against a stale version is refused.
+  const stale = await f.put(path, { state: moved, version: 0 }, ann);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.data.code, 'INVALID_STATE');
+  const second = await f.put(path, { state: moved, version: 1 }, ann);
+  assert.equal(second.data.version, 2);
+
+  // Per operator.
+  const ben = await f.operator('PAYERDASH002', 'Ben');
+  assert.equal((await f.get(path, ben)).data.state, null, 'another operator sees nothing of Ann\'s');
+  assert.equal((await f.put(path, { state, version: 0 }, ben)).data.version, 1);
+  assert.deepEqual((await f.get(path, ann)).data.state, moved);
+
+  // The site saves from the browser: a cross-origin PUT passes the CORS preflight.
+  const preflight = await f.api.app.inject({ method: 'OPTIONS', url: path, headers: { origin: WEB, 'access-control-request-method': 'PUT', 'access-control-request-headers': 'authorization,content-type,idempotency-key' } });
+  assert.equal(preflight.statusCode, 204);
+  assert.match(String(preflight.headers['access-control-allow-methods']), /\bPUT\b/);
+  assert.equal(preflight.headers['access-control-allow-origin'], WEB);
+
+  // Durable.
+  await f.api.app.close(); f.store.close();
+  const again = await fixture(t, { dbPath });
+  const after = await again.get(path, ann);
+  assert.deepEqual([after.data.state, after.data.version], [moved, 2], 'the saved dashboard survives a restart');
 });
 
 test('dashboard assistant maps Studio turns onto the Messages API and back', () => {

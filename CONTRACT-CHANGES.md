@@ -34,6 +34,19 @@ Additive; nothing existing changes shape except one new required capability flag
 | Disabled | `404 NOT_FOUND` when the server has no Anthropic key or runs the fake payment provider |
 | Config | `capabilities.operator_assistant` (boolean, required) |
 
+### Addition: saved dashboard layout
+
+Additive; nothing existing changes shape.
+
+| Area | Change |
+| --- | --- |
+| Endpoints | `GET /v1/operators/me/studio-dashboard` (`getStudioDashboard`) → `StudioDashboard { state, version, updated_at, server_time }`; `state` is null and `version` 0 when nothing is saved. `PUT /v1/operators/me/studio-dashboard` (`saveStudioDashboard`) with `StudioDashboardSave { state, version }` → `StudioDashboardSaved { version, updated_at, server_time }`. Operator credential only (401 without a credential, 403 `OPERATOR_REQUIRED` for other roles), tag `Studio`, `Cache-Control: no-store` |
+| State | AG Studio's serialized report state (pages with widgets, widget layout and format), stored as given: an object with 1–50 `pages`, at most 200,000 bytes as JSON (413 `PAYLOAD_TOO_LARGE`). Never data rows: the dashboard's data sources are always the operator's live allocations, and the page drops view state (selection, cross-filter, panel sizes) before saving |
+| Concurrency | `version` is the version the save replaces (0 for the first); a mismatch is 409 `INVALID_STATE` (saved meanwhile from another window or device) |
+| Idempotency | `Idempotency-Key` required. Retrying the latest save with the same key and body returns its result again; the same key with another body is 409 `IDEMPOTENCY_CONFLICT`. Kept on the operator's one dashboard record, not in the replay table, so saves don't accumulate replay records |
+| CORS | The API now allows `PUT` from the site's origins (`GET, HEAD, POST, PUT`) |
+| Storage | New store collection `studio_dashboard`, one document per operator; no migration |
+
 To regenerate the contract: restore v0.3.0 (`git show 30519e0:contracts/openapi.yaml > contracts/openapi.yaml`), then run
 `node scripts/contract-v0.4.mjs` and `npm run client:generate`.
 
