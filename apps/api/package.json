@@ -9,6 +9,7 @@
     "@onkernel/sdk": "^0.147.0",
     "@paypal/agent-toolkit": "1.11.0",
     "@paypal/paypal-server-sdk": "2.5.0",
+    "@renderinc/sdk": "1.8.0",
     "better-sqlite3": "*",
     "fastify": "^5.6.1",
     "parse5": "^8.1.1",

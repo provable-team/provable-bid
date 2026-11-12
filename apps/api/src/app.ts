@@ -1,12 +1,12 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { AgentAdapter, EvaluatorAdapter } from '../../../packages/agent-interface/src/index.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
 import { operations, resolve, validator, validateResponse } from '../../../scripts/contract.js';
 import type { LedgerEntry, OperatorAssistant, OperatorLedger } from './assistant.js';
 import type { PageRenderer, RenderResult } from './browser.js';
-import { gateHtml, prepareHtml } from './html.js';
+import { prepareHtml } from './html.js';
 import { safeColors, safeLabel, safeStructure, STEP } from './progress.js';
 import {
   HOUSE_AGENTS, HOUSE_OPERATOR_ID, hashToken, newSecret, newToken, resolvePrincipal,
@@ -15,6 +15,7 @@ import {
 import { agentPayoutFor, commissionFor, POLICY, processingFeeFor } from './money.js';
 import { ProviderError, type AuthorizationView, type PaymentProvider, type PayoutView } from './provider/types.js';
 import { sendWebhook, webhookUrl } from './outbound-webhook.js';
+import { errorVerdict, evaluatorToken, houseToken, inProcessEvaluation, inProcessHouseRunner, RunnerUnavailable, type EvaluationJob, type EvaluationRunner, type HouseRunner, type RenderedPage } from './runners.js';
 import type { DocStore } from './store.js';
 import { StudioAiFailure, type StudioAiRelay } from './studio-ai.js';
 import { registerAgentDocs } from './agent-docs.js';
@@ -142,8 +143,19 @@ export interface ApiOptions {
   renderer?: PageRenderer | null;
   /** House agents (null when no model key is configured). They use the public API with their own credentials. */
   houseAgents?: Record<string, AgentAdapter> | null;
+  /** Where house-agent builds run. Default: in this process, from `houseAgents`. See runners.ts. */
+  houseRunner?: HouseRunner;
+  /** Where submission evaluations run. Default: in this process, with `renderer` and `evaluator`. */
+  evaluationRunner?: EvaluationRunner;
+  /**
+   * WORKFLOWS_SECRET: derive house-agent tokens from it instead of minting fresh ones each boot, and accept the
+   * evaluator credential derived from it on the internal job route (both needed by remote runners).
+   */
+  workflowsSecret?: string | null;
   /** Minimum time between two build-progress updates from one house agent (default 1000 ms). */
   progressIntervalMs?: number;
+  /** Base backoff when a remote runner (Render Workflows) is unreachable (default 2000 ms, doubling, capped at 60 s). */
+  runnerRetryMs?: number;
   now?: () => number;
   strictResponses?: boolean;
   /** Record payouts as simulated instead of calling the provider. Defaults to true with the fake provider. */
@@ -170,6 +182,8 @@ export async function createApi(o: ApiOptions) {
   await app.register(cors, { origin: origins, exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'] });
   registerAgentDocs(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin });
 
+  const houseRunner = o.houseRunner ?? inProcessHouseRunner(o.houseAgents);
+  const evaluationRunner = o.evaluationRunner ?? inProcessEvaluation({ renderer: o.renderer ?? null, evaluator: o.evaluator, log });
   const mockMode = o.provider.mode === 'mock';
   const simulatePayouts = o.simulatePayouts ?? mockMode;
   let offset = 0;
@@ -200,6 +214,8 @@ export async function createApi(o: ApiOptions) {
   const operators = st.collection<Operator>('operator');
   const agents = st.collection<AgentRecord>('agent');
   const oauthStates = st.collection<{ expires: number }>('oauth_state');
+  /** Remote house-agent runs (Render Workflows), keyed `${competition}:${agent}`, so a restarted API can re-attach or cancel them. */
+  const houseRuns = st.collection<{ competition_id: string; agent_id: string; task_run_id: string; state: 'running' | 'finished' | 'canceled'; started_at: string }>('house_run');
 
   // House operator + house agents (labelled; payouts go to the house operator's verified PayPal account).
   const houseOperator: Operator = operators.get(HOUSE_OPERATOR_ID) ?? { id: HOUSE_OPERATOR_ID, name: 'provable.bid', email: null, paypal_payer_id: null, recipient_id: 'recipient_provable', house: true, created_at: stamp() };
@@ -209,13 +225,13 @@ export async function createApi(o: ApiOptions) {
   for (const h of HOUSE_AGENTS) {
     const existing = agents.get(h.id);
     for (const hash of existing?.credential_hashes ?? []) credentials.delete(hash); // fresh credentials each boot
-    const token = newToken('pba');
+    const token = o.workflowsSecret ? houseToken(o.workflowsSecret, h.id) : newToken('pba');
     const principal: AgentPrincipal = { id: `cred_${h.id}`, role: 'agent', agent_id: h.id, operator_id: HOUSE_OPERATOR_ID, recipient_id: houseOperator.recipient_id };
     credentials.set(hashToken(token), { principal, created_at: stamp(), revoked: false });
     houseTokens.set(h.id, token);
     agents.set(h.id, {
       profile: { id: h.id, name: h.name, description: h.description, style: h.style, capabilities: ['html'], internal: true,
-        status: o.houseAgents?.[h.id] ? 'available' : 'unavailable', avatar_color: h.avatar_color, operator_id: HOUSE_OPERATOR_ID, operator_name: 'provable.bid' },
+        status: houseRunner.has(h.id) ? 'available' : 'unavailable', avatar_color: h.avatar_color, operator_id: HOUSE_OPERATOR_ID, operator_name: 'provable.bid' },
       operator_id: HOUSE_OPERATOR_ID, webhook_url: null, webhook_secret: null, credential_hashes: [hashToken(token)], created_at: existing?.created_at ?? stamp(),
     });
   }
@@ -622,7 +638,7 @@ export async function createApi(o: ApiOptions) {
       case 'getConfig': return ok({
         mode: o.provider.mode, currency: 'USD', terms_version: policy.terms_version, policy,
         capabilities: { authorization: true, additional_checkout: true, external_agents: true, payouts: simulatePayouts ? 'simulated' : 'paypal_sandbox',
-          ai_evaluation: !o.evaluator.version.startsWith('heuristic'), house_agents: !!o.houseAgents && Object.keys(o.houseAgents).length > 0, operator_onboarding: 'paypal_login',
+          ai_evaluation: !o.evaluator.version.startsWith('heuristic'), house_agents: HOUSE_AGENTS.some(h => houseRunner.has(h.id)), operator_onboarding: 'paypal_login',
           browser_previews: !!o.renderer, operator_assistant: !!o.operatorAssistant, studio_ai: !!o.studioAi },
         server_time: stamp(),
       });
@@ -713,7 +729,10 @@ export async function createApi(o: ApiOptions) {
       case 'submitWork': {
         const me = who(); demand(me.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
         const c = fetchOne(competitions, params.competition_id); readCompetition(c, me);
-        return ok(submissionView(submit(c, me, body.title, body.artifacts), me), 201);
+        const s = submit(c, me, body.title, body.artifacts);
+        // A house agent building on another instance submits over HTTP: its live progress moves to "submitted" here.
+        const remoteHouse = houseRunner.remote && agents.get(me.agent_id)?.profile.internal;
+        return { status: 201, body: submissionView(s, me), ...(remoteHouse ? { after: () => houseSubmitted(c, me.agent_id, s.id) } : {}) };
       }
       case 'listSubmissions': {
         const me = who(); const c = fetchOne(competitions, params.competition_id);
@@ -998,7 +1017,7 @@ export async function createApi(o: ApiOptions) {
         }
       })());
     }
-    if (o.houseAgents) for (const [agentId, adapter] of Object.entries(o.houseAgents)) track(runHouseAgent(agentId, adapter, c));
+    for (const h of HOUSE_AGENTS) if (houseRunner.has(h.id)) track(runHouseAgent(h.id, c));
   }
 
   // ---------------------------------------------------------------- house-agent build progress (in memory, for the run)
@@ -1057,8 +1076,18 @@ export async function createApi(o: ApiOptions) {
     else if (s.qualification_status !== 'pending') byAgent!.delete(s.agent_id);
   }
 
+  /** A house agent's entry was accepted: its placeholder says "submitted" (and settles at once if already checked). */
+  function houseSubmitted(c: S['Competition'], agentId: string, submissionId: string) {
+    const state = buildProgress.get(c.id)?.get(agentId)?.state;
+    if (state !== 'building' && state !== 'revising') return;
+    setProgress(c.id, agentId, STEP.submitted, 'submitted', submissionId);
+    buildProgress.get(c.id)!.get(agentId)!.attempt = compSubmissions(c).filter(x => x.agent_id === agentId).length;
+    const stored = submissions.get(submissionId);
+    if (stored) settleProgress(stored); // in case it was already checked
+  }
+
   /** House agents act through the public API with their own credentials, exactly like an outside agent. */
-  async function runHouseAgent(agentId: string, adapter: AgentAdapter, c: S['Competition']) {
+  async function runHouseAgent(agentId: string, c: S['Competition']) {
     const token = houseTokens.get(agentId)!;
     const call = async (method: 'POST' | 'GET', url: string, payload: unknown, key: string) => {
       const r = await app.inject(method === 'GET'
@@ -1069,21 +1098,16 @@ export async function createApi(o: ApiOptions) {
     };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(1000, Date.parse(c.submission_deadline!) - time() - 5000));
+    timer.unref(); // never the only thing keeping a process alive (a run abandoned by a stopping process)
     const run = `${c.id}:${agentId}`;
     activeRuns.add(run);
     try {
-      await adapter.run({
+      await houseRunner.run(agentId, {
         competition: c, signal: controller.signal,
         uploadAsset: (asset, key) => call('POST', '/v1/assets', asset, key),
         submit: async (work, key) => {
           const s: S['Submission'] = await call('POST', `/v1/competitions/${c.id}/submissions`, work, key);
-          const state = buildProgress.get(c.id)?.get(agentId)?.state;
-          if (state === 'building' || state === 'revising') {
-            setProgress(c.id, agentId, STEP.submitted, 'submitted', s.id);
-            buildProgress.get(c.id)!.get(agentId)!.attempt = compSubmissions(c).filter(x => x.agent_id === agentId).length;
-            const stored = submissions.get(s.id);
-            if (stored) settleProgress(stored); // in case it was already checked
-          }
+          houseSubmitted(c, agentId, s.id);
           return s;
         },
         progress: (label, opts) => reportProgress(c.id, agentId, label, opts?.immediate, opts?.colors, opts?.structure),
@@ -1100,69 +1124,103 @@ export async function createApi(o: ApiOptions) {
             await (evaluation ?? new Promise(r => setTimeout(r, 500)));
           }
         },
+      }, {
+        // Remote: persist the run ID before waiting, so a restarted API can re-attach to it (resumeHouseRuns).
+        started: runId => exclusive(async () => { houseRuns.set(run, { competition_id: c.id, agent_id: agentId, task_run_id: runId, state: 'running', started_at: stamp() }); }),
       });
     } catch (e) { log(`house agent ${agentId} on ${c.id} failed`, (e as Error).message); }
-    finally {
-      clearTimeout(timer);
-      activeRuns.delete(run);
-      const cur = buildProgress.get(c.id)?.get(agentId);
-      // Never submitted (or declined): the placeholder goes away. Stopped after a failed attempt: it says so.
-      if (cur?.state === 'building' && !cur.submission_id) buildProgress.get(c.id)!.delete(agentId);
-      else if (cur?.state === 'building' || cur?.state === 'revising') setProgress(c.id, agentId, "didn't qualify", 'not_qualified');
+    finally { clearTimeout(timer); await finishHouseRun(c, agentId); }
+  }
+
+  /** A house agent's run is over: settle its placeholder honestly and mark a remote run finished. */
+  async function finishHouseRun(c: S['Competition'], agentId: string) {
+    const run = `${c.id}:${agentId}`;
+    activeRuns.delete(run);
+    const cur = buildProgress.get(c.id)?.get(agentId);
+    // Never submitted (or declined): the placeholder goes away. Stopped after a failed attempt: it says so.
+    if (cur?.state === 'building' && !cur.submission_id) buildProgress.get(c.id)!.delete(agentId);
+    else if (cur?.state === 'building' || cur?.state === 'revising') setProgress(c.id, agentId, "didn't qualify", 'not_qualified');
+    const r = houseRuns.get(run);
+    if (r?.state === 'running') await exclusive(async () => { r.state = 'finished'; });
+  }
+
+  /**
+   * After a restart: a remote build may still be running on Render. Re-attach by its persisted run ID, show the buyer
+   * an honest placeholder (building, or where its latest entry stands), and wait for the run to end. Runs whose
+   * submission window has closed are canceled instead.
+   */
+  async function resumeHouseRuns() {
+    for (const r of houseRuns.values()) {
+      if (r.state !== 'running') continue;
+      const c = competitions.get(r.competition_id);
+      if (!c || c.state !== 'open' || time() >= Date.parse(c.submission_deadline!)) { await cancelHouseRun(r); continue; }
+      const key = `${c.id}:${r.agent_id}`;
+      activeRuns.add(key);
+      const mine = compSubmissions(c).filter(x => x.agent_id === r.agent_id).sort((a, b) => a.created_at.localeCompare(b.created_at));
+      const latest = mine.at(-1);
+      if (!latest) setProgress(c.id, r.agent_id, STEP.planning, 'building');
+      else {
+        setProgress(c.id, r.agent_id, STEP.submitted, 'submitted', latest.id);
+        buildProgress.get(c.id)!.get(r.agent_id)!.attempt = mine.length;
+        settleProgress(latest); // failed with time left: "revising" (the run is active); qualified: "qualified"
+      }
+      log(`house agent ${r.agent_id} on ${c.id}: re-attached to run ${r.task_run_id}`);
+      track((async () => {
+        try { await houseRunner.wait!(r.task_run_id); }
+        catch (e) { log(`house run ${r.task_run_id} wait failed`, (e as Error).message); }
+        finally { await finishHouseRun(c, r.agent_id); }
+      })());
     }
+  }
+  /** Stop a remote build (its submission window closed). The waiter sees it canceled and settles the placeholder. */
+  async function cancelHouseRun(r: { task_run_id: string; state: string }) {
+    if (r.state !== 'running') return;
+    await exclusive(async () => { r.state = 'canceled'; });
+    try { await houseRunner.cancel!(r.task_run_id); } catch (e) { log(`cancel house run ${r.task_run_id} failed`, (e as Error).message); }
   }
 
   // ---------------------------------------------------------------- worker: evaluation + provider operations
   const evaluating = new Set<string>();
   const evalRuns = new Map<string, Promise<unknown>>();
+  /** A real-browser render: buyers only ever get these screenshots from now on, and the judge gets measured facts. */
+  function applyShots(assetId: string, submissionId: string, r: RenderedPage) {
+    const asset = assets.get(assetId)!;
+    asset.shots = { desktop: r.desktop_base64, phone: r.phone_base64, desktopHeight: r.desktopHeight, phoneHeight: r.phoneHeight };
+    asset.browser = { renderer: r.renderer, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests, focus: r.focus,
+      phoneLayout: r.phoneLayout, loadMs: r.loadMs, renderMs: r.renderMs,
+      replay: r.replay ? { id: r.replay.id, url: r.replay.url, expires_at: at(time() + r.replay.retentionMs) } : undefined };
+    const preview: S['Preview'] = { ...asset.metadata.preview, mime_type: 'image/jpeg', phone_url: `${asset.metadata.preview.url}?view=phone`, width: 1280, height: r.desktopHeight };
+    asset.metadata.preview = preview;
+    const current = submissions.get(submissionId);
+    if (current) current.artifacts = current.artifacts.map(a => a.asset_id === assetId ? { ...a, preview } : a);
+  }
+  const evalRetries = new Map<string, { n: number; at: number }>(); // Render unreachable: when to ask again (wall clock)
   async function evaluatePending() {
-    const due = [...submissions.values()].filter(s => s.qualification_status === 'pending' && !evaluating.has(s.id));
+    const due = [...submissions.values()].filter(s => s.qualification_status === 'pending' && !evaluating.has(s.id) && (evalRetries.get(s.id)?.at ?? 0) <= Date.now());
     for (const s of due) {
       evaluating.add(s.id);
       const evaluation = (async () => {
         const c = competitions.get(s.competition_id)!;
-        const files = s.artifacts.map(a => ({ metadata: a, bytes: new Uint8Array(Buffer.from(assets.get(a.asset_id)!.original_base64, 'base64')) }));
-        let result: S['QualificationResult'];
-        const gate = gateHtml(Buffer.from(files[0].bytes).toString('utf8'));
-        if (gate) result = { status: 'failed', failure_code: gate.code, checks: [], reason: gate.reason, evaluator_version: 'gates-v1', artifact_hashes: digests(s) };
-        else {
-          // Render in a real browser first: buyers will only ever see these screenshots, and the judge gets measured facts.
-          const assetId = s.artifacts[0].asset_id;
-          let rendered: RenderResult | null = null;
-          if (o.renderer) {
-            // Render the watermarked preview (same layout as the original; the watermark is a fixed overlay).
-            try { rendered = await o.renderer.render(assets.get(assetId)!.preview, { signal: AbortSignal.timeout(75_000), tags: { competition: c.id, submission: s.id } }); }
-            catch (e) { log(`browser render failed on ${s.id}`, (e as Error).message); }
+        const asset = assets.get(s.artifacts[0].asset_id)!;
+        const job: EvaluationJob = { submission_id: s.id, competition_id: c.id, title: c.title, brief: c.brief, requirements: c.requirements, artifact: s.artifacts[0],
+          original_base64: asset.original_base64, preview_html: asset.preview };
+        let shotsStored = false;
+        const storeShots = (r: RenderedPage) => exclusive(async () => { applyShots(asset.metadata.id, s.id, r); shotsStored = true; });
+        let outcome;
+        try { outcome = await evaluationRunner.evaluate(job, { onRendered: storeShots }); evalRetries.delete(s.id); }
+        catch (e) {
+          if (e instanceof RunnerUnavailable) { // nothing known yet: stay pending, retry with backoff (the idempotency key re-attaches)
+            const n = (evalRetries.get(s.id)?.n ?? 0) + 1;
+            evalRetries.set(s.id, { n, at: Date.now() + Math.min(60_000, (o.runnerRetryMs ?? 2000) * 2 ** n) });
+            log(`evaluation of ${s.id} deferred (attempt ${n})`, e.message);
+            return;
           }
-          if (rendered) {
-            const r = rendered;
-            await exclusive(async () => {
-              const asset = assets.get(assetId)!;
-              asset.shots = { desktop: r.desktop.toString('base64'), phone: r.phone.toString('base64'), desktopHeight: r.desktopHeight, phoneHeight: r.phoneHeight };
-              asset.browser = { renderer: o.renderer!.name, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests, focus: r.focus,
-                phoneLayout: r.phoneLayout, loadMs: r.loadMs, renderMs: r.renderMs,
-                replay: r.replay ? { id: r.replay.id, url: r.replay.url, expires_at: at(time() + r.replay.retentionMs) } : undefined };
-              const preview: S['Preview'] = { ...asset.metadata.preview, mime_type: 'image/jpeg', phone_url: `${asset.metadata.preview.url}?view=phone`, width: 1280, height: r.desktopHeight };
-              asset.metadata.preview = preview;
-              const current = submissions.get(s.id);
-              if (current) current.artifacts = current.artifacts.map(a => a.asset_id === assetId ? { ...a, preview } : a);
-            });
-          }
-          try {
-            const r = await o.evaluator.qualify({
-              title: c.title, brief: c.brief, requirements: c.requirements, artifacts: files, signal: AbortSignal.timeout(90_000),
-              ...(rendered ? {
-                screenshots: { desktop: new Uint8Array(rendered.desktop), phone: new Uint8Array(rendered.phone) },
-                browser: { phoneOverflowPx: rendered.phoneOverflowPx, phoneLayout: rendered.phoneLayout, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests, focus: rendered.focus },
-              } : {}),
-            });
-            result = { ...r, artifact_hashes: digests(s) }; // bind to the server-computed digests, never evaluator claims
-            if (result.status !== 'qualified') delete result.narrative; // buyers never see failed entries, so neither is a narrative kept
-          } catch (e) {
-            log(`evaluator failed on ${s.id}`, (e as Error).message);
-            result = { status: 'error', failure_code: null, checks: [], reason: 'The evaluator could not finish.', evaluator_version: o.evaluator.version, artifact_hashes: digests(s) };
-          }
+          log(`${evaluationRunner.name} evaluation failed on ${s.id}`, (e as Error).message);
+          outcome = { rendered: null, result: errorVerdict(evaluationRunner.version) };
         }
+        if (outcome.rendered && !shotsStored) await storeShots(outcome.rendered);
+        const result: S['QualificationResult'] = { ...outcome.result, artifact_hashes: digests(s) }; // bind to the server-computed digests, never evaluator claims
+        if (result.status !== 'qualified') delete result.narrative; // buyers never see failed entries, so neither is a narrative kept
         await exclusive(async () => {
           const current = submissions.get(s.id);
           if (current?.qualification_status === 'pending' && time() < Date.parse(c.qualification_deadline!)) { current.qualification_status = result.status; current.qualification = result; }
@@ -1400,7 +1458,12 @@ export async function createApi(o: ApiOptions) {
         await exclusive(async () => { tick(); });
         void evaluatePending();
         await processWebhookEvents();
-        const due =[...ops.values()].filter(x => ['queued', 'unknown', 'waiting'].includes(x.state) && x.next_at <= time() && x.kind !== 'create_order' && x.kind !== 'authorize')
+        // Remote house builds stop at the submission deadline (the task also stops itself just before it).
+        for (const r of houseRuns.values()) {
+          const c = r.state === 'running' ? competitions.get(r.competition_id) : undefined;
+          if (r.state === 'running' && (!c || time() >= Date.parse(c.submission_deadline!))) await cancelHouseRun(r);
+        }
+        const due = [...ops.values()].filter(x => ['queued', 'unknown', 'waiting'].includes(x.state) && x.next_at <= time() && x.kind !== 'create_order' && x.kind !== 'authorize')
           .sort((a, b) => a.created_at.localeCompare(b.created_at));
         for (const op of due) await (op.state === 'waiting' ? pollWaitingCapture(op) : runOperation(op));
       } while (rerun);
@@ -1493,6 +1556,34 @@ export async function createApi(o: ApiOptions) {
       return reply.type(result.type ?? 'application/json').status(result.status).send(result.body);
     },
   });
+
+  // A house agent building on another instance (Render Workflows) reports its coarse build steps here. Not part of the
+  // public contract: house-agent credentials only, and reportProgress sanitizes every field as it does in-process.
+  if (houseRunner.remote) app.post('/internal/house-progress', async (req, reply) => {
+    const bearer = /^Bearer ([A-Za-z0-9_-]+)$/.exec(String(req.headers.authorization ?? ''));
+    const p = resolvePrincipal(bearer?.[1], credentials, null);
+    const body = (req.body ?? {}) as { competition_id?: unknown; label?: unknown; immediate?: unknown; colors?: unknown; structure?: unknown };
+    const c = typeof body.competition_id === 'string' ? competitions.get(body.competition_id) : undefined;
+    if (p?.role !== 'agent' || !agents.get(p.agent_id)?.profile.internal || !c || c.state !== 'open') return reply.status(404).send({ accepted: false });
+    reportProgress(c.id, p.agent_id, typeof body.label === 'string' ? body.label : '', body.immediate === true, body.colors, body.structure);
+    return reply.status(202).send({ accepted: true });
+  });
+
+  // Evaluation runs on Render Workflows fetch their job here (by submission ID), so the private original never sits in
+  // Render's retained run arguments. Evaluator credential derived from WORKFLOWS_SECRET; pending submissions only.
+  const evalToken = o.workflowsSecret ? evaluatorToken(o.workflowsSecret) : null;
+  if (evalToken && evaluationRunner.remote) app.get('/internal/evaluation-jobs/:submission_id', async (req, reply) => {
+    const given = Buffer.from(String(req.headers.authorization ?? '').replace(/^Bearer /, ''));
+    const want = Buffer.from(evalToken);
+    const s = submissions.get((req.params as { submission_id: string }).submission_id);
+    if (given.length !== want.length || !timingSafeEqual(given, want) || !s || s.qualification_status !== 'pending') return reply.status(404).send({ found: false });
+    const c = competitions.get(s.competition_id)!;
+    const asset = assets.get(s.artifacts[0].asset_id)!;
+    const job: EvaluationJob = { submission_id: s.id, competition_id: c.id, title: c.title, brief: c.brief, requirements: c.requirements, artifact: s.artifacts[0], original_base64: asset.original_base64, preview_html: asset.preview };
+    return reply.header('Cache-Control', 'no-store').send(job);
+  });
+
+  if (houseRunner.remote) await resumeHouseRuns();
 
   return {
     app,

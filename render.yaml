@@ -1,13 +1,33 @@
-# Render Blueprint for the two free services (secrets are set in the dashboard or API, never here).
+# Render Blueprint for provable.bid (secrets are set in the dashboard or API, never here: `sync: false` declares them).
+#
+# Note: no Render Blueprint is linked to this repo today. The two live services were created directly, so editing this
+# file changes nothing on Render until someone creates a Blueprint from it (or applies the same settings in the
+# dashboard / API). Keep it matching the live services.
+#
+# Build filters: a push deploys a service (and, for the API, wipes its SQLite data on the free plan's ephemeral disk)
+# only when it changes files that service actually runs. Docs-only pushes deploy nothing; web-only pushes leave the API
+# and its data alone. https://render.com/docs/monorepo-support#setting-build-filters
 services:
   - type: web
     name: provable-race-api
     runtime: node
     plan: free
     branch: shiwani/proof-race
-    buildCommand: npm ci --include=dev
-    startCommand: npx tsx apps/api/src/server.ts
+    # Prebuilt: one ESM bundle (node_modules stay external), so boot no longer compiles TypeScript on 0.1 CPU.
+    buildCommand: npm ci --include=dev && npm run api:build
+    startCommand: node dist/api-server.mjs
     healthCheckPath: /health
+    buildFilter:
+      paths:
+        - apps/api/**
+        - packages/**
+        - contracts/**
+        - scripts/contract.ts
+        - package.json
+        - package-lock.json
+        - tsconfig.json
+      ignoredPaths:
+        - "**/*.md"
     envVars:
       - { key: NODE_VERSION, value: "24" }
       - { key: NODE_ENV, value: production }
@@ -22,6 +42,15 @@ services:
       - { key: HOUSE_OPERATOR_PAYER_ID, sync: false }
       - { key: ADMIN_TOKEN, sync: false }
       - { key: ANTHROPIC_API_KEY, sync: false }
+      - { key: KERNEL_API_KEY, sync: false }
+      - { key: KEEP_ALIVE_URLS, sync: false }
+      # Durable state (PR #9): Neon Postgres. Without DATABASE_URL the API falls back to SQLite on the ephemeral disk.
+      - { key: DATABASE_URL, sync: false }
+      - { key: DATABASE_URL_UNPOOLED, sync: false }
+      # Render Workflows (provable-race-workflows below). Set RUNNER=workflows to turn it on; unset it to roll back.
+      - { key: RUNNER, sync: false }
+      - { key: WORKFLOWS_SECRET, sync: false }
+      - { key: RENDER_API_KEY, sync: false }
   - type: web
     name: provable-race-web
     runtime: node
@@ -29,6 +58,39 @@ services:
     branch: shiwani/proof-race
     buildCommand: npm ci --include=dev && npm run web:build
     startCommand: cd apps/web && npx next start -p $PORT
+    healthCheckPath: /
+    buildFilter:
+      paths:
+        - apps/web/**
+        - packages/**
+        - package.json
+        - package-lock.json
+      ignoredPaths:
+        - "**/*.md"
+        - apps/web/tests/**
     envVars:
       - { key: NODE_VERSION, value: "24" }
       - { key: NEXT_PUBLIC_API_BASE_URL, value: https://provable-race-api.onrender.com }
+      - { key: KEEP_ALIVE_URLS, sync: false }
+      - { key: NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY, sync: false }
+
+  # Render Workflows: house-agent builds and submission evaluation (apps/api/src/workflows), used when the API has
+  # RUNNER=workflows. No free tier: runs bill per second of compute (flex plan) plus $0.25/GB-month of retained run
+  # state, against the workspace's credits. https://render.com/docs/workflows  https://render.com/docs/workflows-limits
+  - type: workflow
+    name: provable-race-workflows
+    runtime: node
+    region: oregon
+    branch: shiwani/proof-race
+    autoDeployTrigger: "off" # deploy it deliberately; runs in flight keep their version
+    buildCommand: npm ci --include=dev && npm run workflows:build
+    startCommand: node dist/workflows.mjs
+    buildFilter:
+      paths: [apps/api/**, packages/**, package.json, package-lock.json]
+      ignoredPaths: ["**/*.md"]
+    envVars:
+      - { key: NODE_VERSION, value: "24" }
+      - { key: NODE_ENV, value: production }
+      - { key: ANTHROPIC_API_KEY, sync: false }
+      - { key: KERNEL_API_KEY, sync: false }
+      - { key: WORKFLOWS_SECRET, sync: false }
