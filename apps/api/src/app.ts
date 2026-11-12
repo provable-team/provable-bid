@@ -52,6 +52,9 @@ export type Operation = {
   payment_id: string | null; allocation_id: string | null; refund_id: string | null;
   request_id: string;
   state: 'queued' | 'running' | 'waiting' | 'unknown' | 'succeeded' | 'failed';
+  /** Once a mutation response is lost, a later refusal alone does not prove the first attempt failed. */
+  uncertain_outcome?: boolean;
+  first_attempt_at?: string;
   attempts: number; next_at: number; last_error: string | null; created_at: string; updated_at: string;
 };
 /**
@@ -261,7 +264,10 @@ export async function createApi(o: ApiOptions) {
     });
   }
   // Anything left "running" when the process stopped has an unknown provider outcome: retry it with the same request ID.
-  for (const op of ops.values()) if (op.state === 'running') { op.state = 'unknown'; op.next_at = 0; }
+  for (const op of ops.values()) {
+    if ((op.state === 'running' || op.state === 'unknown') && op.attempts > 0 && ['payout', 'refund', 'capture_authorization', 'capture_order'].includes(op.kind)) op.uncertain_outcome = true;
+    if (op.state === 'running') { op.state = 'unknown'; op.next_at = 0; }
+  }
   await st.flush();
 
   // ---------------------------------------------------------------- helpers
@@ -518,7 +524,14 @@ export async function createApi(o: ApiOptions) {
     const next = totalMinor !== null ? Math.max(p.refunded_minor, totalMinor) : seen ? p.refunded_minor : p.refunded_minor + amountMinor;
     if (providerRefundId && !seen) providerRefunds.set(providerRefundId, { payment_id: p.id, amount_minor: amountMinor });
     p.refunded_minor = Math.min(p.captured_minor, next); p.refund_state = p.refunded_minor >= p.captured_minor ? 'refunded' : 'partially_refunded'; p.updated_at = stamp();
-    for (const r of refunds.values()) if (r.payment_id === p.id && r.state !== 'completed' && (!providerRefundId || !r.provider_refund_id || r.provider_refund_id === providerRefundId)) r.state = 'completed';
+    // A webhook can identify our refund only when its provider ID was recorded. A different
+    // refund on the same capture does not prove that an earlier, unanswered request succeeded.
+    for (const r of refunds.values()) if (providerRefundId && r.payment_id === p.id && r.provider_refund_id === providerRefundId) {
+      r.state = 'completed';
+      for (const op of ops.values()) if (op.kind === 'refund' && op.refund_id === r.id) {
+        op.state = 'succeeded'; op.last_error = null; op.updated_at = stamp();
+      }
+    }
     holdAllocations(p, true);
   }
   function applyReversed(p: S['Payment'], amountMinor: number) {
@@ -911,6 +924,8 @@ export async function createApi(o: ApiOptions) {
       case 'createRefund': {
         admin(who()); const pay = fetchOne(payments, params.payment_id);
         demand(pay.capture_state === 'completed' && pay.captured_minor > pay.refunded_minor && pay.reversal_state === 'none' && pay.refund_state !== 'pending');
+        demand(![...ops.values()].some(x => x.kind === 'refund' && x.payment_id === pay.id && ['queued', 'running', 'waiting', 'unknown'].includes(x.state)),
+          'PAYMENT_NOT_READY', 'A previous refund is still pending or requires reconciliation.');
         const r: S['Refund'] = { id: id('ref'), payment_id: pay.id, amount: money(pay.captured_minor - pay.refunded_minor), reason: body.reason,
           state: 'queued', provider_refund_id: null, created_at: stamp(), server_time: stamp() };
         refunds.set(r.id, r); pay.refund_state = 'pending'; pay.updated_at = stamp(); holdAllocations(pay, false);
@@ -1327,9 +1342,44 @@ export async function createApi(o: ApiOptions) {
     }
   }
 
-  async function runOperation(op: Operation) {
-    // Journal first: mark running (with the persisted request ID) before talking to PayPal.
-    await exclusive(async () => { op.state = 'running'; op.attempts++; op.updated_at = stamp(); });
+  async function runOperation(op: Operation): Promise<void> {
+    if (op.kind === 'refund' && refunds.get(op.refund_id!)?.provider_refund_id) return pollWaitingCapture(op);
+    const captureOperation = op.kind === 'capture_authorization' || op.kind === 'capture_order';
+    if (captureOperation && payments.get(op.payment_id!)?.provider_capture_id) return pollWaitingCapture(op);
+    // Never replay an unanswered money mutation indefinitely. PayPal documents a 30-day
+    // sender_batch_id window for payouts and up to 45 days for refund request IDs; 24 hours
+    // is a conservative operational limit. Legacy operations use creation time (earlier).
+    const transfer = op.kind === 'payout' || op.kind === 'refund';
+    const firstAttempt = Date.parse(op.first_attempt_at ?? op.created_at);
+    const knownPayout = op.kind === 'payout' && !!allocations.get(op.allocation_id!)?.provider_payout_id;
+    const replayLimitMs = captureOperation ? 3600_000 : 24 * 3600_000;
+    if ((transfer || captureOperation) && !knownPayout && op.attempts > 0 && (!Number.isFinite(firstAttempt) || time() - firstAttempt >= replayLimitMs)) {
+      await exclusive(async () => {
+        op.state = 'unknown'; op.next_at = Number.MAX_SAFE_INTEGER; op.last_error = 'Replay window expired; investigate with PayPal without resending.';
+        if (captureOperation) { const pay = payments.get(op.payment_id!); if (pay) { pay.operation_state = 'unknown'; pay.last_error_code = 'CAPTURE_OUTCOME_REQUIRES_RECONCILIATION'; } }
+      });
+      return;
+    }
+    // Check the hold under the same queue as the journal write. An already in-flight PayPal
+    // request cannot be recalled when a later hold arrives.
+    const send = await exclusive(async () => {
+      if (op.kind === 'payout') {
+        const alloc = allocations.get(op.allocation_id!)!;
+        const pay = op.payment_id ? payments.get(op.payment_id) : undefined;
+        if (!alloc.provider_payout_id && (alloc.ledger_state !== 'allocated' || !pay || !entitled(pay))) {
+          if (op.attempts > 0 || op.uncertain_outcome) {
+            op.state = 'unknown'; op.uncertain_outcome = true; op.next_at = Number.MAX_SAFE_INTEGER;
+            op.last_error = 'Payout may have been sent; held payment requires read-only investigation.';
+            alloc.payout_state = 'pending'; alloc.payout_detail = op.last_error;
+          } else { op.state = 'failed'; op.last_error = 'Payout blocked by a refund/dispute hold.'; }
+          return false;
+        }
+      }
+      // Journal first: mark running (with the persisted request ID) before talking to PayPal.
+      op.first_attempt_at ??= stamp(); op.state = 'running'; op.attempts++; op.updated_at = stamp();
+      return true;
+    });
+    if (!send) return;
     const pay = op.payment_id ? payments.get(op.payment_id) ?? null : null;
     try {
       if (op.kind === 'capture_authorization' || op.kind === 'capture_order') {
@@ -1388,15 +1438,25 @@ export async function createApi(o: ApiOptions) {
         const capture = op.kind === 'capture_authorization' || op.kind === 'capture_order';
         // Do not let a late timeout overwrite a capture the webhook already confirmed while this call was in flight.
         if (capture && pay?.capture_state === 'completed') { op.state = 'succeeded'; op.last_error = null; op.updated_at = stamp(); return; }
+        // Likewise, a canonical refund webhook may settle a known provider refund while a retry is in flight.
+        if (op.kind === 'refund' && op.state === 'succeeded') return;
         const unknown = !(e instanceof ProviderError) || e.kind === 'unknown';
+        const ambiguousTransfer = op.kind === 'payout' || op.kind === 'refund' || capture;
+        const unresolved = unknown || (ambiguousTransfer && op.uncertain_outcome === true);
+        if (unknown && ambiguousTransfer) op.uncertain_outcome = true;
         op.last_error = (e as Error).message; op.updated_at = stamp();
-        if (unknown && (op.attempts < 12 || capture)) {
+        const uncertainMoney = capture || op.kind === 'payout' || op.kind === 'refund';
+        if (unresolved && (op.attempts < 12 || uncertainMoney)) {
           op.state = 'unknown';
-          // Exhausting retries proves only that we could not read the answer. Stop automatic mutation retries, keep
-          // delivery locked and await canonical webhook/manual reconciliation; never void a possibly captured payment.
-          const manual = capture && op.attempts >= 12;
+          // Exhaustion is not a provider refusal. Stop automatic mutation retries and retain the
+          // same request ID until a canonical result or an explicit reconciliation resolves it.
+          const manual = uncertainMoney && (op.attempts >= 12 || !unknown);
           op.next_at = manual ? Number.MAX_SAFE_INTEGER : backoff(op.attempts);
-          if (pay) { pay.operation_state = 'unknown'; pay.updated_at = stamp(); if (manual) pay.last_error_code = 'CAPTURE_OUTCOME_REQUIRES_RECONCILIATION'; }
+          if (pay && capture) { pay.operation_state = 'unknown'; pay.updated_at = stamp(); if (manual) pay.last_error_code = 'CAPTURE_OUTCOME_REQUIRES_RECONCILIATION'; }
+          if (op.kind === 'payout') {
+            const a = allocations.get(op.allocation_id!);
+            if (a) { a.payout_state = 'pending'; a.payout_detail = 'Payout outcome unknown; reconciliation required.'; }
+          }
         }
         else {
           op.state = 'failed';
@@ -1416,15 +1476,30 @@ export async function createApi(o: ApiOptions) {
   }
 
   /** Waiting captures: ask PayPal again (webhooks also trigger this). */
-  async function pollWaitingCapture(op: Operation) {
+  async function pollWaitingCapture(op: Operation): Promise<void> {
     const pay = payments.get(op.payment_id!)!;
+    if (op.kind === 'refund') {
+      const refund = refunds.get(op.refund_id!)!;
+      if (!refund.provider_refund_id) return runOperation(op);
+      try {
+        const r = await o.provider.getRefund(refund.provider_refund_id);
+        await exclusive(async () => {
+          if (r.status === 'COMPLETED') applyRefunded(pay, r.amountMinor, r.id, r.totalRefundedMinor);
+          else if (['FAILED', 'CANCELLED'].includes(r.status)) {
+            refund.state = 'failed'; op.state = 'failed'; op.last_error = `REFUND_${r.status}`;
+            pay.refund_state = pay.refunded_minor >= pay.captured_minor ? 'refunded' : pay.refunded_minor > 0 ? 'partially_refunded' : 'failed';
+          } else op.next_at = time() + 10_000;
+        });
+      } catch (e) { await exclusive(async () => { op.next_at = backoff(op.attempts++); op.last_error = (e as Error).message; }); }
+      return;
+    }
     if (op.kind !== 'capture_authorization' && op.kind !== 'capture_order') return runOperation(op);
     try {
       const cap = await o.provider.getCapture(pay.provider_capture_id!);
       await exclusive(async () => {
         if (cap.status === 'COMPLETED') { completeCapture(pay, cap); op.state = 'succeeded'; }
         else if (['DECLINED', 'FAILED'].includes(cap.status)) { failCapture(pay, `CAPTURE_${cap.status}`); op.state = 'failed'; }
-        else op.next_at = time() + 10_000;
+        else { op.state = 'waiting'; op.next_at = time() + 10_000; }
       });
     } catch (e) { await exclusive(async () => { op.next_at = backoff(op.attempts++); op.last_error = (e as Error).message; }); }
   }

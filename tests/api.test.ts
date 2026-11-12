@@ -24,6 +24,11 @@ import { contract, operations, resolve, validator, validateResponse } from '../s
 const WEB = 'http://web.test';
 const ADMIN = 'admin_token_for_tests_0001';
 const T0 = Date.parse('2026-11-12T10:00:00.000Z');
+const journalOperation = (dbPath: string, kind: string) => {
+  const db = new Database(dbPath, { readonly: true });
+  try { return (db.prepare("SELECT json FROM docs WHERE kind = 'operation'").all() as { json: string }[]).map(x => JSON.parse(x.json)).find(x => x.kind === kind); }
+  finally { db.close(); }
+};
 
 const page = (extra = '', hours = true) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Crumb &amp; Co.</title>
 <style>body{font-family:system-ui;margin:0}.cta{background:#b5522b;color:#fff;padding:12px 20px}</style></head><body>
@@ -42,10 +47,10 @@ const brief = {
   accepted_terms_version: 'race-v1',
 };
 
-async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number; operatorAssistant?: (provider: ReturnType<typeof fakeProvider>['provider']) => OperatorAssistant; studioAi?: StudioAiRelay; studioAiLimits?: { windowMs: number; perWindow: number; perDay: number }; providerMode?: 'paypal_sandbox' } = {}) {
+async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number; operatorAssistant?: (provider: ReturnType<typeof fakeProvider>['provider']) => OperatorAssistant; studioAi?: StudioAiRelay; studioAiLimits?: { windowMs: number; perWindow: number; perDay: number }; providerMode?: 'paypal_sandbox'; fake?: ReturnType<typeof fakeProvider> } = {}) {
   let now = T0;
   const store = new Store(opts.dbPath ?? ':memory:');
-  const fake = fakeProvider({ webOrigin: WEB, now: () => now });
+  const fake = opts.fake ?? fakeProvider({ webOrigin: WEB, now: () => now });
   const notices: { url: string; body: string; sig: string }[] = [];
   const api = await createApi({
     store, provider: opts.providerMode ? { ...fake.provider, mode: opts.providerMode } : fake.provider, evaluator: opts.evaluator ?? heuristicEvaluator(), webOrigin: WEB, apiOrigin: 'http://api.test',
@@ -344,6 +349,241 @@ test('exhausted unknown capture responses stay unknown without voiding; a canoni
   assert.equal(f.fake.controls.calls.filter(x => x.op === 'voidAuthorization').length, 0);
 });
 
+test('a refusal after an uncertain capture cannot trigger a void or mark the capture failed', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provable-capture-refusal-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'api.db'); const f = await fixture(t, { dbPath }); const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const { c } = await f.open(b); const submission = await f.enter(ann.token, c.id); await f.settle();
+  const capture = f.fake.provider.captureAuthorization; let attempts = 0;
+  f.fake.provider.captureAuthorization = async (...args) => {
+    if (++attempts === 1) { await capture(...args); throw new ProviderError('response lost', 'unknown'); }
+    throw new ProviderError('cannot find original capture', 'definitive', 'NOT_FOUND', 404);
+  };
+  await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: submission.id }, b); await f.settle(); await f.advance(65);
+  const op = journalOperation(dbPath, 'capture_authorization');
+  assert.deepEqual([op.state, op.attempts, op.next_at], ['unknown', 2, Number.MAX_SAFE_INTEGER]);
+  const pay = (await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data;
+  assert.equal(pay.capture_state, 'pending'); assert.equal(pay.operation_state, 'unknown');
+  assert.equal(f.fake.controls.calls.filter(x => x.op === 'voidAuthorization').length, 0);
+  const captureId = [...f.fake.captures.keys()][0];
+  await f.hook({ id: 'WH-CAPTURE-AFTER-REFUSAL', event_type: 'PAYMENT.CAPTURE.COMPLETED', resource: {
+    id: captureId, supplementary_data: { related_ids: { order_id: pay.provider_order_id } },
+  } }); await f.settle();
+  assert.equal(journalOperation(dbPath, 'capture_authorization').state, 'succeeded');
+});
+
+test('an old uncertain capture is not resent after restart or admin reconciliation', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provable-capture-aged-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'api.db'); const f = await fixture(t, { dbPath }); const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const { c } = await f.open(b); const submission = await f.enter(ann.token, c.id); await f.settle();
+  let attempts = 0;
+  f.fake.provider.captureAuthorization = async () => { attempts++; throw new ProviderError('response lost', 'unknown'); };
+  await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: submission.id }, b); await f.settle();
+  assert.equal(attempts, 1); await f.api.app.close(); f.store.close();
+  const restarted = await fixture(t, { dbPath, fake: f.fake }); await restarted.advance(3600);
+  assert.match(journalOperation(dbPath, 'capture_authorization').last_error, /window expired/);
+  await restarted.post(`/v1/payments/${c.initial_payment_id}/reconcile`, undefined, ADMIN); await restarted.settle();
+  assert.equal(attempts, 1); assert.equal(restarted.fake.controls.calls.filter(x => x.op === 'voidAuthorization').length, 0);
+});
+
+test('exhausted uncertain payout stays pending across restart and reconciliation reuses its batch', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provable-payout-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'api.db');
+  const f = await fixture(t, { dbPath });
+  const b = await f.buyer(); const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const { c } = await f.open(b); const s = await f.enter(ann.token, c.id); await f.settle();
+  const send = f.fake.provider.sendPayout; const batches: string[] = [];
+  f.fake.provider.sendPayout = async args => {
+    batches.push(args.batchId); await send(args); throw new ProviderError('payout response lost', 'unknown');
+  };
+  await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: s.id }, b); await f.settle();
+  for (let i = 1; i < 12; i++) await f.advance(65);
+  const op = journalOperation(dbPath, 'payout');
+  assert.deepEqual([op.state, op.attempts, op.next_at], ['unknown', 12, Number.MAX_SAFE_INTEGER]);
+  assert.equal(new Set(batches).size, 1); assert.equal(batches.length, 12);
+  assert.equal(f.fake.controls.payouts.size, 1);
+  const allocation = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
+  assert.equal(allocation.payout_state, 'pending'); assert.match(allocation.payout_detail, /unknown/i);
+  f.fake.provider.sendPayout = send;
+  await f.api.app.close(); f.store.close();
+  const restarted = await fixture(t, { dbPath, fake: f.fake });
+  await restarted.advance(3600);
+  assert.equal(restarted.fake.controls.calls.filter(x => x.op === 'sendPayout').length, 1, 'restart does not automatically resend');
+  assert.equal((await restarted.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0].payout_state, 'pending');
+  await restarted.post(`/v1/payments/${c.initial_payment_id}/reconcile`, undefined, ADMIN); await restarted.settle(); await restarted.advance(5);
+  const recovered = (await restarted.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
+  assert.equal(recovered.payout_state, 'paid');
+  assert.equal(restarted.fake.controls.payouts.size, 1);
+  assert.equal(journalOperation(dbPath, 'payout').state, 'succeeded');
+});
+
+test('a later refusal cannot turn a previously uncertain payout into a known failure', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provable-payout-refusal-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'api.db'); const f = await fixture(t, { dbPath }); const b = await f.buyer();
+  const send = f.fake.provider.sendPayout; let attempts = 0;
+  f.fake.provider.sendPayout = async args => {
+    if (++attempts === 1) { await send(args); throw new ProviderError('response lost', 'unknown'); }
+    throw new ProviderError('cannot find original batch', 'definitive', 'NOT_FOUND', 404);
+  };
+  const { c } = await f.captured(b); await f.advance(65);
+  const op = journalOperation(dbPath, 'payout');
+  assert.deepEqual([op.state, op.attempts, op.next_at], ['unknown', 2, Number.MAX_SAFE_INTEGER]);
+  const allocation = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
+  assert.equal(allocation.payout_state, 'pending');
+  await f.advance(3600); assert.equal(attempts, 2);
+});
+
+test('a payout of unknown outcome is not resent after its payment is refunded', async t => {
+  const f = await fixture(t); const b = await f.buyer(); let attempts = 0;
+  f.fake.provider.sendPayout = async () => { attempts++; throw new ProviderError('failed before send', 'unknown'); };
+  const { c, pay } = await f.captured(b);
+  assert.equal(attempts, 1);
+  const refund = await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Customer request' }, ADMIN);
+  assert.equal(refund.status, 202); await f.settle(); await f.advance(65);
+  const alloc = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
+  assert.equal(alloc.ledger_state, 'reversed'); assert.equal(alloc.payout_state, 'pending');
+  await f.post(`/v1/payments/${pay.id}/reconcile`, undefined, ADMIN); await f.settle();
+  assert.equal(attempts, 1, 'neither automatic nor requested reconciliation resends a held payout');
+  assert.equal(f.fake.controls.payouts.size, 0);
+});
+
+test('aged uncertain payouts and refunds never replay after restart or requested reconciliation', async t => {
+  for (const kind of ['payout', 'refund'] as const) {
+    const dir = mkdtempSync(join(tmpdir(), `provable-aged-${kind}-`));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const dbPath = join(dir, 'api.db'); const f = await fixture(t, { dbPath }); const b = await f.buyer();
+    let attempts = 0; let pay: any;
+    if (kind === 'payout') {
+      f.fake.provider.sendPayout = async () => { attempts++; throw new ProviderError('lost', 'unknown'); };
+      pay = (await f.captured(b)).pay;
+    } else {
+      pay = (await f.captured(b)).pay;
+      f.fake.provider.refundCapture = async () => { attempts++; throw new ProviderError('lost', 'unknown'); };
+      await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Customer request' }, ADMIN); await f.settle();
+    }
+    assert.equal(attempts, 1); await f.api.app.close(); f.store.close();
+    const restarted = await fixture(t, { dbPath, fake: f.fake }); await restarted.advance(25 * 3600);
+    assert.equal(journalOperation(dbPath, kind).state, 'unknown');
+    assert.match(journalOperation(dbPath, kind).last_error, /window expired/);
+    await restarted.post(`/v1/payments/${pay.id}/reconcile`, undefined, ADMIN); await restarted.settle();
+    assert.equal(attempts, 1, `${kind}: no aged mutation replay`);
+  }
+});
+
+test('a known payout batch may still be polled after the replay window', async t => {
+  const f = await fixture(t); const b = await f.buyer(); const { c } = await f.captured(b);
+  const pending = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
+  assert.ok(pending.provider_payout_id);
+  await f.advance(25 * 3600);
+  const paid = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
+  assert.equal(paid.payout_state, 'paid');
+  assert.equal(f.fake.controls.calls.filter(x => x.op === 'sendPayout').length, 1);
+});
+
+test('exhausted uncertain refund blocks a second refund and reconciles with the same request after restart', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provable-refund-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'api.db');
+  const f = await fixture(t, { dbPath }); const b = await f.buyer();
+  const { c, pay } = await f.captured(b);
+  const refund = f.fake.provider.refundCapture; const requestIds: string[] = []; let providerRefundId = '';
+  f.fake.provider.refundCapture = async (...args) => {
+    requestIds.push(args[2]); providerRefundId = (await refund(...args)).id;
+    throw new ProviderError('refund response lost', 'unknown');
+  };
+  const initiated = await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Customer request' }, ADMIN);
+  assert.equal(initiated.status, 202); await f.settle();
+  for (let i = 1; i < 12; i++) await f.advance(65);
+  const op = journalOperation(dbPath, 'refund');
+  assert.deepEqual([op.state, op.attempts, op.next_at], ['unknown', 12, Number.MAX_SAFE_INTEGER]);
+  assert.equal(new Set(requestIds).size, 1); assert.equal(requestIds.length, 12);
+  assert.equal((await f.get(`/v1/payments/${pay.id}`, b)).data.refund_state, 'pending');
+  assert.notEqual((await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Customer request' }, ADMIN)).status, 202);
+  f.fake.provider.refundCapture = refund;
+  await f.api.app.close(); f.store.close();
+  const restarted = await fixture(t, { dbPath, fake: f.fake }); await restarted.advance(3600);
+  assert.equal(restarted.fake.controls.calls.filter(x => x.op === 'refundCapture').length, 1, 'restart does not automatically resend');
+  await restarted.hook({ id: 'WH-UNCERTAIN-REFUND', event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: {
+    id: providerRefundId, links: refundLinks(providerRefundId, pay.provider_capture_id),
+  } }); await restarted.settle();
+  assert.equal((await restarted.get(`/v1/payments/${pay.id}`, b)).data.refund_state, 'refunded');
+  assert.equal(journalOperation(dbPath, 'refund').state, 'unknown', 'the event alone does not identify the request');
+  const reconciliation = await restarted.post(`/v1/payments/${pay.id}/reconcile`, undefined, ADMIN); await restarted.settle();
+  assert.equal(reconciliation.status, 202, JSON.stringify(reconciliation.data));
+  assert.equal(journalOperation(dbPath, 'refund').state, 'succeeded', JSON.stringify(journalOperation(dbPath, 'refund')));
+  assert.equal(restarted.fake.controls.calls.filter(x => x.op === 'refundCapture').length, 1, 'same request replay did not refund twice');
+});
+
+test('an unrelated partial refund cannot clear an uncertain refund operation', async t => {
+  const f = await fixture(t); const b = await f.buyer(); const { pay } = await f.captured(b);
+  f.fake.provider.refundCapture = async () => { throw new ProviderError('response lost', 'unknown'); };
+  const initiated = await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Customer request' }, ADMIN);
+  assert.equal(initiated.status, 202); await f.settle();
+  const otherId = f.fake.controls.refundOutside(pay.provider_capture_id, 500);
+  await f.hook({ id: 'WH-OTHER-REFUND', event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: {
+    id: otherId, links: refundLinks(otherId, pay.provider_capture_id),
+  } }); await f.settle();
+  assert.equal((await f.get(`/v1/payments/${pay.id}`, b)).data.refund_state, 'partially_refunded');
+  const second = await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Second request' }, ADMIN);
+  assert.equal(second.data.code, 'PAYMENT_NOT_READY');
+});
+
+test('a verified refund webhook settles the journal when the provider refund ID is known', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provable-known-refund-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'api.db');
+  const f = await fixture(t, { dbPath }); const b = await f.buyer(); const { pay } = await f.captured(b);
+  const refund = f.fake.provider.refundCapture; let providerRefundId = '';
+  f.fake.provider.refundCapture = async (...args) => {
+    const result = await refund(...args); providerRefundId = result.id; return { ...result, status: 'PENDING' };
+  };
+  const initiated = await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Customer request' }, ADMIN);
+  assert.equal(initiated.status, 202); await f.settle();
+  assert.equal(journalOperation(dbPath, 'refund').state, 'waiting');
+  await f.hook({ id: 'WH-KNOWN-REFUND', event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: {
+    id: providerRefundId, links: refundLinks(providerRefundId, pay.provider_capture_id),
+  } }); await f.settle();
+  assert.equal(journalOperation(dbPath, 'refund').state, 'succeeded');
+  assert.equal((await f.get(`/v1/payments/${pay.id}`, b)).data.refund_state, 'refunded');
+  await f.advance(100);
+  assert.equal(f.fake.controls.calls.filter(x => x.op === 'refundCapture').length, 1);
+});
+
+test('a pending refund with a known ID is polled without resending the refund', async t => {
+  const f = await fixture(t); const b = await f.buyer(); const { pay } = await f.captured(b);
+  const refund = f.fake.provider.refundCapture; let reads = 0;
+  f.fake.provider.refundCapture = async (...args) => ({ ...(await refund(...args)), status: 'PENDING' });
+  const getRefund = f.fake.provider.getRefund;
+  f.fake.provider.getRefund = async id => { reads++; return getRefund(id); };
+  assert.equal((await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Customer request' }, ADMIN)).status, 202);
+  await f.settle(); await f.advance(25 * 3600);
+  assert.equal((await f.get(`/v1/payments/${pay.id}`, b)).data.refund_state, 'refunded');
+  assert.equal(reads, 1);
+  assert.equal(f.fake.controls.calls.filter(x => x.op === 'refundCapture').length, 1);
+});
+
+test('a later failed refund preserves an earlier partial refund and allows a new request', async t => {
+  const f = await fixture(t); const b = await f.buyer(); const { pay } = await f.captured(b);
+  const partial = f.fake.controls.refundOutside(pay.provider_capture_id, 500);
+  await f.hook({ id: 'WH-OLD-PARTIAL', event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: {
+    id: partial, links: refundLinks(partial, pay.provider_capture_id),
+  } }); await f.settle();
+  const originalRefund = f.fake.provider.refundCapture; const originalGet = f.fake.provider.getRefund;
+  f.fake.provider.refundCapture = async () => ({ id: 'REFPENDING001', status: 'PENDING' });
+  f.fake.provider.getRefund = async () => ({ id: 'REFPENDING001', status: 'FAILED', amountMinor: 0, captureId: pay.provider_capture_id, totalRefundedMinor: 500 });
+  assert.equal((await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Customer request' }, ADMIN)).status, 202);
+  await f.settle(); await f.advance(11);
+  assert.equal((await f.get(`/v1/payments/${pay.id}`, b)).data.refund_state, 'partially_refunded');
+  f.fake.provider.refundCapture = originalRefund; f.fake.provider.getRefund = originalGet;
+  assert.equal((await f.post(`/v1/payments/${pay.id}/refunds`, { reason: 'Retry after known failure' }, ADMIN)).status, 202);
+  await f.settle(); assert.equal((await f.get(`/v1/payments/${pay.id}`, b)).data.refund_state, 'refunded');
+});
+
 test('reject all, no qualifiers, and a missed decision deadline each void the hold: the buyer pays nothing', async t => {
   const f = await fixture(t);
   const b = await f.buyer(); const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
@@ -567,7 +807,7 @@ test('a payout whose response was lost is tracked, not failed; later PayPal outc
   f.fake.controls.loseNextResponse = 'sendPayout'; // PayPal creates the batch; the response times out
   const { c } = await f.captured(b);
   let alloc = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
-  assert.equal(alloc.payout_state, 'queued', 'outcome unknown: neither paid nor failed');
+  assert.equal(alloc.payout_state, 'pending', 'outcome unknown: neither paid nor failed');
   await f.advance(5); await f.advance(10);
   alloc = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
   assert.equal(f.fake.controls.payouts.size, 1, 'one batch at PayPal, never two');
