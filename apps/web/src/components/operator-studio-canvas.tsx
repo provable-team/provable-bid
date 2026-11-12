@@ -78,7 +78,7 @@ export default function OperatorStudioCanvas({ rows, licenseKey }: { rows: Opera
   }), [allocations]);
 
   return (
-    <section aria-label="Sandbox allocation dashboard">
+    <section className="operator-studio" aria-label="Sandbox allocation dashboard">
       <h2>Sandbox allocation dashboard</h2>
       <p>Summarizes loaded records only. Allocation amounts are not amounts received; payout status is shown separately.</p>
       {missingAmounts > 0 && <p role="status">{missingAmounts} loaded allocation{missingAmounts === 1 ? " has" : "s have"} no valid amount and {missingAmounts === 1 ? "is" : "are"} excluded from amount totals.</p>}

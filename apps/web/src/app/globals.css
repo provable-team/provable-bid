@@ -1747,6 +1747,18 @@ svg {
 .operator-card h2 {
   margin-top: 0;
 }
+.operator-card > h2 {
+  margin-bottom: 20px;
+}
+/* One action per agent row, aligned to the row's end like the run status on the competition page. */
+.operator-card .agent-run > .button {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.operator-card .ledger-grid + .field-help,
+.operator-studio {
+  margin-top: 24px;
+}
 .operator-steps {
   margin: 0 0 20px;
   padding-left: 20px;
