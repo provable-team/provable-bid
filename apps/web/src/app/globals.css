@@ -1782,63 +1782,187 @@ svg {
   border-right: 1px solid var(--line);
 }
 
-/* Arrival spotlight: a labelled cursor and soft light follow each newly qualified entry into the gallery. */
+/* Spotlight: a labelled cursor, a dimmed gallery with a clear circle around the cursor, and an accent glow. It follows
+   real events only: a house agent's latest build step, or a newly qualified entry arriving. */
+@property --sx {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@property --sy {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
 .spotlight-host {
   position: relative;
   overflow-x: clip; /* the cursor label must never cause sideways scrolling on phones */
+  transition: --sx 0.8s cubic-bezier(0.65, 0, 0.35, 1), --sy 0.8s cubic-bezier(0.65, 0, 0.35, 1);
 }
-.submission-card {
-  transition: box-shadow 0.2s, opacity 0.5s ease, filter 0.5s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+.spotlight-host.jump {
+  transition: none;
 }
-.submission-card.arriving {
-  opacity: 0.25;
-  filter: blur(8px);
-  transform: translateY(8px) scale(0.985);
-}
+.spotlight-dim,
 .spotlight-light {
   position: absolute;
   inset: -24px;
   pointer-events: none;
-  z-index: 3;
   opacity: 0;
-  background: radial-gradient(300px circle at calc(var(--sx) + 24px) calc(var(--sy) + 24px), #d6ef7366, transparent 70%);
-  transition: opacity 0.4s ease;
+  transition: opacity 0.5s ease;
+}
+.spotlight-dim {
+  z-index: 3;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  /* Clear around the cursor; soft edges all round so the dimmed area has no hard border. */
+  -webkit-mask-image: radial-gradient(circle 270px at calc(var(--sx) + 24px) calc(var(--sy) + 24px), transparent 0 110px, #000 100%),
+    linear-gradient(to bottom, transparent, #000 24px, #000 calc(100% - 24px), transparent),
+    linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  mask-image: radial-gradient(circle 270px at calc(var(--sx) + 24px) calc(var(--sy) + 24px), transparent 0 110px, #000 100%),
+    linear-gradient(to bottom, transparent, #000 24px, #000 calc(100% - 24px), transparent),
+    linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  -webkit-mask-composite: source-in, source-in;
+  mask-composite: intersect;
+}
+.spotlight-light {
+  z-index: 4;
+  background: radial-gradient(
+    circle 220px at calc(var(--sx) + 24px) calc(var(--sy) + 24px),
+    #fffef9f0 0 9px,
+    color-mix(in srgb, var(--accent) 55%, transparent) 30px,
+    color-mix(in srgb, var(--accent) 22%, transparent) 110px,
+    transparent 100%
+  );
 }
 .spotlight-cursor {
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 4;
+  z-index: 5;
   display: flex;
   align-items: flex-start;
   pointer-events: none;
   opacity: 0;
-  transform: translate3d(var(--sx), var(--sy), 0);
-  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
-  filter: drop-shadow(0 2px 6px #20221d40);
+  transform: translate3d(calc(var(--sx) - 5px), calc(var(--sy) - 4px), 0);
+  transition: opacity 0.35s ease;
+  filter: drop-shadow(0 3px 8px #20221d55);
 }
 .spotlight-cursor svg path {
   fill: var(--ink);
   stroke: var(--accent);
-  stroke-width: 1.6;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.spotlight-halo {
+  position: absolute;
+  left: -9px;
+  top: -10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+  animation: spotlight-halo 1.5s ease-out infinite;
+}
+@keyframes spotlight-halo {
+  from {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.1);
+    opacity: 0;
+  }
 }
 .spotlight-badge {
-  margin: 14px 0 0 2px;
-  padding: 3px 10px;
+  margin: 22px 0 0 -2px;
+  padding: 6px 13px;
   border-radius: 999px;
   background: var(--ink);
   color: var(--accent);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1.3;
   white-space: nowrap;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
+.spotlight-dim.on,
 .spotlight-light.on,
 .spotlight-cursor.on {
   opacity: 1;
 }
+/* The card is off-screen: only the pill shows, so nothing dims what the viewer is looking at. */
+.spotlight-host.away .spotlight-dim,
+.spotlight-host.away .spotlight-light,
+.spotlight-host.away .spotlight-cursor {
+  opacity: 0;
+}
+.spotlight-pill {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 60;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--accent);
+  font: 600 13px/1.3 var(--sans);
+  box-shadow: 0 8px 24px #20221d40, 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent);
+  cursor: pointer;
+  animation: spotlight-pill-in 0.3s ease-out;
+}
+@keyframes spotlight-pill-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
+/* Cards: arrive out of focus, then sharpen with an accent glow and a shimmer sweep when the cursor reaches them. */
+.submission-card {
+  position: relative;
+  transition: box-shadow 0.4s ease, border-color 0.4s ease, opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.submission-card.arriving {
+  opacity: 0.3;
+  filter: blur(10px);
+  transform: translateY(10px) scale(0.98);
+}
+.submission-card.revealing,
+.building-card.is-focus {
+  border-color: #a9c43a;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 36px 6px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+.submission-card.revealing::after,
+.building-card.is-focus.is-building::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 32%, #fffef9b3 46%, color-mix(in srgb, var(--accent) 60%, transparent) 54%, transparent 68%);
+  transform: translateX(-110%);
+  animation: card-sweep 1.2s ease-in-out;
+}
+.building-card.is-focus.is-building::after {
+  animation: card-sweep 1.2s ease-in-out infinite;
+  animation-delay: 0.3s;
+}
+@keyframes card-sweep {
+  to {
+    transform: translateX(110%);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
+  .spotlight-dim,
   .spotlight-light,
-  .spotlight-cursor {
+  .spotlight-cursor,
+  .spotlight-pill {
     display: none;
   }
   .submission-card.arriving {
@@ -1854,4 +1978,104 @@ svg {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* Building phase: one placeholder card per house agent at work. Only coarse step words, never any of the page.
+   The sketch fills in one line per real build step. */
+.building-card {
+  border-style: dashed;
+  border-color: #cbd0ba;
+  background: #fbfbf5;
+}
+.building-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eceee3;
+}
+.build-sketch {
+  position: relative;
+  width: 64%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  overflow: hidden;
+}
+.build-sketch i {
+  display: block;
+  grid-column: 1 / -1;
+  height: 7px;
+  border-radius: 3px;
+  border: 1px dashed #c3c8b2;
+  transition: background 0.6s ease, border-color 0.6s ease, box-shadow 0.6s ease;
+}
+.build-sketch i:nth-child(1) { height: 9px; }
+.build-sketch i:nth-child(2) { height: 42px; }
+.build-sketch i:nth-child(3) { width: 72%; }
+.build-sketch i:nth-child(4) { width: 48%; }
+.build-sketch i:nth-child(5),
+.build-sketch i:nth-child(6),
+.build-sketch i:nth-child(8),
+.build-sketch i:nth-child(9) {
+  grid-column: auto;
+  height: 22px;
+}
+.build-sketch i:nth-child(7) { width: 66%; }
+.build-sketch i:nth-child(10) { height: 11px; }
+.build-sketch i.on {
+  border-style: solid;
+  border-color: #cbd0ba;
+  background: var(--white);
+}
+.build-sketch i.now {
+  border-color: #a9c43a;
+  background: color-mix(in srgb, var(--accent) 70%, var(--white));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.is-building .build-sketch::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, #d6ef7355 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: build-sweep 2.4s ease-in-out infinite;
+}
+@keyframes build-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+.build-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.build-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8fae25;
+  box-shadow: 0 0 0 3px var(--accent);
+  animation: build-pulse 1.6s ease-in-out infinite;
+}
+.is-submitted .build-dot {
+  animation: none;
+}
+@keyframes build-pulse {
+  50% {
+    box-shadow: 0 0 0 6px #d6ef7300;
+  }
+}
+.is-not_qualified {
+  opacity: 0.62;
+}
+.is-not_qualified .build-status,
+.is-not_qualified .preview-badge {
+  color: var(--muted);
 }

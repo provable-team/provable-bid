@@ -5,6 +5,7 @@ import Link from "next/link";
 import type {
   Agent,
   Allocation,
+  BuildProgress,
   Competition,
   Payment,
   Purchase,
@@ -58,6 +59,28 @@ function payoutStatus(state: Allocation["payout_state"]): string {
     case "blocked": return "Blocked";
   }
 }
+
+/** What a house agent's placeholder card says. Only coarse step words from the API: never any of the page itself. */
+function buildStatus(p: BuildProgress): string {
+  if (p.state === "submitted") return "Submitted · being checked";
+  if (p.state === "not_qualified") return "Didn't qualify";
+  return p.label.charAt(0).toUpperCase() + p.label.slice(1);
+}
+
+/** Where on a page sketch a build step belongs (0 top … 1 bottom), so the cursor moves with the real step. */
+function buildRegion(p: BuildProgress): number {
+  const l = p.label;
+  if (p.state !== "building" || l.startsWith("finishing") || l.startsWith("checking")) return 0.45;
+  if (l.includes("header")) return 0.05;
+  if (l.includes("setting up") || l.includes("planning") || l.includes("styles")) return 0.12;
+  if (l.includes("hero")) return 0.25;
+  if (l.includes("phones")) return 0.95;
+  if (l.includes("footer")) return 0.88;
+  if (l.includes("interactions")) return 0.75;
+  return 0.6; // a section: hours, menu, pre-order…
+}
+
+const SKETCH_LINES = 10;
 
 function payoutText(allocation: Allocation): string {
   const amount = money(allocation.amount.amount_minor);
@@ -438,6 +461,13 @@ export default function CompetitionPage({
   const { owner, agents, settlement, gallery, purchases, payments } = snapshot;
   const allocations = settlement?.allocations ?? [];
   const comp = snapshot.competition;
+  // House agents still working on this brief (or whose entry is being checked): one placeholder card each.
+  const building = ["open", "qualifying"].includes(comp.state)
+    ? (comp.build_progress ?? []).filter(
+        (p) => p.state !== "qualified" && !gallery.some((s) => s.agent_id === p.agent_id),
+      )
+    : [];
+  const agentName = (agentId: string) => agents.find((a) => a.id === agentId)?.name || "House agent";
   const blocked = stale || !config || !!connectionError;
   const first = purchases.find((p) => p.id === comp.first_purchase_id);
   const firstPayment = first ? payments[first.payment_id] : undefined;
@@ -630,8 +660,21 @@ export default function CompetitionPage({
                         announcement: `${name}'s entry passed all ${n} checks and is now in the gallery.`,
                       };
                     })}
+                    building={building
+                      .filter((p) => p.state !== "not_qualified")
+                      .sort((a, b) => a.updated_at.localeCompare(b.updated_at))
+                      .map((p) => ({
+                        id: p.agent_id,
+                        step: p.step,
+                        label: `${agentName(p.agent_id)} · ${p.state === "submitted" ? "submitted" : p.label}`,
+                        region: buildRegion(p),
+                        announcement:
+                          p.state === "submitted"
+                            ? `${agentName(p.agent_id)} submitted its page. It is being checked against your ${comp.requirements.length} requirements.`
+                            : undefined,
+                      }))}
                   >
-                  {(arriving) => gallery.length ? (
+                  {({ arriving, revealing, focus }) => gallery.length || building.length ? (
                     <div className="submission-grid">
                       {gallery.map((submission, index) => {
                         const agent = agents.find(
@@ -649,7 +692,7 @@ export default function CompetitionPage({
                           : undefined;
                         return (
                           <article
-                            className={`submission-card ${purchase ? "selected-card" : ""} ${arriving.has(submission.id) ? "arriving" : ""}`}
+                            className={`submission-card ${purchase ? "selected-card" : ""} ${arriving.has(submission.id) ? "arriving" : ""} ${revealing.has(submission.id) ? "revealing" : ""}`}
                             key={submission.id}
                             data-submission-id={submission.id}
                           >
@@ -784,6 +827,49 @@ export default function CompetitionPage({
                                       : "Additional checkout becomes available after the first payment is confirmed and eligible."}
                                   </p>
                                 )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                      {building.map((p) => {
+                        const agent = agents.find((a) => a.id === p.agent_id);
+                        const status = buildStatus(p);
+                        return (
+                          <article
+                            className={`submission-card building-card is-${p.state} ${focus === p.agent_id ? "is-focus" : ""}`}
+                            key={`building-${p.agent_id}`}
+                            data-building-id={p.agent_id}
+                            aria-label={`${agent?.name || "House agent"}, house agent: ${status}`}
+                          >
+                            <div className="submission-art building-art" aria-hidden="true">
+                              <div className="build-sketch">
+                                {/* One line fills in per real build step: a progress indicator, never content. */}
+                                {Array.from({ length: SKETCH_LINES }, (_, i) => {
+                                  const filled = p.state === "building" ? Math.min(p.step, SKETCH_LINES) : SKETCH_LINES;
+                                  return <i key={i} className={i < filled ? (i === filled - 1 && p.state === "building" ? "on now" : "on") : ""} />;
+                                })}
+                              </div>
+                              <span className="preview-badge">
+                                {p.state === "building" ? "Building · live" : p.state === "submitted" ? "Submitted" : "Not shown"}
+                              </span>
+                            </div>
+                            <div className="submission-body">
+                              <div className="submission-author">
+                                <AgentAvatar agent={agent} size={37} />
+                                <div>
+                                  <strong>{agent?.name || "House agent"}</strong>
+                                  <span>House agent · provable.bid</span>
+                                </div>
+                              </div>
+                              <p className="build-status">
+                                {p.state !== "not_qualified" && <i className="build-dot" aria-hidden="true" />}
+                                {status}
+                              </p>
+                              <p className="agent-style">
+                                {p.state === "not_qualified"
+                                  ? "It did not pass every requirement, so it will not appear in your gallery."
+                                  : `Its finished page appears here only if it passes all ${comp.requirements.length} requirements.`}
+                              </p>
                             </div>
                           </article>
                         );
