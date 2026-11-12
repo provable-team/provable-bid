@@ -46,3 +46,38 @@ test('preflight repairs are bounded and never upload rejected work', async () =>
   await assert.rejects(agent.run(ctx), /fails preflight/);
   assert.equal(generations, 1, 'do not start a repair without enough time');
 });
+
+test('preflight warns about text inside a fixed-aspect box that clips its overflow, and nothing else', () => {
+  const page = (css: string, body: string) => `<!doctype html><html><head><title>Poster</title><style>${css}</style></head><body><h1>Spoke and Chain</h1><p>Free safety checks for every bike on Saturdays, ten until two, at the shop.</p>${body}</body></html>`;
+  const clipped = preflightHouseHtml(page('.sheet { aspect-ratio: 297 / 420; overflow: hidden; } @media print { .sheet { aspect-ratio: auto } }', '<div class="sheet"><p>12 Mill Lane</p></div>'));
+  assert.deepEqual(clipped.issues, [], 'a layout risk never blocks submission');
+  assert.equal(clipped.warnings.length, 1);
+  assert.match(clipped.warnings[0], /"\.sheet" has a fixed aspect-ratio/);
+  assert.equal(preflightHouseHtml(page('main .card{overflow-y:clip;aspect-ratio:3.5/2}', '<main><section class="card front">Maya</section></main>')).warnings.length, 1);
+  assert.equal(preflightHouseHtml(page('', '<div style="aspect-ratio: 1; overflow: hidden">Scan for vendors</div>')).warnings.length, 1, 'inline styles count');
+  const fine = [
+    page('.sheet { aspect-ratio: 297 / 420; }', '<div class="sheet"><p>12 Mill Lane</p></div>'), // can grow: overflow visible
+    page('.sheet { aspect-ratio: auto; overflow: hidden; }', '<div class="sheet"><p>12 Mill Lane</p></div>'),
+    page('.dot { aspect-ratio: 1; overflow: hidden; border-radius: 50%; }', '<div class="dot"><svg viewBox="0 0 2 2"><circle r="1"/></svg></div>'), // decoration only
+    page('.sheet::before { aspect-ratio: 1; overflow: hidden; }', '<div class="sheet"><p>12 Mill Lane</p></div>'), // not a simple selector
+    page('.missing { aspect-ratio: 1; overflow: hidden; }', ''),
+  ];
+  for (const html of fine) assert.deepEqual(preflightHouseHtml(html).warnings, [], html);
+});
+
+test('a layout warning gets the one repair, and the page is submitted even if the repair keeps it', async () => {
+  const risky = `<!doctype html><html><head><title>Card</title><style>.card{aspect-ratio:3.5/2;overflow:hidden}</style></head><body><div class="card"><h1>Crumb and Co. Bakery</h1><p>Open Tuesday to Sunday, seven in the morning until three in the afternoon.</p></div></body></html>`;
+  const revisions: (string | undefined)[] = [];
+  let uploaded = 0;
+  const agent = streamingHouseAgent({ id: 'test', name: 'Test', description: '.', style: '.' }, async (_ctx, _profile, _onText, revision) => {
+    revisions.push(revision?.failed.map(f => f.requirement).join('|'));
+    return { text: risky, stopReason: 'end_turn' };
+  });
+  const ctx = {
+    competition: { id: 'cmp_test', title: 'Card', requirements: [] }, signal: new AbortController().signal, timeLeftMs: () => 120_000,
+    uploadAsset: async () => { uploaded++; return { id: 'ast_1' }; }, submit: async () => ({ id: 'sub_1' }),
+  } as unknown as AgentContext;
+  await agent.run(ctx);
+  assert.deepEqual(revisions, [undefined, 'All text fully visible at every size and in print']);
+  assert.equal(uploaded, 1);
+});

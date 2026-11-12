@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business card: Maya Okafor, Product Designer</title>
+<style>
+  :root {
+    --paper: #f4eee4;
+    --ink: #2a2521;
+    --muted: #6b6055;
+    --night: #2a2521;
+    --cream: #f4eee4;
+    --accent: #a8714a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #e9e2d6;
+    color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", Times, serif;
+    -webkit-text-size-adjust: 100%;
+    overflow-x: hidden;
+  }
+  .page {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 32px 20px 48px;
+  }
+  .note {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+  .note strong { color: var(--ink); font-weight: 600; }
+  .cards {
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+    align-items: center;
+  }
+  .side { margin: 0; width: min(100%, 440px); }
+  .tag {
+    display: block;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  .card {
+    container-type: inline-size;
+    width: 100%;
+    aspect-ratio: 3.5 / 2;
+    position: relative;
+    padding: 7cqw 8cqw;
+    border-radius: 3px;
+    box-shadow: 0 1px 2px rgba(42,37,33,.12), 0 8px 24px rgba(42,37,33,.10);
+  }
+  .front {
+    background: var(--paper);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .front .mark {
+    width: 9cqw;
+    height: 9cqw;
+    min-width: 0;
+  }
+  .front .name {
+    margin: 0;
+    font-weight: 400;
+    font-size: 9.5cqw;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+  }
+  .front .title {
+    margin: 2.4cqw 0 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 3.7cqw;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .back {
+    background: var(--night);
+    color: var(--cream);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .back .rule {
+    width: 14cqw;
+    height: 1px;
+    background: var(--accent);
+    margin: 0 0 5cqw;
+    border: 0;
+  }
+  .back .item { margin: 0 0 3.6cqw; }
+  .back .item:last-child { margin-bottom: 0; }
+  .back .label {
+    display: block;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 2.6cqw;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #c9a27f;
+    margin: 0 0 0.8cqw;
+  }
+  .back .value {
+    display: block;
+    font-size: 5.2cqw;
+    line-height: 1.2;
+    word-break: break-word;
+  }
+  .back .value a { color: inherit; text-decoration: none; border-bottom: 1px solid rgba(244,238,228,.4); }
+
+  @media (min-width: 900px) {
+    .page { padding-top: 56px; }
+    .cards { flex-direction: row; justify-content: center; align-items: flex-start; gap: 48px; }
+    .side { width: 440px; }
+  }
+
+  /* Print: two pages, 3.5 x 2 in each, front then back */
+  @page { size: 3.5in 2in; margin: 0; }
+  @media print {
+    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+    body { overflow: visible; }
+    .screen-only { display: none !important; }
+    .page { max-width: none; padding: 0; margin: 0; }
+    .cards { display: block; gap: 0; }
+    .side { width: 3.5in; height: 2in; margin: 0; break-after: page; page-break-after: always; }
+    .side:last-child { break-after: auto; page-break-after: auto; }
+    .card {
+      width: 3.5in;
+      height: 2in;
+      aspect-ratio: auto;
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      padding: 0.24in 0.28in;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .front .name { font-size: 18pt; }
+    .front .title { font-size: 8.5pt; margin-top: 4pt; }
+    .front .mark { width: 0.3in; height: 0.3in; }
+    .back .rule { width: 0.5in; margin-bottom: 9pt; }
+    .back .item { margin-bottom: 7pt; }
+    .back .label { font-size: 7.5pt; margin-bottom: 2pt; }
+    .back .value { font-size: 10pt; }
+    .back .value a { border-bottom: none; }
+  }
+</style>
+</head>
+<body>
+<main class="page">
+  <p class="note screen-only">
+    <strong>Trim size: 3.5 × 2 in</strong> (standard US business card). Front and back are shown below as two separate sides. To print, open the print dialog, set the scale to 100% (or "Actual size"), turn off headers and footers, and print. The print layout produces two pages: page 1 is the front, page 2 is the back.
+  </p>
+
+  <div class="cards">
+    <figure class="side">
+      <figcaption class="tag screen-only">Front</figcaption>
+      <section class="card front" aria-label="Card front">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="#a8714a" stroke-width="1.5"/>
+          <circle cx="12" cy="12" r="3.5" fill="#a8714a"/>
+        </svg>
+        <div>
+          <h1 class="name">Maya Okafor</h1>
+          <p class="title">Product Designer</p>
+        </div>
+      </section>
+    </figure>
+
+    <figure class="side">
+      <figcaption class="tag screen-only">Back</figcaption>
+      <section class="card back" aria-label="Card back">
+        <hr class="rule">
+        <div class="item">
+          <span class="label">Email</span>
+          <span class="value"><a href="mailto:maya@example.com">maya@example.com</a></span>
+        </div>
+        <div class="item">
+          <span class="label">Website</span>
+          <span class="value"><a href="https://example.com/maya">example.com/maya</a></span>
+        </div>
+      </section>
+    </figure>
+  </div>
+</main>
+</body>
+</html>

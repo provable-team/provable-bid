@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spoke &amp; Chain Saturday Fix-It Clinic: A3 Poster</title>
+<style>
+  :root {
+    --paper: #f5f0e6;
+    --sand: #e9e2d4;
+    --ink: #2a2622;
+    --muted: #6b6258;
+    --accent: #9a4f2e;
+    --rule: #cbbfa9;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--sand);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body { padding: 16px 0; }
+
+  .page {
+    width: 100%;
+    max-width: 297mm;
+    margin: 0 auto;
+    background: var(--paper);
+    padding: clamp(24px, 6vw, 64px);
+    display: flex;
+    flex-direction: column;
+    gap: clamp(24px, 5vw, 48px);
+  }
+
+  .kicker {
+    font-family: var(--sans);
+    font-size: clamp(0.8rem, 1.6vw, 0.95rem);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(2.3rem, 8vw, 5.2rem);
+    line-height: 1.02;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  h1 .amp { font-style: italic; color: var(--accent); }
+
+  .lede {
+    font-family: var(--serif);
+    font-size: clamp(1.2rem, 3.2vw, 1.9rem);
+    line-height: 1.35;
+    margin: 0;
+    max-width: 30em;
+    color: var(--ink);
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0;
+    border-top: 1px solid var(--ink);
+  }
+
+  .fact {
+    padding: 20px 20px 4px 0;
+  }
+
+  .fact + .fact {
+    border-left: 1px solid var(--rule);
+    padding-left: 20px;
+  }
+
+  .label {
+    display: block;
+    font-size: clamp(0.8rem, 1.6vw, 0.9rem);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .value {
+    font-family: var(--serif);
+    font-size: clamp(1.4rem, 3.4vw, 2rem);
+    line-height: 1.2;
+    margin: 0;
+  }
+
+  .visit {
+    scroll-margin-top: 24px;
+    background: var(--ink);
+    color: var(--paper);
+    padding: clamp(22px, 4vw, 36px);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 32px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .visit .addr {
+    font-family: var(--serif);
+    font-size: clamp(1.8rem, 5vw, 3rem);
+    line-height: 1.1;
+    margin: 0;
+  }
+
+  .visit .note {
+    margin: 0;
+    font-size: clamp(0.95rem, 2vw, 1.1rem);
+    line-height: 1.45;
+    color: #e6dccb;
+    max-width: 22em;
+  }
+
+  .cta {
+    display: inline-block;
+    font-family: var(--sans);
+    font-size: clamp(0.95rem, 2vw, 1.1rem);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    background: var(--paper);
+    text-decoration: none;
+    padding: 14px 22px;
+    border-radius: 2px;
+  }
+
+  .cta:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-top: auto;
+  }
+
+  .foot .sig {
+    font-family: var(--serif);
+    font-size: clamp(1rem, 2.4vw, 1.3rem);
+    margin: 0;
+    line-height: 1.3;
+  }
+
+  .foot .sig small {
+    display: block;
+    font-family: var(--sans);
+    font-size: clamp(0.8rem, 1.6vw, 0.9rem);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .wheel {
+    width: clamp(90px, 22vw, 150px);
+    height: auto;
+    display: block;
+    flex: 0 0 auto;
+  }
+
+  /* ---------- Print: one A3 portrait page, artwork fills it ---------- */
+  @page {
+    size: A3 portrait;
+    margin: 0;
+  }
+
+  @media print {
+    html, body {
+      width: 297mm;
+      height: 420mm;
+      margin: 0;
+      padding: 0;
+      background: var(--paper);
+    }
+
+    body { padding: 0; }
+
+    .page {
+      width: 297mm;
+      height: 420mm;
+      max-width: none;
+      margin: 0;
+      padding: 24mm 24mm 20mm 24mm;
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      break-after: page;
+      gap: 12mm;
+      background: var(--paper);
+    }
+
+    .kicker {
+      font-size: 11pt;
+      padding-bottom: 4mm;
+    }
+
+    h1 {
+      font-size: 72pt;
+      line-height: 1.02;
+    }
+
+    .lede {
+      font-size: 24pt;
+      line-height: 1.35;
+      max-width: none;
+    }
+
+    .fact { padding: 6mm 6mm 2mm 0; }
+    .fact + .fact { padding-left: 6mm; }
+
+    .label {
+      font-size: 10pt;
+      margin-bottom: 3mm;
+    }
+
+    .value { font-size: 22pt; }
+
+    .visit {
+      padding: 10mm;
+      gap: 6mm 12mm;
+    }
+
+    .visit .addr { font-size: 40pt; }
+    .visit .note { font-size: 14pt; max-width: none; }
+
+    .cta { display: none; }
+
+    .foot .sig { font-size: 14pt; }
+    .foot .sig small { font-size: 10pt; }
+
+    .wheel { width: 40mm; }
+  }
+</style>
+</head>
+<body>
+
+<main class="page" id="top">
+
+  <p class="kicker">Spoke &amp; Chain · Neighborhood bike repair</p>
+
+  <h1>Spoke <span class="amp">&amp;</span> Chain Saturday Fix-It Clinic</h1>
+
+  <p class="lede">Free safety checks for your bike, every Saturday from 10am to 2pm.</p>
+
+  <section class="facts" aria-label="Clinic details">
+    <div class="fact">
+      <span class="label">When</span>
+      <p class="value">Saturdays, 10am to 2pm</p>
+    </div>
+    <div class="fact">
+      <span class="label">Where</span>
+      <p class="value">12 Mill Lane</p>
+    </div>
+    <div class="fact">
+      <span class="label">What</span>
+      <p class="value">Free safety checks</p>
+    </div>
+  </section>
+
+  <section class="visit" id="visit" aria-labelledby="visit-title">
+    <div>
+      <span class="label" style="color:#cfc3ad">Find us</span>
+      <p class="addr" id="visit-title">12 Mill Lane</p>
+    </div>
+    <p class="note">Spoke &amp; Chain runs the Saturday Fix-It Clinic at this address, from 10am to 2pm.</p>
+    <a class="cta" href="#visit">Come to 12 Mill Lane</a>
+  </section>
+
+  <footer class="foot">
+    <p class="sig">Spoke &amp; Chain
+      <small>A neighborhood bike repair shop</small>
+    </p>
+    <svg class="wheel" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+      <circle cx="60" cy="60" r="54" fill="none" stroke="#2a2622" stroke-width="2"/>
+      <circle cx="60" cy="60" r="6" fill="none" stroke="#9a4f2e" stroke-width="2"/>
+      <g stroke="#6b6258" stroke-width="1.2">
+        <line x1="60" y1="54" x2="60" y2="6"/>
+        <line x1="60" y1="66" x2="60" y2="114"/>
+        <line x1="54" y1="60" x2="6" y2="60"/>
+        <line x1="66" y1="60" x2="114" y2="60"/>
+        <line x1="57" y1="55" x2="20" y2="20"/>
+        <line x1="63" y1="65" x2="100" y2="100"/>
+        <line x1="63" y1="55" x2="100" y2="20"/>
+        <line x1="57" y1="65" x2="20" y2="100"/>
+      </g>
+    </svg>
+  </footer>
+
+</main>
+
+</body>
+</html>

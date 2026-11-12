@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business Card: Maya Okafor, Product Designer</title>
+<style>
+  :root {
+    --ink: #2d2a4a;
+    --soft: #5b5778;
+    --lavender: #e9e3fb;
+    --mint: #dff6ee;
+    --mint-deep: #bfeedd;
+    --peach: #ffd9c7;
+    --lilac: #cfc3f5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #faf8ff;
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+    padding: 24px 16px 40px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  .note {
+    background: #ffffff;
+    border: 1px solid #e4dff5;
+    border-radius: 18px;
+    padding: 16px 20px;
+    margin: 0 0 24px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--soft);
+  }
+  .note strong { color: var(--ink); }
+  .sides {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .side-block { width: min(100%, 420px); }
+  .side-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--soft);
+    margin: 0 0 10px 4px;
+  }
+
+  /* Card: fluid, keeps 3.5 x 2 proportion on screen */
+  .card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3.5 / 2;
+    container-type: inline-size;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(45, 42, 74, 0.12);
+    margin: 0;
+  }
+  .front { background: var(--lavender); }
+  .back { background: var(--mint); }
+
+  /* Decorative CSS shapes, kept clear of the text */
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .front .blob-a {
+    width: 26cqw; height: 26cqw;
+    top: 7cqw; right: 7cqw;
+    background: var(--peach);
+  }
+  .front .blob-b {
+    width: 9cqw; height: 9cqw;
+    top: 38cqw; right: 12cqw;
+    background: var(--lilac);
+  }
+  .front .blob-c {
+    width: 5cqw; height: 5cqw;
+    top: 8cqw; right: 40cqw;
+    background: var(--mint-deep);
+  }
+  .back .blob-a {
+    width: 22cqw; height: 22cqw;
+    bottom: -6cqw; right: 6cqw;
+    background: var(--mint-deep);
+  }
+  .back .blob-b {
+    width: 8cqw; height: 8cqw;
+    top: 8cqw; right: 9cqw;
+    background: var(--lilac);
+  }
+
+  .front-text {
+    position: absolute;
+    left: 8cqw;
+    right: 8cqw;
+    bottom: 9cqw;
+  }
+  .name {
+    margin: 0;
+    font-size: 11cqw;
+    line-height: 1.05;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .title {
+    margin: 2.6cqw 0 0;
+    font-size: 4.8cqw;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--soft);
+  }
+
+  .back-top {
+    position: absolute;
+    left: 8cqw;
+    top: 8cqw;
+    margin: 0;
+    font-size: 4.6cqw;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .contact {
+    position: absolute;
+    left: 8cqw;
+    right: 8cqw;
+    bottom: 9cqw;
+    margin: 0;
+  }
+  .contact div { margin: 0 0 3.6cqw; }
+  .contact div:last-child { margin-bottom: 0; }
+  .contact dt {
+    font-size: 3.4cqw;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--soft);
+  }
+  .contact dd {
+    margin: 0.6cqw 0 0;
+    font-size: 5.6cqw;
+    font-weight: 600;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+  .contact a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 2px solid var(--lilac);
+  }
+  .contact a:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+
+  .footnote {
+    margin: 22px auto 0;
+    max-width: 420px;
+    font-size: 14px;
+    color: var(--soft);
+    text-align: center;
+  }
+
+  /* Print: exactly two 3.5 x 2 in pages, no margins, notes hidden */
+  @page { size: 3.5in 2in; margin: 0; }
+  @media print {
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff !important;
+      min-height: 0 !important;
+      overflow: visible !important;
+    }
+    .wrap { max-width: none; margin: 0; }
+    .note, .footnote, .side-label, .screen-only { display: none !important; }
+    .sides { display: block; gap: 0; }
+    .side-block { width: 3.5in; height: 2in; margin: 0; }
+    .card {
+      width: 3.5in;
+      height: 2in;
+      aspect-ratio: auto;
+      border-radius: 0;
+      box-shadow: none;
+      container-type: normal;
+      overflow: hidden;
+      break-after: page;
+      page-break-after: always;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .card.back { break-after: auto; page-break-after: auto; }
+    .card:last-child { break-after: auto; page-break-after: auto; }
+
+    .front .blob-a { width: 0.95in; height: 0.95in; top: 0.2in; right: 0.22in; }
+    .front .blob-b { width: 0.3in; height: 0.3in; top: 1.2in; right: 0.36in; }
+    .front .blob-c { width: 0.16in; height: 0.16in; top: 0.24in; right: 1.3in; }
+    .back .blob-a { width: 0.8in; height: 0.8in; bottom: -0.2in; right: 0.2in; }
+    .back .blob-b { width: 0.26in; height: 0.26in; top: 0.24in; right: 0.3in; }
+
+    .front-text { left: 0.28in; right: 0.28in; bottom: 0.3in; }
+    .name { font-size: 17pt; }
+    .title { margin-top: 3pt; font-size: 8pt; }
+
+    .back-top { left: 0.28in; top: 0.26in; font-size: 8pt; }
+    .contact { left: 0.28in; right: 0.28in; bottom: 0.3in; }
+    .contact div { margin-bottom: 7pt; }
+    .contact dt { font-size: 6.5pt; }
+    .contact dd { margin-top: 1pt; font-size: 10pt; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="note" role="note">
+    <strong>Business card, US trim size 3.5 × 2 in.</strong>
+    Front shows the name and title; back shows email and website. To print, open the print dialog, choose Actual size (100%) with no margins and no headers or footers. The card prints as two pages: page 1 is the front, page 2 is the back.
+  </div>
+
+  <main class="sides">
+
+    <section class="side-block" aria-label="Front of card">
+      <p class="side-label">Front</p>
+      <div class="card front">
+        <span class="blob blob-a" aria-hidden="true"></span>
+        <span class="blob blob-b" aria-hidden="true"></span>
+        <span class="blob blob-c" aria-hidden="true"></span>
+        <div class="front-text">
+          <h1 class="name">Maya Okafor</h1>
+          <p class="title">Product Designer</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="side-block" aria-label="Back of card">
+      <p class="side-label">Back</p>
+      <div class="card back">
+        <span class="blob blob-a" aria-hidden="true"></span>
+        <span class="blob blob-b" aria-hidden="true"></span>
+        <p class="back-top">Maya Okafor</p>
+        <dl class="contact">
+          <div>
+            <dt>Email</dt>
+            <dd><a href="mailto:maya@example.com">maya@example.com</a></dd>
+          </div>
+          <div>
+            <dt>Website</dt>
+            <dd><a href="https://example.com/maya">example.com/maya</a></dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+  </main>
+
+  <p class="footnote screen-only">Shown at 3.5 × 2 in proportions. Scale the browser or print at actual size to keep the card true to size.</p>
+</div>
+</body>
+</html>

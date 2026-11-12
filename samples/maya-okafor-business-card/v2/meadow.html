@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business Card: Maya Okafor, Product Designer</title>
+<style>
+@page { size: 3.5in 2in; margin: 0; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #f6f1f8;
+  color: #3d2c4a;
+  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  overflow-x: hidden;
+}
+
+.page {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 28px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+
+.intro {
+  width: 100%;
+  max-width: 720px;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 18px 20px;
+  box-shadow: 0 4px 16px rgba(61, 44, 74, 0.08);
+}
+.intro h1 {
+  font-size: 1.15rem;
+  margin: 0 0 6px;
+  color: #5b3f74;
+}
+.intro p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  width: 100%;
+}
+
+/* Card: 3.5 x 2 in, scales fluidly with its width */
+.side {
+  position: relative;
+  width: min(100%, 336px);
+  aspect-ratio: 3.5 / 2;
+  border-radius: 18px;
+  box-shadow: 0 6px 18px rgba(61, 44, 74, 0.14);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.front {
+  background: linear-gradient(135deg, #d9f3ea 0%, #e6e0fa 100%);
+}
+.back {
+  background: linear-gradient(135deg, #fde6dc 0%, #fff4e8 100%);
+  justify-content: space-between;
+}
+
+/* decorative CSS illustration layer, kept clear of text */
+.deco {
+  position: absolute;
+  pointer-events: none;
+}
+.front .blob-a {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: #b8e6d2; top: -18px; right: -14px;
+}
+.front .blob-b {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: #c9bdf2; bottom: -12px; right: 46px; opacity: 0.8;
+}
+.front .blob-c {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #f7c9dc; bottom: 16px; left: -8px;
+}
+.back .blob-a {
+  width: 58px; height: 58px; border-radius: 50%;
+  background: #f9c7b3; top: -16px; left: -14px;
+}
+.back .blob-b {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: #d8cdf5; bottom: -10px; right: 20px;
+}
+.back .blob-c {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #b8e6d2; top: 20px; right: 28px;
+}
+
+.name {
+  margin: 0;
+  font-size: 1.7rem;
+  line-height: 1.15;
+  font-weight: 700;
+  color: #3d2c4a;
+  position: relative;
+}
+.title {
+  margin: 6px 0 0;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  font-weight: 600;
+  color: #6b4f86;
+  position: relative;
+}
+.rule {
+  width: 44px;
+  height: 5px;
+  border-radius: 99px;
+  background: #8fd3b6;
+  margin-top: 12px;
+  position: relative;
+}
+
+.contact-label {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a6f9c;
+  font-weight: 700;
+  position: relative;
+}
+.contact-block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.contact-line {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  font-weight: 600;
+  color: #3d2c4a;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.contact-name {
+  position: relative;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #6b4f86;
+  margin: 0;
+}
+
+.note {
+  width: 100%;
+  max-width: 720px;
+  font-size: 0.85rem;
+  color: #6b5a78;
+  line-height: 1.5;
+  margin: 0;
+  text-align: center;
+}
+
+@media print {
+  html, body {
+    background: #ffffff;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+  .no-print { display: none !important; }
+  .page {
+    display: block;
+    padding: 0;
+    margin: 0;
+    max-width: none;
+    gap: 0;
+  }
+  .cards {
+    display: block;
+    gap: 0;
+    width: auto;
+  }
+  .side {
+    width: 3.5in;
+    height: 2in;
+    aspect-ratio: auto;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0.25in 0.27in;
+    break-inside: avoid;
+  }
+  .front { break-after: page; page-break-after: always; }
+  .back { break-after: auto; page-break-after: auto; }
+  .front .blob-a, .back .blob-a { top: -0.2in; }
+  .name { font-size: 19pt; }
+  .title { font-size: 10pt; }
+  .contact-label { font-size: 8pt; }
+  .contact-line { font-size: 10pt; }
+  .contact-name { font-size: 8.5pt; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+
+  <section class="intro no-print" aria-label="About this file">
+    <h1>Maya Okafor, Product Designer: business card</h1>
+    <p>Trim size: 3.5 x 2 in (US business card). Print at 100% scale with margins set to none, then print both pages: page 1 is the front, page 2 is the back. Turn on background graphics to keep the pastel colors.</p>
+  </section>
+
+  <div class="cards">
+
+    <article class="side front" aria-label="Front of card">
+      <span class="deco blob-a" aria-hidden="true"></span>
+      <span class="deco blob-b" aria-hidden="true"></span>
+      <span class="deco blob-c" aria-hidden="true"></span>
+      <h2 class="name">Maya Okafor</h2>
+      <p class="title">Product Designer</p>
+      <span class="rule" aria-hidden="true"></span>
+    </article>
+
+    <article class="side back" aria-label="Back of card">
+      <span class="deco blob-a" aria-hidden="true"></span>
+      <span class="deco blob-b" aria-hidden="true"></span>
+      <span class="deco blob-c" aria-hidden="true"></span>
+      <div class="contact-block">
+        <p class="contact-label">Contact</p>
+        <p class="contact-line">maya@example.com</p>
+        <p class="contact-line">example.com/maya</p>
+      </div>
+      <p class="contact-name">Maya Okafor · Product Designer</p>
+    </article>
+
+  </div>
+
+  <p class="note no-print">The front and back above are the two sides of the card. Each one is shown at 3.5 x 2 in proportions and scales to fit your screen.</p>
+
+</main>
+</body>
+</html>

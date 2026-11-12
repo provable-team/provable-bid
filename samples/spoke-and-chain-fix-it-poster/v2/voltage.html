@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spoke &amp; Chain Saturday Fix-It Clinic: A3 Poster</title>
+<style>
+:root{
+  --ink:#0c0c0c;
+  --acc:#ffd400;
+  --paper:#ffffff;
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  padding:0;
+  background:#1f1f1f;
+  font-family:"Arial Black","Helvetica Neue",Arial,Helvetica,sans-serif;
+  color:var(--paper);
+  overflow-x:hidden;
+}
+.poster{
+  width:100%;
+  max-width:900px;
+  margin:16px auto;
+  background:var(--ink);
+  color:var(--paper);
+  padding:clamp(20px,5vw,48px);
+  display:flex;
+  flex-direction:column;
+  gap:clamp(20px,4vw,40px);
+}
+.top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:16px;
+  border-bottom:4px solid var(--acc);
+  padding-bottom:16px;
+}
+.brand{
+  font-size:clamp(16px,3vw,24px);
+  color:var(--acc);
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.mark{
+  width:clamp(56px,12vw,120px);
+  height:auto;
+  flex:0 0 auto;
+}
+.hero{
+  display:flex;
+  flex-direction:column;
+  gap:clamp(14px,3vw,28px);
+}
+.kicker{
+  margin:0;
+  font-size:clamp(14px,2.4vw,20px);
+  color:var(--acc);
+  text-transform:uppercase;
+  letter-spacing:.06em;
+}
+h1{
+  margin:0;
+  font-size:clamp(44px,11vw,128px);
+  line-height:.92;
+  font-weight:900;
+  letter-spacing:-.01em;
+  overflow-wrap:break-word;
+}
+h1 .acc{color:var(--acc)}
+.lede{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  font-weight:700;
+  font-size:clamp(18px,2.8vw,28px);
+  line-height:1.3;
+  max-width:36ch;
+}
+.facts{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:12px;
+}
+.fact{
+  border:3px solid var(--paper);
+  padding:18px 20px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.fact.big{
+  background:var(--acc);
+  border-color:var(--acc);
+  color:var(--ink);
+}
+.label{
+  font-family:Arial,Helvetica,sans-serif;
+  font-weight:700;
+  font-size:14px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.fact strong{
+  font-size:clamp(24px,4vw,44px);
+  line-height:1.05;
+  font-weight:900;
+  overflow-wrap:break-word;
+}
+footer{
+  font-family:Arial,Helvetica,sans-serif;
+  font-weight:700;
+  font-size:clamp(14px,2vw,18px);
+  border-top:4px solid var(--acc);
+  padding-top:14px;
+  line-height:1.4;
+}
+.print-btn{
+  display:block;
+  margin:0 auto 16px;
+  padding:12px 22px;
+  background:var(--acc);
+  color:var(--ink);
+  border:0;
+  font-family:Arial,Helvetica,sans-serif;
+  font-weight:700;
+  font-size:16px;
+  cursor:pointer;
+}
+@media (min-width:700px){
+  .facts{grid-template-columns:1.4fr 1fr 1fr}
+}
+@page{
+  size:A3 portrait;
+  margin:0;
+}
+@media print{
+  html,body{
+    width:297mm;
+    height:420mm;
+    margin:0;
+    padding:0;
+    background:var(--ink);
+    overflow:visible;
+  }
+  .no-print{display:none !important}
+  .poster{
+    width:297mm;
+    height:420mm;
+    max-width:none;
+    margin:0;
+    padding:18mm;
+    gap:10mm;
+    overflow:visible;
+  }
+  .top{padding-bottom:5mm;border-bottom-width:1.2mm}
+  .brand{font-size:9mm}
+  .mark{width:34mm}
+  .hero{flex:1 1 auto;gap:7mm;justify-content:center}
+  .kicker{font-size:6mm}
+  h1{font-size:30mm;line-height:.95}
+  .lede{font-size:8mm;max-width:none}
+  .facts{grid-template-columns:1.4fr 1fr 1fr;gap:4mm}
+  .fact{border-width:.9mm;padding:6mm 6mm;gap:3mm}
+  .label{font-size:4.2mm;letter-spacing:.06em}
+  .fact strong{font-size:9mm;line-height:1.05}
+  footer{font-size:4.6mm;border-top-width:1.2mm;padding-top:4mm}
+}
+</style>
+</head>
+<body>
+<main class="poster" id="poster">
+  <header class="top">
+    <div class="brand">Spoke &amp; Chain</div>
+    <svg class="mark" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+      <circle cx="60" cy="60" r="54" fill="none" stroke="#ffd400" stroke-width="8"/>
+      <circle cx="60" cy="60" r="6" fill="#ffd400"/>
+      <g stroke="#ffffff" stroke-width="2.5">
+        <line x1="60" y1="60" x2="60" y2="8"/>
+        <line x1="60" y1="60" x2="112" y2="60"/>
+        <line x1="60" y1="60" x2="60" y2="112"/>
+        <line x1="60" y1="60" x2="8" y2="60"/>
+        <line x1="60" y1="60" x2="98" y2="22"/>
+        <line x1="60" y1="60" x2="98" y2="98"/>
+        <line x1="60" y1="60" x2="22" y2="98"/>
+        <line x1="60" y1="60" x2="22" y2="22"/>
+      </g>
+    </svg>
+  </header>
+
+  <section class="hero">
+    <p class="kicker">Neighborhood bike repair</p>
+    <h1>Spoke &amp; Chain <span class="acc">Saturday Fix-It Clinic</span></h1>
+    <p class="lede">Free safety checks for your bike, run by Spoke &amp; Chain, your neighborhood bike repair shop.</p>
+  </section>
+
+  <section class="facts" aria-label="Clinic details">
+    <div class="fact big">
+      <span class="label">Safety checks</span>
+      <strong>Free</strong>
+    </div>
+    <div class="fact">
+      <span class="label">When</span>
+      <strong>Saturday 10am to 2pm</strong>
+    </div>
+    <div class="fact">
+      <span class="label">Where</span>
+      <strong>12 Mill Lane</strong>
+    </div>
+  </section>
+
+  <footer>Spoke &amp; Chain, a neighborhood bike repair shop. Saturday Fix-It Clinic at 12 Mill Lane.</footer>
+</main>
+<button class="print-btn no-print" type="button" onclick="window.print()">Print this A3 poster</button>
+</body>
+</html>

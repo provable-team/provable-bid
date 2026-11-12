@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Night Market: Fridays 6pm to 11pm in June, Free entry</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #f4ece6;
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #3b2f4a;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .screen-wrap { padding: 16px; }
+  .screen-note {
+    max-width: 560px; margin: 0 auto 14px; font-size: 14px; line-height: 1.5;
+    color: #5b4e66; background: #fffaf5; border-radius: 16px; padding: 12px 16px;
+  }
+
+  /* ---------- POSTER (screen: fluid) ---------- */
+  .poster {
+    position: relative;
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 28px 24px 24px;
+    border-radius: 28px;
+    background: linear-gradient(180deg, #ffd9c7 0%, #ffe9d6 34%, #e4dcf7 70%, #cfe9f1 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    overflow: visible;
+    box-shadow: 0 10px 30px rgba(120, 90, 130, 0.18);
+  }
+  .lanterns {
+    display: flex; justify-content: space-around; align-items: flex-start;
+    height: 74px; padding-top: 2px;
+  }
+  .lantern {
+    position: relative; width: 34px; height: 44px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff6d8, #ffd38a 60%, #f7b97a);
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.45);
+  }
+  .lantern::before {
+    content: ""; position: absolute; left: 50%; top: -14px; width: 2px; height: 14px;
+    background: #9a7ba3; transform: translateX(-50%);
+  }
+  .lantern::after {
+    content: ""; position: absolute; left: 50%; bottom: -6px; width: 14px; height: 6px;
+    background: #b98fb0; border-radius: 0 0 6px 6px; transform: translateX(-50%);
+  }
+  .lantern.l2 { width: 26px; height: 34px; margin-top: 14px; background: radial-gradient(circle at 35% 35%, #fff, #bfe6dc 60%, #8fcfc0); }
+  .lantern.l3 { width: 30px; height: 40px; margin-top: 6px; background: radial-gradient(circle at 35% 35%, #fff, #f9c6d8 60%, #ef9fbb); }
+  .lantern.l2::after, .lantern.l3::after { display: none; }
+
+  .kicker {
+    margin: 0; text-align: center; font-size: 15px; font-weight: 700;
+    letter-spacing: .18em; text-transform: uppercase; color: #7a4f73;
+  }
+  .title {
+    margin: 0; text-align: center; font-weight: 800; line-height: 1.02;
+    font-size: clamp(2.6rem, 11vw, 4.6rem); color: #3b2f4a;
+    letter-spacing: -0.01em;
+  }
+  .title span { display: block; }
+  .title .accent { color: #d86f6a; }
+
+  .when {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+  }
+  .chip {
+    background: #fffaf5; border-radius: 999px; padding: 10px 18px;
+    font-size: 17px; font-weight: 700; color: #3b2f4a;
+    box-shadow: 0 3px 10px rgba(120,90,130,0.12);
+  }
+  .chip.mint { background: #d6f1e8; }
+  .chip.lilac { background: #e9e1fb; }
+
+  .stalls-art { width: 100%; height: auto; display: block; }
+
+  .lead {
+    margin: 0; text-align: center; font-size: 19px; line-height: 1.5; color: #4f4360;
+  }
+
+  .bottom {
+    display: grid; grid-template-columns: 1fr; gap: 16px; align-items: center;
+  }
+  .qr-card {
+    background: #fffaf5; border-radius: 24px; padding: 18px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    box-shadow: 0 6px 18px rgba(120,90,130,0.14);
+  }
+  .qr-box {
+    width: 180px; height: 180px; border-radius: 14px; background: #ffffff;
+    padding: 10px; border: 3px dashed #b9a6cf; display: block;
+  }
+  .qr-box svg { width: 100%; height: 100%; display: block; }
+  .qr-label {
+    margin: 0; font-size: 18px; font-weight: 800; color: #3b2f4a; text-align: center;
+  }
+  .free {
+    background: #3b2f4a; color: #fffaf5; border-radius: 24px; padding: 22px 20px;
+    text-align: center;
+  }
+  .free .big {
+    display: block; font-size: 40px; font-weight: 800; line-height: 1.1; color: #ffd38a;
+  }
+  .free .small { display: block; margin-top: 8px; font-size: 17px; line-height: 1.45; }
+
+  .river {
+    width: 100%; height: 56px; display: block;
+  }
+
+  @media (min-width: 600px) {
+    .bottom { grid-template-columns: 1fr 1fr; }
+    .lead { font-size: 21px; }
+  }
+
+  /* ---------- PRINT: exactly one A3 portrait page ---------- */
+  @page { size: A3 portrait; margin: 0; }
+  @media print {
+    html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; min-height: 0 !important; }
+    .screen-wrap, .screen-note { display: none !important; }
+    .poster {
+      width: 297mm !important;
+      height: 420mm !important;
+      max-width: none !important;
+      margin: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      box-sizing: border-box !important;
+      position: relative !important;
+      overflow: hidden !important;
+      break-after: auto;
+      padding: 22mm 24mm 20mm !important;
+      gap: 9mm !important;
+      justify-content: space-between;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .lanterns { height: 30mm !important; }
+    .lantern { width: 14mm !important; height: 18mm !important; }
+    .lantern::before { height: 5mm !important; top: -5mm !important; }
+    .lantern::after { height: 2.5mm !important; width: 6mm !important; bottom: -2.5mm !important; }
+    .lantern.l2 { width: 11mm !important; height: 14mm !important; margin-top: 6mm !important; }
+    .lantern.l3 { width: 12.5mm !important; height: 16mm !important; margin-top: 2.5mm !important; }
+    .kicker { font-size: 13pt !important; }
+    .title { font-size: 92pt !important; line-height: 0.98 !important; }
+    .chip { font-size: 15pt !important; padding: 3mm 6mm !important; }
+    .when { gap: 4mm !important; }
+    .stalls-art { height: 46mm !important; }
+    .lead { font-size: 19pt !important; line-height: 1.4 !important; }
+    .bottom { grid-template-columns: 1fr 1fr !important; gap: 10mm !important; }
+    .qr-card { padding: 7mm !important; gap: 4mm !important; border-radius: 8mm !important; }
+    .qr-box { width: 70mm !important; height: 70mm !important; padding: 3mm !important; border-radius: 4mm !important; border-width: 1mm !important; }
+    .qr-label { font-size: 15pt !important; }
+    .free { padding: 8mm !important; border-radius: 8mm !important; }
+    .free .big { font-size: 34pt !important; }
+    .free .small { font-size: 14pt !important; margin-top: 3mm !important; }
+    .river { height: 26mm !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="screen-wrap">
+  <p class="screen-note">A3 portrait poster (297 x 420 mm). Print this page at A3 with no margins to get one poster page.</p>
+
+  <main class="poster" id="poster" aria-label="Riverside Night Market poster">
+
+    <div class="lanterns" aria-hidden="true">
+      <div class="lantern l1"></div>
+      <div class="lantern l2"></div>
+      <div class="lantern l3"></div>
+      <div class="lantern l1"></div>
+      <div class="lantern l2"></div>
+    </div>
+
+    <p class="kicker">Fridays in June</p>
+
+    <h1 class="title">
+      <span>Riverside</span>
+      <span class="accent">Night Market</span>
+    </h1>
+
+    <div class="when">
+      <span class="chip">Fridays</span>
+      <span class="chip mint">6pm to 11pm</span>
+      <span class="chip lilac">June</span>
+    </div>
+
+    <svg class="stalls-art" viewBox="0 0 600 150" role="img" aria-label="Drawn row of market stalls with striped awnings above a river">
+      <!-- stalls base -->
+      <rect x="0" y="108" width="600" height="42" fill="#c9b8e6" opacity="0.55"/>
+      <!-- stall 1 -->
+      <rect x="30" y="64" width="110" height="60" rx="8" fill="#fffaf5"/>
+      <path d="M22 64 Q30 34 50 40 L120 40 Q140 34 148 64 Z" fill="#f4a6a0"/>
+      <path d="M50 40 L60 64 L72 40 L84 64 L96 40 L108 64 L120 40 L132 64" fill="none" stroke="#fffaf5" stroke-width="0" />
+      <rect x="54" y="84" width="22" height="40" rx="4" fill="#ffd38a"/>
+      <rect x="90" y="84" width="34" height="18" rx="4" fill="#bfe6dc"/>
+      <!-- stall 2 -->
+      <rect x="170" y="56" width="120" height="68" rx="8" fill="#fffaf5"/>
+      <path d="M160 56 Q170 26 192 32 L268 32 Q288 26 300 56 Z" fill="#9fd8c8"/>
+      <rect x="188" y="84" width="40" height="40" rx="4" fill="#e9e1fb"/>
+      <rect x="240" y="84" width="36" height="18" rx="4" fill="#ffd38a"/>
+      <!-- stall 3 -->
+      <rect x="320" y="64" width="110" height="60" rx="8" fill="#fffaf5"/>
+      <path d="M312 64 Q320 34 340 40 L410 40 Q430 34 438 64 Z" fill="#ffd38a"/>
+      <rect x="342" y="84" width="34" height="40" rx="4" fill="#f9c6d8"/>
+      <rect x="388" y="84" width="22" height="18" rx="4" fill="#bfe6dc"/>
+      <!-- stall 4 -->
+      <rect x="460" y="56" width="120" height="68" rx="8" fill="#fffaf5"/>
+      <path d="M450 56 Q460 26 482 32 L558 32 Q578 26 590 56 Z" fill="#e9e1fb"/>
+      <rect x="480" y="84" width="40" height="40" rx="4" fill="#f4a6a0"/>
+      <rect x="530" y="84" width="36" height="18" rx="4" fill="#9fd8c8"/>
+      <!-- string lights -->
+      <path d="M0 22 Q150 6 300 22 Q450 38 600 18" fill="none" stroke="#9a7ba3" stroke-width="2"/>
+      <circle cx="75" cy="24" r="5" fill="#ffd38a"/>
+      <circle cx="225" cy="30" r="5" fill="#f9c6d8"/>
+      <circle cx="375" cy="32" r="5" fill="#bfe6dc"/>
+      <circle cx="525" cy="26" r="5" fill="#ffd38a"/>
+    </svg>
+
+    <p class="lead">Riverside Night Market runs on Fridays from 6pm to 11pm throughout June. Come along for an evening by the water.</p>
+
+    <div class="bottom">
+      <div class="qr-card">
+        <div class="qr-box" role="img" aria-label="Drawn placeholder box, not a scannable code">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <defs>
+              <pattern id="cells" width="5" height="5" patternUnits="userSpaceOnUse">
+                <rect x="0" y="0" width="2.8" height="2.8" fill="#3b2f4a"/>
+                <rect x="2.8" y="2.8" width="2.2" height="2.2" fill="#3b2f4a"/>
+              </pattern>
+            </defs>
+            <rect x="0" y="0" width="100" height="100" fill="#ffffff"/>
+            <rect x="4" y="4" width="92" height="92" fill="url(#cells)" opacity="0.85"/>
+            <!-- finder patterns -->
+            <g>
+              <rect x="4" y="4" width="28" height="28" fill="#ffffff"/>
+              <rect x="4" y="4" width="28" height="28" fill="none" stroke="#3b2f4a" stroke-width="4"/>
+              <rect x="12" y="12" width="12" height="12" fill="#3b2f4a"/>
+            </g>
+            <g>
+              <rect x="68" y="4" width="28" height="28" fill="#ffffff"/>
+              <rect x="68" y="4" width="28" height="28" fill="none" stroke="#3b2f4a" stroke-width="4"/>
+              <rect x="76" y="12" width="12" height="12" fill="#3b2f4a"/>
+            </g>
+            <g>
+              <rect x="4" y="68" width="28" height="28" fill="#ffffff"/>
+              <rect x="4" y="68" width="28" height="28" fill="none" stroke="#3b2f4a" stroke-width="4"/>
+              <rect x="12" y="76" width="12" height="12" fill="#3b2f4a"/>
+            </g>
+          </svg>
+        </div>
+        <p class="qr-label">Scan for vendors</p>
+      </div>
+
+      <div class="free">
+        <span class="big">Free entry</span>
+        <span class="small">Riverside Night Market<br>Fridays, 6pm to 11pm, June</span>
+      </div>
+    </div>
+
+    <svg class="river" viewBox="0 0 600 56" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 18 Q75 2 150 18 T300 18 T450 18 T600 18 L600 56 L0 56 Z" fill="#9fd8e8"/>
+      <path d="M0 36 Q75 22 150 36 T300 36 T450 36 T600 36 L600 56 L0 56 Z" fill="#7cc4da"/>
+    </svg>
+
+  </main>
+</div>
+
+</body>
+</html>
