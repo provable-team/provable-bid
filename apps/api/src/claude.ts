@@ -3,8 +3,9 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
 import type { AgentAdapter, AgentContext as AgentContextT, EvaluatorAdapter } from '../../../packages/agent-interface/src/index.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
-import { gateHtml, prepareHtml, visibleText } from './html.js';
+import { visibleText } from './html.js';
 import { colorTracker, progressTracker, STEP, structuralLabel, structureTracker } from './progress.js';
+import { preflightHouseHtml } from './agent-preflight.js';
 
 type S = components['schemas'];
 // Claude Haiku 5.5 at medium effort for both the judge and the house agents. Haiku 5.5 has no server-side refusal
@@ -61,14 +62,9 @@ export const builderBrief = (c: AgentContextT['competition']) =>
 
 /** Takes a model's output, checks the page the way the API will, and enters it through the public API. */
 export async function submitHouseHtml(text: string, stopReason: string | null | undefined, profile: { id: string; name: string }, { competition: c, uploadAsset, submit }: AgentContextT, attempt = 1) {
-  const start = text.search(/<!doctype html/i);
-  const end = text.toLowerCase().lastIndexOf('</html>');
-  if (start < 0 || end < start) throw new Error(`no HTML document in output (stop_reason ${stopReason})`);
-  const html = text.slice(start, end + 7);
-  const gate = gateHtml(html);
-  if (gate) throw new Error(`own page fails the gate: ${gate.reason}`); // don't spend an attempt on it
+  const { html, issues } = preflightHouseHtml(text, stopReason);
+  if (issues.length) throw new Error(`own page fails preflight: ${issues.join(' ')}`);
   const base64 = Buffer.from(html, 'utf8').toString('base64');
-  prepareHtml(base64); // throws on anything the API would reject
   const n = attempt > 1 ? `-${attempt}` : '';
   const asset = await uploadAsset({ competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: base64 }, `${profile.id}-${c.id}-upload${n}`.slice(0, 128));
   const submission = await submit({ title: `${c.title.slice(0, 80)} — ${profile.name}`.slice(0, 120), artifacts: [{ asset_id: asset.id }] }, `${profile.id}-${c.id}-submit${n}`.slice(0, 128));
@@ -160,11 +156,13 @@ Hard rules (pages that break them are disqualified automatically):
 - Include <meta name="viewport" content="width=device-width, initial-scale=1"> and make it work at 375px wide with no horizontal scroll.
 - Satisfy every buyer requirement visibly and unambiguously; the page is checked requirement by requirement.
 - Write real, specific copy for this buyer (no lorem ipsum, no placeholders like "Your text here").
+- Every in-page link must have a real destination in this document. Make CTAs perform a useful local action (for example reveal a form or scroll to the requested section); do not use a decorative button as the finished interaction.
+- Do not invent customer testimonials, awards, usage numbers or business facts. Use buyer-provided facts and honest product-specific copy instead.
 - Give it a <title>.`;
 
 export type HouseProfile = { id: string; name: string; style: string; description: string };
 /** A failed attempt to revise: the agent's own previous page and the checks it failed (requirement text and reason). */
-export type Revision = { html: string; failed: { requirement: string; reason: string }[] };
+export type Revision = { html: string; failed: { requirement: string; reason: string }[]; source?: 'preflight' };
 /**
  * Produces a page for the brief, calling onText with the growing output as it streams in. With `revision`, it
  * produces a complete revised page that fixes the failed checks.
@@ -172,9 +170,11 @@ export type Revision = { html: string; failed: { requirement: string; reason: st
 export type PageGenerator = (ctx: AgentContextT, profile: HouseProfile, onText: (snapshot: string) => void, revision?: Revision) => Promise<{ text: string; stopReason: string | null }>;
 
 export const MAX_HOUSE_ATTEMPTS = 3;
+// Shared across all qualification attempts: at most one extra generation per agent run.
+export const MAX_PREFLIGHT_REPAIRS = 1;
 const REVISION_MIN_MS = 60_000;
 const revisionPrompt = (r: Revision) =>
-  `Your page was checked and did not pass these requirements:\n${r.failed.map(f => `- ${f.requirement}\n  Judge: ${f.reason}`).join('\n')}\n\n` +
+  `${r.source === 'preflight' ? 'Your local preflight found these problems before submission' : 'Your page was checked and did not pass these requirements'}:\n${r.failed.map(f => `- ${f.requirement}\n  ${r.source === 'preflight' ? 'Preflight' : 'Judge'}: ${f.reason}`).join('\n')}\n\n` +
   'Return one complete, revised HTML document that fixes these while keeping everything that already passed. Same rules as before: start with <!doctype html>, end with </html>, nothing else.';
 
 /**
@@ -189,15 +189,31 @@ export function streamingHouseAgent(profile: HouseProfile, generate: PageGenerat
     id: profile.id,
     async run(ctx) {
       let revision: Revision | undefined;
+      let repairs = 0;
       for (let attempt = 1; attempt <= MAX_HOUSE_ATTEMPTS; attempt++) {
-        const step = progressTracker(ctx.competition.requirements);
-        const colors = colorTracker();
-        const structure = structureTracker();
+        let step = progressTracker(ctx.competition.requirements);
+        let colors = colorTracker();
+        let structure = structureTracker();
         ctx.progress?.(STEP.planning, { immediate: true });
-        const { text, stopReason } = await generate(ctx, profile, snapshot => {
+        const showText = (snapshot: string) => {
           const shape = structure(snapshot);
           ctx.progress?.(structuralLabel(step(snapshot), shape), { colors: colors(snapshot), structure: shape });
-        }, revision);
+        };
+        let output = await generate(ctx, profile, showText, revision);
+        let preflight = preflightHouseHtml(output.text, output.stopReason);
+        if (preflight.issues.length && repairs < MAX_PREFLIGHT_REPAIRS && !ctx.signal.aborted &&
+          (ctx.timeLeftMs?.() ?? Infinity) >= REVISION_MIN_MS) {
+          repairs++;
+          step = progressTracker(ctx.competition.requirements);
+          colors = colorTracker();
+          structure = structureTracker();
+          ctx.progress?.(STEP.planning, { immediate: true });
+          output = await generate(ctx, profile, showText, { html: preflight.html, source: 'preflight',
+            failed: preflight.issues.map(reason => ({ requirement: 'Complete, usable self-contained HTML', reason })) });
+          preflight = preflightHouseHtml(output.text, output.stopReason);
+        }
+        if (preflight.issues.length) throw new Error(`own page fails preflight: ${preflight.issues.join(' ')}`);
+        const { text, stopReason } = output;
         ctx.progress?.(STEP.checking, { immediate: true, colors: colors(text), structure: structure(text, true) });
         const { submission, html } = await submitHouseHtml(text, stopReason, profile, ctx, attempt);
         // Feedback: wait for this entry's own check; revise only a failed one, with time left, up to 3 attempts.
