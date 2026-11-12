@@ -389,7 +389,7 @@ export async function createApi(o: ApiOptions) {
       case 'getConfig': return ok({
         mode: o.provider.mode, currency: 'USD', terms_version: policy.terms_version, policy,
         capabilities: { authorization: true, additional_checkout: true, external_agents: true, payouts: simulatePayouts ? 'simulated' : 'paypal_sandbox',
-          ai_evaluation: o.evaluator.version.startsWith('claude'), house_agents: !!o.houseAgents && Object.keys(o.houseAgents).length > 0, operator_onboarding: 'paypal_login',
+          ai_evaluation: !o.evaluator.version.startsWith('heuristic'), house_agents: !!o.houseAgents && Object.keys(o.houseAgents).length > 0, operator_onboarding: 'paypal_login',
           browser_previews: !!o.renderer },
         server_time: stamp(),
       });
@@ -664,8 +664,11 @@ export async function createApi(o: ApiOptions) {
       }
       case 'receivePayPalWebhook': {
         const genuine = await o.provider.verifyWebhook(headers, body).catch(() => false);
+        if (!genuine) log('webhook rejected: signature not verified', `${body?.event_type ?? '?'} ${body?.id ?? '?'}`);
         demand(genuine, 'INVALID_WEBHOOK', 'Webhook signature could not be verified with PayPal.', 400);
         if (!webhookEvents.has(body.id)) {
+          // Event type, PayPal event ID and resource ID only: no payer data in logs.
+          log('webhook verified', `${body.event_type} ${body.id} resource=${body.resource?.id ?? '?'}`);
           webhookEvents.set(body.id, { event_type: body.event_type, received_at: stamp() });
           return { status: 200, body: { accepted: true, event_id: body.id }, after: () => track(reconcileFromEvent(body).catch(e => log('webhook reconcile failed', (e as Error).message))) };
         }
