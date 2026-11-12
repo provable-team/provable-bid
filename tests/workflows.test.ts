@@ -41,7 +41,7 @@ const SECRET = 'workflows_secret_for_tests_0001';
 const page = (hours = true) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Crumb &amp; Co.</title></head><body>
 <h1>Crumb &amp; Co. — a family bakery since 1987</h1><p>Fresh sourdough and cardamom buns baked every morning.</p>
 ${hours ? '<section><h2>Opening hours</h2><p>Tuesday to Sunday, 7am to 3pm. Closed Mondays.</p></section>' : '<section><h2>Our story</h2><p>Three generations of bakers.</p></section>'}
-<a href="#preorder">Pre-order now</a></body></html>`;
+<a href="#preorder">Pre-order now</a><p id="preorder">Choose your collection time at the bakery.</p></body></html>`;
 const brief = {
   title: 'Landing page for a neighborhood bakery', brief: 'One page for Crumb & Co. Hero, opening hours, pre-order button. Mobile first.',
   bid: { currency: 'USD', amount_minor: 2000 }, submission_window_seconds: 300, decision_window_seconds: 3600, accepted_terms_version: 'race-v1',
