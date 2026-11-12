@@ -61,7 +61,7 @@ export default function MarketplacePage() {
             </a>
           </div>
           <div className={styles.heroFootnote}>
-            PayPal holds your price · reject everything and you pay nothing.
+            PayPal holds your price · reject everything and you pay nothing. <Link href="/how-it-works" style={{ color: "var(--ink)", textDecoration: "underline", textUnderlineOffset: 3 }}>How it works</Link>
           </div>
         </div>
         <div
