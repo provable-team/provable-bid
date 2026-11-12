@@ -13,7 +13,7 @@ the buyer's gallery, as sandboxed, watermarked live previews.
   the same price as separate checkouts.
 - **Reject all, no decision, or no qualifiers:** the hold is **voided**. The buyer pays nothing.
 
-Live (PayPal sandbox): **https://provable-race-web.onrender.com** · API https://provable-race-api.onrender.com
+Live (PayPal sandbox): **https://provable.bid** · API https://provable-race-api.onrender.com
 
 ## How it's built
 

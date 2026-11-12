@@ -184,7 +184,12 @@ export async function createApi(o: ApiOptions) {
   }
 
   /** Create (or resume) the PayPal order for a payment. The request ID is flushed to disk before the call. */
-  async function ensureOrder(c: S['Competition'], pay: S['Payment'], intent: 'AUTHORIZE' | 'CAPTURE'): Promise<S['Checkout']> {
+  /** PayPal sends the buyer back to the site they started on (if it is one of ours), so their stored session is there. */
+  const webOriginFor = (headers: Record<string, unknown>) => {
+    const origin = typeof headers.origin === 'string' ? headers.origin : '';
+    return origins.includes(origin) ? origin : o.webOrigin;
+  };
+  async function ensureOrder(c: S['Competition'], pay: S['Payment'], intent: 'AUTHORIZE' | 'CAPTURE', webOrigin = o.webOrigin): Promise<S['Checkout']> {
     const existing = checkouts.get(pay.id);
     if (existing && time() < Date.parse(existing.expires_at)) return existing;
     if (existing && pay.provider_order_id) {
@@ -197,7 +202,7 @@ export async function createApi(o: ApiOptions) {
     op.state = 'running'; op.attempts++; op.updated_at = stamp();
     pay.operation_id = op.id; pay.operation_state = 'running';
     st.flush(); // persist the PayPal-Request-Id before PayPal sees it
-    const returnTo = `${o.webOrigin}/competitions/${c.id}`;
+    const returnTo = `${webOrigin}/competitions/${c.id}`;
     const kind = pay.purpose === 'initial' ? 'authorize' : 'purchase';
     try {
       const r = await o.provider.createOrder({
@@ -492,7 +497,7 @@ export async function createApi(o: ApiOptions) {
         const c = fetchOne(competitions, params.competition_id); owner(c, who());
         demand(['draft', 'awaiting_authorization'].includes(c.state));
         if (!c.initial_payment_id) { c.initial_payment_id = makePayment(c, 'initial').id; c.state = 'awaiting_authorization'; update(c); }
-        const checkout = await ensureOrder(c, fetchOne(payments, c.initial_payment_id), 'AUTHORIZE');
+        const checkout = await ensureOrder(c, fetchOne(payments, c.initial_payment_id), 'AUTHORIZE', webOriginFor(headers));
         return ok(view(checkout), 201);
       }
       case 'authorizeCompetition': {
@@ -578,7 +583,7 @@ export async function createApi(o: ApiOptions) {
           purchases.set(purchase.id, purchase);
         }
         const pay = fetchOne(payments, purchase.payment_id);
-        if (pay.capture_state === 'none') purchase.checkout = await ensureOrder(c, pay, 'CAPTURE');
+        if (pay.capture_state === 'none') purchase.checkout = await ensureOrder(c, pay, 'CAPTURE', webOriginFor(headers));
         return ok(purchaseView(purchase), 201);
       }
       case 'listPurchases': {

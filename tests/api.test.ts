@@ -387,6 +387,21 @@ test('state survives a restart; an operation interrupted mid-call resumes with t
   assert.ok(retried.every(x => x.requestId === journaled.request_id), 'every retry after the restart reuses the journaled PayPal-Request-Id');
 });
 
+test('PayPal returns the buyer to the allowed site they started on, never to an arbitrary origin', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  const returnOf = (checkout: any) => new URL(checkout.approval_url).searchParams.get('return_url')!;
+  const mine = (await f.post('/v1/competitions', brief, b)).data;
+  const fromCanonical = await f.request('POST', `/v1/competitions/${mine.id}/checkout`, undefined, b, undefined, { origin: WEB });
+  assert.ok(returnOf(fromCanonical.data).startsWith(`${WEB}/competitions/${mine.id}?paypal=return`));
+  const other = (await f.post('/v1/competitions', brief, b)).data;
+  const fromLocal = await f.request('POST', `/v1/competitions/${other.id}/checkout`, undefined, b, undefined, { origin: 'http://127.0.0.1:3000' });
+  assert.ok(returnOf(fromLocal.data).startsWith('http://127.0.0.1:3000/competitions/'));
+  const third = (await f.post('/v1/competitions', brief, b)).data;
+  const fromEvil = await f.request('POST', `/v1/competitions/${third.id}/checkout`, undefined, b, undefined, { origin: 'https://evil.example' });
+  assert.ok(returnOf(fromEvil.data).startsWith(`${WEB}/competitions/`), 'unknown origins fall back to the canonical site');
+});
+
 test('preview CSP precedes agent markup even when a script sits before <head>', () => {
   const out = previewHtml('<!DOCTYPE html><script>steal()</script><html><head></head><body>x</body></html>');
   assert.ok(out.indexOf('Content-Security-Policy') < out.indexOf('<script>steal()'));
