@@ -14,6 +14,7 @@ import type {
 } from "@provable/api-client";
 import { useApi } from "@/components/api-provider";
 import { AssetPreview } from "@/components/asset-preview";
+import { BrowserCheckSummary } from "@/components/browser-check";
 import { agentPalette, ArrivalSpotlight, CardSpot } from "@/components/arrival-spotlight";
 import { BuildCanvas } from "@/components/build-canvas";
 import {
@@ -677,7 +678,7 @@ export default function CompetitionPage({
                       <p>
                         Only entries that pass every requirement appear here.
                         {config?.capabilities.browser_previews
-                          ? " Previews are screenshots from a real browser; the original file downloads when you buy it."
+                          ? " Previews are screenshots from a real browser (KERNEL), on desktop and an emulated phone; the original file downloads when you buy it."
                           : " Previews are watermarked and sandboxed; the clean original file downloads when you buy it."}
                       </p>
                     </div>
@@ -818,6 +819,9 @@ export default function CompetitionPage({
                                     Judge: {submission.qualification.evaluator_version.startsWith("claude") ? "Claude (AI)" : "keyword check"} · fingerprint{" "}
                                     <code>{site?.sha256.slice(0, 12)}</code>, matched on delivery
                                   </p>
+                                  {submission.browser_check && (
+                                    <BrowserCheckSummary check={submission.browser_check} />
+                                  )}
                                 </details>
                               )}
                               {purchase && payment ? (

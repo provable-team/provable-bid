@@ -1700,6 +1700,36 @@ svg {
 .check-list b {
   font-weight: 600;
 }
+.browser-check {
+  border-top: 1px dashed var(--line);
+  margin-top: 12px;
+  padding-top: 10px;
+  min-width: 0;
+}
+.browser-check-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.browser-check-list {
+  margin-top: 6px;
+  gap: 4px;
+}
+.browser-check-list li,
+.browser-check-meta {
+  overflow-wrap: anywhere;
+}
+.browser-check-list li.attention {
+  color: #8a3b24;
+}
+.browser-check-meta {
+  margin-top: 6px;
+}
+.browser-check-meta a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .payout-line {
   display: flex;
   gap: 6px;
