@@ -8,6 +8,10 @@ examples gallery.
 
 ## What is here
 
+There are three runs. **v1** (the first run) is at `<brief-slug>/` itself and is unchanged; the gallery's Maya Okafor
+card (Voltage) comes from it. **v2** and **v3** are at `<brief-slug>/v2/` and `<brief-slug>/v3/`, made after the
+builder prompt and preflight were fixed (see "v1 vs v2 vs v3" below). Each run folder has the same layout:
+
 - `briefs.json`: the four fictional briefs (two A3 posters, two US business cards), each with its requirements and
   the physical print size.
 - `<brief-slug>/<agent>.html`: the page the agent produced, byte for byte as it would have been submitted.
@@ -16,7 +20,10 @@ examples gallery.
 - `<brief-slug>/provenance.json`: per artifact, the agent, model, builder and evaluator versions, git commits,
   generation time, SHA-256 and size, gate result, the judge's per-requirement checks and narrative, render
   measurements, number of model calls and KERNEL renders, build attempts (failures included), and the local print
-  check.
+  check. From v2 on it also records every generation (first page, preflight repair, judge-feedback revision) with
+  its preflight issues and warnings, every qualification attempt (file, SHA-256, gate, render, judge) with earlier
+  attempts' pages kept as `<agent>-attempt-<n>.html`, the local overflow check, and `previous_runs`: the earlier runs'
+  results for the same brief, with the same local checks re-run on their files.
 
 ## How they were made
 
@@ -26,10 +33,11 @@ submission, purchase or payment record is created anywhere.
 1. **Build.** `claudeHouseAgent` (`apps/api/src/claude.ts`) with the real `HOUSE_AGENTS` profiles
    (`apps/api/src/identity.ts`) and the unchanged builder prompt. It streams the page from Claude, runs the parse5
    preflight (`apps/api/src/agent-preflight.ts`, which includes the gates and the 512 KiB/HTML checks) and at most one
-   preflight repair, then calls `uploadAsset`/`submit`, which here only capture the HTML locally. Without a
-   `waitForResult` hook the agent makes one qualification attempt: no judge-feedback revision rounds, unlike a live
-   competition (up to 3 attempts). If a build failed, the generator ran the agent once more (at most one retry);
-   every attempt and its error is in `build_attempts`.
+   preflight repair, then calls `uploadAsset`/`submit`, which here only capture the HTML locally. In v1 there was no
+   `waitForResult` hook, so each agent made one qualification attempt. From v2 on the generator supplies
+   `waitForResult` the way the live runner does: each submitted page is evaluated (step 2) and the result is handed
+   back to the agent, which revises a failed page with the judge's reasons, up to 3 attempts, exactly as in a live
+   competition. The last attempt is the entry that stands (`<agent>.html`).
 2. **Evaluate.** `inProcessEvaluation` (`apps/api/src/runners.ts`): gates (`gateHtml`, `apps/api/src/html.ts`), a
    KERNEL cloud-browser render of the watermarked preview (`kernelRenderer`, `apps/api/src/browser.ts`), then the
    Claude judge (`claudeEvaluator`, `claude-judge-v2`) against the brief's requirements.
@@ -38,6 +46,14 @@ submission, purchase or payment record is created anywhere.
    own `@page` size, then records the PDF page size (mm) and page count as `print_check`. This checks the page box
    and page count only, not bleed, colour or how well the artwork fills the page, and it is not part of the live
    provable.bid pipeline.
+4. **Local overflow check (ours, from v2 on).** In local Chrome at a 390px and a 1280px screen and in print media at
+   the page size, a DOM scan of every line of visible text records `overflow_check`: text cut off by a clipping
+   ancestor (`clipped`), text crossing a bordered ancestor or a drawn frame (`crosses_border`, `crosses_frame`), text
+   off the page sideways, text with another element on top of it at its centre (`covered`), clipping containers whose
+   content is bigger than the box (`container_overflow`), and in print, text less than 3 mm inside a page-sized box
+   (`outside_print_safe_area`; a negative distance means off the printed page) or smaller than 7pt. It is a heuristic
+   (local fonts, centre-point hit test), not part of the live pipeline, and it does not count pages: read it together
+   with `print_check`.
 
 The briefs ask for a self-contained HTML document: a fluid on-screen layout, plus an `@media print` block with
 `@page { size: A3 portrait }` (posters) or `@page { size: 3.5in 2in }` with front and back on two pages (cards). The
@@ -49,15 +65,16 @@ characters of visible text, and nothing was padded or hidden to pass it.
 ```sh
 npm ci
 set -a; . path/to/.env.local; set +a        # ANTHROPIC_API_KEY and KERNEL_API_KEY, read from the environment only
-npx tsx scripts/generate-samples.mts                       # all briefs x all agents, then the print check
-npx tsx scripts/generate-samples.mts --only=<slug>[/<agent>]   # e.g. --only=maya-okafor-business-card/meadow
-npx tsx scripts/generate-samples.mts --print-check-only    # re-run only the local print check (no keys needed)
+npx tsx scripts/generate-samples.mts --run=v3             # all briefs x all agents into <slug>/v3/, then the local checks
+npx tsx scripts/generate-samples.mts --run=v3 --only=<slug>[/<agent>]   # e.g. --only=maya-okafor-business-card/meadow
+npx tsx scripts/generate-samples.mts --run=v3 --local-checks-only       # re-run only the local checks (no keys needed)
+# --budget-used=<builder>,<judge>,<kernel> subtracts calls already spent from the caps (40 builder, 40 judge, 30 KERNEL)
 ```
 
 `CHROME_PATH` sets the local Chrome for the print check (default `/usr/bin/google-chrome`). Model output varies run to
 run, so a regeneration produces different pages; the SHA-256 in `provenance.json` identifies the committed ones.
 
-## Results of this run
+## v1 results (first run, at `<brief-slug>/`)
 
 One build per agent and brief (12 builds, no preflight repairs or retries were needed), 12 judge calls, 12 KERNEL
 renders. Failures are kept and shown as they are: these entries had one qualification attempt and no judge-feedback
@@ -73,3 +90,47 @@ revision, which a live competition would have allowed.
 All 12 passed the gates. The local print check found the expected page size and page count for all 12 (A3 posters
 print as one 297 x 420 mm page, give or take Chrome's rounding to whole points; cards as two 88.9 x 50.8 mm pages).
 Full judge reasons and narratives are in each `provenance.json`.
+
+The v1 local overflow check (run later, recorded in `v2/` and `v3/` `previous_runs`) found problems in 11 of 12 v1
+pages (clipped, covered or overflowing text, or print labels under 7pt), including two the judge passed (Spoke & Chain Atelier: the wheel graphic over the deck copy and
+the address cut off by the sheet; Voltage: address and hours clipped) and print problems on the cards (Crumb & Co.
+Atelier: the preorder URL 1.2 mm from trim, labels at 5.5 to 6.5pt). Only Maya Okafor by Voltage was clean.
+
+## v1 vs v2 vs v3
+
+**What changed.** Root cause of v1: every agent drew the poster or card as a fixed `aspect-ratio` box with
+`overflow: hidden`, which removes the box's automatic minimum height, so anything that did not fit was silently cut
+off on screen and in print; nothing told the agent.
+
+- v2 (commit 53257e9): builder prompt rules for all briefs: no text in fixed-aspect or fixed-height boxes that clip;
+  all text visible at 390px and 1280px; no art over text; only facts from the brief, small taglines included ("open
+  air", "no ticket needed" and the like); print at the exact `@page` size with text in a 3 mm safe area and at least
+  7pt. The preflight warns about text inside a fixed-aspect box that clips its overflow (one repair, never blocks
+  submission; unit-tested). The generator uses the live revision loop.
+- v3 (commit 092282f): v2's local checks showed print still failing (extra pages, the Riverside QR box off the page),
+  so the prompt gained a concrete print recipe: one fixed-size, clipped element per printed page in mm/in,
+  `break-after` between pages, print type in pt, and the page count checked.
+
+No v2 or v3 page tripped the new preflight warning (no repairs were needed). Calls across both runs: 25 builder, 25
+judge, 25 KERNEL renders.
+
+| Brief / agent | v1 judge | v1 local | v2 judge | v2 local | v3 judge (attempts) | v3 local |
+| --- | --- | --- | --- | --- | --- | --- |
+| Spoke & Chain / Atelier | qualified | text covered and clipped | qualified | clean | qualified (1) | clean |
+| Spoke & Chain / Meadow | failed | clipped | qualified | clean | qualified (1) | clean |
+| Spoke & Chain / Voltage | qualified | clipped | qualified | clean | qualified (1) | print: name and "12 Mill Lane" clipped at the page foot |
+| Riverside / Atelier | failed | clipped | qualified | print: QR box off the page | qualified (1) | clean |
+| Riverside / Meadow | failed | covered and clipped | qualified | print: footer 1.6 mm from trim | qualified (1) | clean |
+| Riverside / Voltage | failed | clipped | qualified | prints 2 pages | qualified (2: first failed for "Come down to the river", a location not in the brief) | print: footer clipped |
+| Maya Okafor / Atelier | qualified | labels 6.6pt in print | qualified | clean | qualified (1) | clean |
+| Maya Okafor / Meadow | qualified | box overflow, 6.6pt labels | qualified | prints 3 pages | qualified (1) | print: back 19px over, labels 6.5pt |
+| Maya Okafor / Voltage | qualified | clean | qualified | bar over the title, 6.8pt | qualified (1) | clean |
+| Crumb & Co. / Atelier | qualified | URL 1.2 mm from trim, 5.5pt labels | qualified | labels 6.9pt | qualified (1) | clean |
+| Crumb & Co. / Meadow | failed | box overflow | qualified | clean | qualified (1) | clean |
+| Crumb & Co. / Voltage | qualified | box overflow, 2 mm from trim | qualified | clean | qualified (1) | clean |
+
+Every v2 and v3 page passed the gates and prints at the expected size (A3 297 x 420 mm, cards 88.9 x 50.8 mm); all
+v3 pages print the expected page count. Judge: v1 7/12, v2 12/12, v3 12/12 qualified. Local checks clean (no
+findings and the right page count): v1 1/12, v2 6/12, v3 9/12. The three v3 pages still flagged pass on screen at
+390px and 1280px but lose a line or overflow in print, which the screen-only judge cannot see. Full findings are in
+each `v3/provenance.json` (`overflow_check`, `print_check`).
