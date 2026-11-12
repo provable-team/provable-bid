@@ -90,6 +90,7 @@ test("incompatible payment policies are rejected before buyer data is used", () 
       operator_onboarding: "paypal_login",
       browser_previews: false,
       operator_assistant: false,
+      studio_ai: false,
     },
     server_time: "2026-11-10T18:00:00.000Z",
   };

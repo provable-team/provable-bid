@@ -15,6 +15,7 @@ import {
 import { agentPayoutFor, commissionFor, POLICY, processingFeeFor } from './money.js';
 import { ProviderError, type AuthorizationView, type PaymentProvider, type PayoutView } from './provider/types.js';
 import type { DocStore } from './store.js';
+import { StudioAiFailure, type StudioAiRelay } from './studio-ai.js';
 
 type S = components['schemas'];
 
@@ -151,6 +152,10 @@ export interface ApiOptions {
   operatorAssistant?: OperatorAssistant | null;
   /** Questions per operator per minute (default 10). */
   assistantRateLimit?: number;
+  /** The operator dashboard's AI assistant (AG Studio Agent Framework turns relayed to Claude). Null: unavailable. */
+  studioAi?: StudioAiRelay | null;
+  /** Per-operator assistant limits: turns per rolling window, and per day. */
+  studioAiLimits?: { windowMs: number; perWindow: number; perDay: number };
 }
 
 /** Operations that only read and may take seconds (a model and PayPal round trips): they run outside the command queue. */
@@ -601,7 +606,11 @@ export async function createApi(o: ApiOptions) {
     recent.push(time()); assistantCalls.set(operatorId, recent);
   }
 
-  type Result = { status: number; body?: any; cache?: string; type?: string; location?: string; after?: () => void };
+  // `outside` runs after the state lock is released (slow, stateless work such as a model call) and supplies the response.
+  type Result = { status: number; body?: any; cache?: string; type?: string; location?: string; after?: () => void; outside?: () => Promise<Result> };
+  // Studio assistant turns per operator: timestamps of recent turns, and how many are in flight.
+  const studioAiLimits = o.studioAiLimits ?? { windowMs: 10 * 60_000, perWindow: 60, perDay: 400 };
+  const studioAiTurns = new Map<string, { at: number[]; inFlight: number }>();
   async function execute(op: string, p: Principal | undefined, params: any, body: any, query: any, headers: any): Promise<Result> {
     const ok = (body: any, status = 200): Result => ({ status, body });
     const who = () => { demand(p, 'UNAUTHENTICATED', 'Valid bearer credential required.', 401); return p; };
@@ -611,7 +620,7 @@ export async function createApi(o: ApiOptions) {
         mode: o.provider.mode, currency: 'USD', terms_version: policy.terms_version, policy,
         capabilities: { authorization: true, additional_checkout: true, external_agents: true, payouts: simulatePayouts ? 'simulated' : 'paypal_sandbox',
           ai_evaluation: !o.evaluator.version.startsWith('heuristic'), house_agents: !!o.houseAgents && Object.keys(o.houseAgents).length > 0, operator_onboarding: 'paypal_login',
-          browser_previews: !!o.renderer, operator_assistant: !!o.operatorAssistant },
+          browser_previews: !!o.renderer, operator_assistant: !!o.operatorAssistant, studio_ai: !!o.studioAi },
         server_time: stamp(),
       });
 
@@ -889,6 +898,29 @@ export async function createApi(o: ApiOptions) {
         log('assistant answered', { operator: me.operator_id, requests: answer.usage.requests, input_tokens: answer.usage.input_tokens, output_tokens: answer.usage.output_tokens,
           lookups: answer.lookups.map(l => `${l.tool}:${l.status}`).join(' ') });
         return { status: 200, body: { answer: answer.answer, lookups: answer.lookups, server_time: stamp() }, cache: 'no-store' };
+      }
+      case 'runStudioAiTurn': {
+        const me = who(); demand(me.role === 'operator', 'OPERATOR_REQUIRED', 'Connect PayPal as an agent operator first.', 403);
+        const relay = o.studioAi;
+        if (!relay) throw new Fault(503, 'PROVIDER_UNAVAILABLE', 'The dashboard assistant is not configured on this server.');
+        const now = Date.now();
+        const usage = studioAiTurns.get(me.operator_id) ?? { at: [], inFlight: 0 };
+        usage.at = usage.at.filter(t => now - t < 86_400_000);
+        const recent = usage.at.filter(t => now - t < studioAiLimits.windowMs).length;
+        if (recent >= studioAiLimits.perWindow || usage.at.length >= studioAiLimits.perDay || usage.inFlight >= 3) {
+          throw new Fault(429, 'RATE_LIMITED', usage.at.length >= studioAiLimits.perDay ? 'Daily limit for the dashboard assistant reached. Try again tomorrow.' : 'The dashboard assistant is busy for this account. Try again in a few minutes.', true);
+        }
+        usage.at.push(now); usage.inFlight++; studioAiTurns.set(me.operator_id, usage);
+        const request = structuredClone(body);
+        return { status: 200, outside: async () => {
+          try { return { status: 200, body: { ...(await relay(request)), server_time: stamp() }, cache: 'no-store' }; }
+          catch (e) {
+            if (e instanceof StudioAiFailure && e.kind === 'rate_limited') throw new Fault(429, 'RATE_LIMITED', 'The model is rate-limited. Try again shortly.', true);
+            if (e instanceof StudioAiFailure && e.kind === 'rejected') { log('studio ai turn rejected', e.message); throw new Fault(400, 'VALIDATION_ERROR', 'The model rejected this turn.'); }
+            log('studio ai turn failed', (e as Error).message);
+            throw new Fault(503, 'PROVIDER_UNAVAILABLE', 'The model is unavailable. Try again.', true);
+          } finally { usage.inFlight--; }
+        } };
       }
       case 'getAgentEarnings': {
         const me = who(); demand(me.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
@@ -1432,12 +1464,26 @@ export async function createApi(o: ApiOptions) {
           return { status: cached.status, body: structuredClone(cached.body), cache: cached.cache } as Result;
         }
         tick();
-        const r = respond(await execute(op.operationId, principal, req.params, req.body, query, headers));
+        const r = await execute(op.operationId, principal, req.params, req.body, query, headers);
+        if (r.outside) {
+          // The slow part runs after this lock is released; an answered turn is kept for replay under its key.
+          const finish = r.outside;
+          return { ...r, outside: async () => {
+            const done = await finish();
+            if (scope && done.status < 300) await exclusive(async () => { replays.set(scope, { fingerprint, status: done.status, body: structuredClone(done.body), cache: done.cache }); });
+            return done;
+          } };
+        }
+        respond(r);
         if (scope && r.status < 300) replays.set(scope, { fingerprint, status: r.status, body: structuredClone(r.body), cache: r.cache });
         after = r.after;
         return r;
       });
       if (after) after();
+      if (result.outside) {
+        const r = respond(await result.outside());
+        Object.assign(result, r, { outside: undefined });
+      }
       if (result.status === 302) return reply.redirect(result.location!, 302);
       if (result.cache) reply.header('Cache-Control', result.cache).header('X-Content-Type-Options', 'nosniff');
       if (result.type === 'text/html') reply.header('Content-Security-Policy', "sandbox allow-scripts; default-src 'none'; img-src data: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; font-src data: https:");

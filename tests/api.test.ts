@@ -17,6 +17,7 @@ import { agentPayoutFor, paypalCheckoutFee, processingFeeFor } from '../apps/api
 import { fakeProvider } from '../apps/api/src/provider/fake.js';
 import { ProviderError } from '../apps/api/src/provider/types.js';
 import { Store } from '../apps/api/src/store.js';
+import { fromClaudeMessage, STUDIO_AI_MODEL, toClaudeRequest, type StudioAiRelay } from '../apps/api/src/studio-ai.js';
 import { contract, operations, resolve, validator, validateResponse } from '../scripts/contract.js';
 
 const WEB = 'http://web.test';
@@ -40,7 +41,7 @@ const brief = {
   accepted_terms_version: 'race-v1',
 };
 
-async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number; operatorAssistant?: (provider: ReturnType<typeof fakeProvider>['provider']) => OperatorAssistant } = {}) {
+async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number; operatorAssistant?: (provider: ReturnType<typeof fakeProvider>['provider']) => OperatorAssistant; studioAi?: StudioAiRelay; studioAiLimits?: { windowMs: number; perWindow: number; perDay: number } } = {}) {
   let now = T0;
   const store = new Store(opts.dbPath ?? ':memory:');
   const fake = fakeProvider({ webOrigin: WEB, now: () => now });
@@ -51,6 +52,7 @@ async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAda
     strictResponses: true, simulatePayouts: opts.simulatePayouts ?? false, log: () => {},
     notify: async (url, body, sig) => { notices.push({ url, body, sig }); },
     operatorAssistant: opts.operatorAssistant?.(fake.provider) ?? null,
+    studioAi: opts.studioAi ?? null, studioAiLimits: opts.studioAiLimits,
   });
   t.after(async () => { await api.idle(); await api.app.close(); });
   let sequence = 0;
@@ -1256,4 +1258,76 @@ test('judge narrative: bounded plain text, dropped on failure, never faked by th
     artifacts: [{ metadata: {} as any, bytes: new TextEncoder().encode(page()) }] });
   assert.equal(keyword.status, 'qualified');
   assert.equal(keyword.narrative, undefined, 'the keyword fallback never invents a narrative');
+});
+
+test('dashboard assistant: operator-only Claude turns, replayed by key, rate-limited, off without a model key', async t => {
+  const off = await fixture(t);
+  assert.equal((await off.get('/v1/config', null)).data.capabilities.studio_ai, false);
+  const turn = { instructions: 'Build dashboards.', input: [{ type: 'message', role: 'user', text: 'Chart my earnings by agent.' }], tools: [], tool_choice: 'auto', response_format: { type: 'text' } };
+  const offOperator = await off.operator('PAYERSTUDIO01', 'Studio Operator');
+  assert.equal((await off.post('/v1/operators/me/studio-ai/turns', turn, offOperator)).status, 503);
+
+  const seen: any[] = [];
+  const relay: StudioAiRelay = async (request) => {
+    seen.push(request);
+    return { id: `msg_${seen.length}`, model: STUDIO_AI_MODEL, status: 'completed', usage: { input_tokens: 10, output_tokens: 5 },
+      output: [{ type: 'message', text: 'Adding a chart.' }, { type: 'tool_call', call_id: 'toolu_1', name: 'add_widget', arguments: '{"type":"bar-chart-grouped"}' }] };
+  };
+  const f = await fixture(t, { studioAi: relay, studioAiLimits: { windowMs: 60_000, perWindow: 2, perDay: 10 } });
+  assert.equal((await f.get('/v1/config', null)).data.capabilities.studio_ai, true);
+  const operatorToken = await f.operator('PAYERSTUDIO02', 'Studio Operator');
+  assert.equal((await f.post('/v1/operators/me/studio-ai/turns', turn, await f.buyer())).status, 403);
+  assert.equal((await f.post('/v1/operators/me/studio-ai/turns', turn, null)).status, 401);
+  assert.equal((await f.post('/v1/operators/me/studio-ai/turns', { ...turn, model: 'claude-opus-5-5' }, operatorToken)).status, 400, 'the browser cannot choose a model');
+  assert.equal((await f.post('/v1/operators/me/studio-ai/turns', { ...turn, input: [{ type: 'image', url: 'x' }] }, operatorToken)).status, 400);
+
+  const first = await f.post('/v1/operators/me/studio-ai/turns', turn, operatorToken, 'studio_turn_key_1');
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(first.data.output[1].name, 'add_widget');
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].instructions, 'Build dashboards.');
+  const replay = await f.post('/v1/operators/me/studio-ai/turns', turn, operatorToken, 'studio_turn_key_1');
+  assert.deepEqual(replay.data, first.data, 'same key and body replays the answered turn');
+  assert.equal(seen.length, 1, 'a replay does not call the model again');
+  assert.equal((await f.post('/v1/operators/me/studio-ai/turns', turn, operatorToken)).status, 200);
+  const limited = await f.post('/v1/operators/me/studio-ai/turns', turn, operatorToken);
+  assert.equal(limited.status, 429);
+  assert.equal(limited.data.code, 'RATE_LIMITED');
+  assert.equal(seen.length, 2);
+  const other = await f.operator('PAYERSTUDIO03', 'Other Operator');
+  assert.equal((await f.post('/v1/operators/me/studio-ai/turns', turn, other)).status, 200, 'limits are per operator');
+});
+
+test('dashboard assistant maps Studio turns onto the Messages API and back', () => {
+  const request = toClaudeRequest({
+    instructions: 'You build dashboards.',
+    input: [
+      { type: 'message', role: 'system', text: 'Dashboard has 4 widgets.' },
+      { type: 'message', role: 'user', text: 'Chart earnings by agent.' },
+      { type: 'message', role: 'assistant', text: '' },
+      { type: 'tool_call', call_id: 'toolu_a', name: 'view_schema', arguments: '{}' },
+      { type: 'tool_call', call_id: 'toolu_b', name: 'view_page', arguments: 'not json' },
+      { type: 'tool_result', call_id: 'toolu_a', output: '{"tables":[]}' },
+      { type: 'tool_result', call_id: 'toolu_b', output: 'bad', is_error: true },
+    ],
+    tools: [{ name: 'view_schema', description: 'Schema', parameters: { type: 'object', properties: {} } }],
+    tool_choice: 'required',
+    response_format: { type: 'text' },
+  });
+  assert.equal(request.model, 'claude-haiku-5-5');
+  assert.equal(request.max_tokens, 8192);
+  assert.deepEqual(request.thinking, { type: 'disabled' });
+  assert.equal(request.system, 'You build dashboards.\n\nDashboard has 4 widgets.');
+  assert.deepEqual(request.tool_choice, { type: 'any' });
+  assert.deepEqual(request.messages.map(m => m.role), ['user', 'assistant', 'user'], 'empty text dropped; parallel calls and their results grouped');
+  assert.deepEqual((request.messages[1].content as any[]).map(b => [b.type, b.id, b.input]), [['tool_use', 'toolu_a', {}], ['tool_use', 'toolu_b', {}]]);
+  assert.deepEqual((request.messages[2].content as any[]).map(b => [b.tool_use_id, b.is_error ?? false]), [['toolu_a', false], ['toolu_b', true]]);
+
+  const usage = { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 900, cache_creation_input_tokens: 0 } as any;
+  const turn = fromClaudeMessage({ id: 'msg_1', model: 'claude-haiku-5-5', stop_reason: 'tool_use', usage,
+    content: [{ type: 'text', text: 'Looking.' }, { type: 'tool_use', id: 'toolu_c', name: 'add_widget', input: { type: 'value' } }] } as any);
+  assert.deepEqual(turn.output, [{ type: 'message', text: 'Looking.' }, { type: 'tool_call', call_id: 'toolu_c', name: 'add_widget', arguments: '{"type":"value"}' }]);
+  assert.deepEqual(turn.usage, { input_tokens: 1000, output_tokens: 20, cached_input_tokens: 900, cache_write_tokens: 0 });
+  assert.equal(fromClaudeMessage({ id: 'm', model: 'x', stop_reason: 'refusal', usage, content: [{ type: 'text', text: 'partial' }] } as any).status, 'refused');
+  assert.equal(fromClaudeMessage({ id: 'm', model: 'x', stop_reason: 'max_tokens', usage, content: [] } as any).status, 'incomplete');
 });

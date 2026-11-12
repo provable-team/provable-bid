@@ -824,6 +824,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/operators/me/studio-ai/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer one turn of the operator dashboard's AI assistant
+         * @description Operator credential only; requires config.capabilities.studio_ai. Answers one model turn for AG Studio's Agent Framework running in the operator's browser: the agent loop and its tools run in the page, which resends the conversation with tool results for the next turn. The model is fixed server-side (Claude Haiku 5.5) and each turn is capped in output tokens. Rate-limited per operator (RATE_LIMITED, 429). Send a fresh Idempotency-Key per turn: a retry with the same key and body replays the answered turn instead of asking the model again.
+         */
+        post: operations["runStudioAiTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export interface webhooks {
     competitionOpened: {
@@ -913,6 +933,8 @@ export interface components {
                 browser_previews: boolean;
                 /** @description POST /v1/operators/me/assistant is enabled (Claude + PayPal Agent Toolkit; needs an Anthropic key and the PayPal provider). */
                 operator_assistant: boolean;
+                /** @description POST /v1/operators/me/studio-ai/turns is available: the operator dashboard's AI assistant can build and change widgets. */
+                studio_ai: boolean;
             };
             server_time: components["schemas"]["Timestamp"];
         };
@@ -1400,6 +1422,82 @@ export interface components {
             /** @description Plain text. */
             answer: string;
             lookups: components["schemas"]["AssistantLookup"][];
+            server_time: components["schemas"]["Timestamp"];
+        };
+        /** @description One conversation item. message: text from the user, the system or the assistant. tool_call: a tool the assistant called, with its JSON-encoded arguments. tool_result: what the page returned for that call. */
+        StudioAiItem: {
+            /** @constant */
+            type: "message";
+            /** @enum {string} */
+            role: "user" | "system" | "assistant";
+            text: string;
+        } | {
+            /** @constant */
+            type: "tool_call";
+            call_id: string;
+            name: string;
+            arguments: string;
+        } | {
+            /** @constant */
+            type: "tool_result";
+            call_id: string;
+            output: string;
+            is_error?: boolean;
+        };
+        StudioAiTurnRequest: {
+            /** @description The agent's system instructions for this turn (Studio resolves them from live dashboard state). */
+            instructions?: string | null;
+            input: components["schemas"]["StudioAiItem"][];
+            tools: {
+                name: string;
+                description: string;
+                /** @description JSON Schema of the tool input (from Studio). */
+                parameters: {
+                    [key: string]: unknown;
+                };
+            }[];
+            tool_choice: ("auto" | "none" | "required") | {
+                name: string;
+            };
+            response_format: {
+                /** @constant */
+                type: "text";
+            } | {
+                /** @constant */
+                type: "json";
+                name: string;
+                description?: string;
+                schema: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        StudioAiTurn: {
+            id: string;
+            /** @description The model that answered (fixed server-side). */
+            model: string;
+            /**
+             * @description incomplete: the turn hit its output cap. refused: the model declined; output is empty.
+             * @enum {string}
+             */
+            status: "completed" | "incomplete" | "refused";
+            output: ({
+                /** @constant */
+                type: "message";
+                text: string;
+            } | {
+                /** @constant */
+                type: "tool_call";
+                call_id: string;
+                name: string;
+                arguments: string;
+            })[];
+            usage: {
+                input_tokens: number;
+                output_tokens: number;
+                cached_input_tokens?: number;
+                cache_write_tokens?: number;
+            };
             server_time: components["schemas"]["Timestamp"];
         };
     };
@@ -2887,6 +2985,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantAnswer"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    runStudioAiTurn: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique logical command key; use the same key and body for network retries. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudioAiTurnRequest"];
+            };
+        };
+        responses: {
+            /** @description The model's turn. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAiTurn"];
                 };
             };
             400: components["responses"]["Problem"];

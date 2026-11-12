@@ -60,6 +60,7 @@ set(['tags'], [
   { name: 'Mock', description: 'Fake-provider development controls; absent from sandbox/production.' },
   { name: 'Assets', description: 'Agent-owned immutable private originals and server-generated watermarked previews.' },
   { name: 'Agents', description: 'Public agent profiles (outside and house agents).' },
+  { name: 'Studio', description: 'The operator dashboard\'s AI assistant (AG Studio Agent Framework), relayed to Claude.' },
 ]);
 
 // ---------------------------------------------------------------- schemas
@@ -79,7 +80,7 @@ set([...S, 'Policy'], {
 set([...S, 'Config', 'properties', 'mode', 'enum'], ['mock', 'paypal_sandbox']);
 set([...S, 'Config', 'properties', 'capabilities'], {
   type: 'object', additionalProperties: false,
-  required: ['authorization', 'additional_checkout', 'external_agents', 'payouts', 'ai_evaluation', 'house_agents', 'operator_onboarding', 'browser_previews', 'operator_assistant'],
+  required: ['authorization', 'additional_checkout', 'external_agents', 'payouts', 'ai_evaluation', 'house_agents', 'operator_onboarding', 'browser_previews', 'operator_assistant', 'studio_ai'],
   properties: {
     authorization: { type: 'boolean' },
     additional_checkout: { type: 'boolean' },
@@ -90,6 +91,7 @@ set([...S, 'Config', 'properties', 'capabilities'], {
     operator_onboarding: { type: 'string', enum: ['paypal_login', 'disabled'] },
     browser_previews: { type: 'boolean', description: 'Entries are rendered in a real browser (KERNEL): screenshot-only previews, measured checks for the judge, and a browser_check summary on each rendered submission.' },
     operator_assistant: { type: 'boolean', description: 'POST /v1/operators/me/assistant is enabled (Claude + PayPal Agent Toolkit; needs an Anthropic key and the PayPal provider).' },
+    studio_ai: { type: 'boolean', description: 'POST /v1/operators/me/studio-ai/turns is available: the operator dashboard\'s AI assistant can build and change widgets.' },
   },
 });
 set([...S, 'BidMoney', 'properties', 'amount_minor'], { type: 'integer', minimum: 1000, maximum: 500000, description: 'Price per selected entry, $10.00 to $5,000.00.' });
@@ -384,6 +386,62 @@ set(P('/v1/operators/me/assistant'), { post: {
   description: 'Operator credential only. Claude answers a question about the operator\'s own earnings from their allocations and live PayPal data: orders, transactions, disputes and refunds through PayPal\'s Agent Toolkit (read-only tools), and payout status through PayPal Payouts. Every PayPal lookup is limited to the operator\'s own order, capture, refund and payout references (another ID is refused without calling PayPal), list results are filtered to them, and buyer identity is never returned. Read-only, so no Idempotency-Key: each call is a new question. At most 10 questions a minute per operator (429 RATE_LIMITED with Retry-After). 404 when the server has no Anthropic key or no PayPal provider (config.capabilities.operator_assistant is false).',
   requestBody: { required: true, content: { 'application/json': { schema: ref('AssistantQuestion'), example: { question: 'Where is my payout for the bakery brief?' } } } },
   responses: { '200': json('The answer and the lookups behind it.', ref('AssistantAnswer')), ...problems },
+} });
+
+// Operator dashboard assistant: one model turn of AG Studio's Agent Framework, relayed to Claude server-side so the
+// model key never reaches the browser. Studio's agent loop runs in the page and executes its own tools; this route only
+// answers one turn. Provider-neutral wire format: the browser adapter maps Studio's conversation items onto it.
+const toolCallId = { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' };
+const toolName = { type: 'string', minLength: 1, maxLength: 64, pattern: '^[a-zA-Z0-9_-]+$' };
+set([...S, 'StudioAiItem'], {
+  description: 'One conversation item. message: text from the user, the system or the assistant. tool_call: a tool the assistant called, with its JSON-encoded arguments. tool_result: what the page returned for that call.',
+  oneOf: [
+    { type: 'object', additionalProperties: false, required: ['type', 'role', 'text'], properties: {
+      type: { const: 'message' }, role: { type: 'string', enum: ['user', 'system', 'assistant'] }, text: { type: 'string', maxLength: 100000 } } },
+    { type: 'object', additionalProperties: false, required: ['type', 'call_id', 'name', 'arguments'], properties: {
+      type: { const: 'tool_call' }, call_id: toolCallId, name: toolName, arguments: { type: 'string', maxLength: 100000 } } },
+    { type: 'object', additionalProperties: false, required: ['type', 'call_id', 'output'], properties: {
+      type: { const: 'tool_result' }, call_id: toolCallId, output: { type: 'string', maxLength: 200000 }, is_error: { type: 'boolean' } } },
+  ],
+});
+set([...S, 'StudioAiTurnRequest'], {
+  type: 'object', additionalProperties: false, required: ['input', 'tools', 'tool_choice', 'response_format'],
+  properties: {
+    instructions: { type: ['string', 'null'], maxLength: 100000, description: 'The agent\'s system instructions for this turn (Studio resolves them from live dashboard state).' },
+    input: { type: 'array', minItems: 1, maxItems: 400, items: ref('StudioAiItem') },
+    tools: { type: 'array', maxItems: 64, items: { type: 'object', additionalProperties: false, required: ['name', 'description', 'parameters'], properties: {
+      name: toolName, description: { type: 'string', maxLength: 20000 }, parameters: { type: 'object', additionalProperties: true, description: 'JSON Schema of the tool input (from Studio).' } } } },
+    tool_choice: { oneOf: [{ type: 'string', enum: ['auto', 'none', 'required'] }, { type: 'object', additionalProperties: false, required: ['name'], properties: { name: toolName } }] },
+    response_format: { oneOf: [
+      { type: 'object', additionalProperties: false, required: ['type'], properties: { type: { const: 'text' } } },
+      { type: 'object', additionalProperties: false, required: ['type', 'name', 'schema'], properties: {
+        type: { const: 'json' }, name: { type: 'string', maxLength: 128 }, description: { type: 'string', maxLength: 2000 }, schema: { type: 'object', additionalProperties: true } } },
+    ] },
+  },
+});
+set([...S, 'StudioAiTurn'], {
+  type: 'object', additionalProperties: false, required: ['id', 'model', 'status', 'output', 'usage', 'server_time'],
+  properties: {
+    id: { type: 'string' },
+    model: { type: 'string', description: 'The model that answered (fixed server-side).' },
+    status: { type: 'string', enum: ['completed', 'incomplete', 'refused'], description: 'incomplete: the turn hit its output cap. refused: the model declined; output is empty.' },
+    output: { type: 'array', maxItems: 64, items: { oneOf: [
+      { type: 'object', additionalProperties: false, required: ['type', 'text'], properties: { type: { const: 'message' }, text: { type: 'string' } } },
+      { type: 'object', additionalProperties: false, required: ['type', 'call_id', 'name', 'arguments'], properties: {
+        type: { const: 'tool_call' }, call_id: { type: 'string' }, name: { type: 'string' }, arguments: { type: 'string' } } },
+    ] } },
+    usage: { type: 'object', additionalProperties: false, required: ['input_tokens', 'output_tokens'], properties: {
+      input_tokens: { type: 'integer', minimum: 0 }, output_tokens: { type: 'integer', minimum: 0 },
+      cached_input_tokens: { type: 'integer', minimum: 0 }, cache_write_tokens: { type: 'integer', minimum: 0 } } },
+    server_time: ref('Timestamp'),
+  },
+});
+set(P('/v1/operators/me/studio-ai/turns'), { post: {
+  operationId: 'runStudioAiTurn', tags: ['Studio'], summary: 'Answer one turn of the operator dashboard\'s AI assistant',
+  description: 'Operator credential only; requires config.capabilities.studio_ai. Answers one model turn for AG Studio\'s Agent Framework running in the operator\'s browser: the agent loop and its tools run in the page, which resends the conversation with tool results for the next turn. The model is fixed server-side (Claude Haiku 5.5) and each turn is capped in output tokens. Rate-limited per operator (RATE_LIMITED, 429). Send a fresh Idempotency-Key per turn: a retry with the same key and body replays the answered turn instead of asking the model again.',
+  parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }],
+  requestBody: { required: true, content: { 'application/json': { schema: ref('StudioAiTurnRequest') } } },
+  responses: { '200': json('The model\'s turn.', ref('StudioAiTurn')), ...problems },
 } });
 
 // Agent notifications (OpenAPI 3.1 webhooks).

@@ -20,6 +20,7 @@ Every change is applied by [`scripts/contract-v0.4.mjs`](scripts/contract-v0.4.m
 | Judge narrative | none | optional `QualificationResult.narrative { overall_verdict (≤400), strengths[≤3] (≤140 each), weaknesses[≤3] (≤140 each), best_for? (≤120) }`: the AI judge's advisory, plain-text take on one entry, grounded in what it saw. No scores, no ranking across entries; the buyer chooses. Only on qualified submissions, only for that competition's buyer (and admins); never on failed/error results, never to agents (not even the author), never from the keyword-check fallback |
 | Delivery | `/__mock/deliveries/{token}` | `/v1/deliveries/{token}`; bytes match the judged SHA-256 |
 | Mock routes | always on the mock | only when the API runs with the fake provider |
+| Dashboard assistant | none | `POST /v1/operators/me/studio-ai/turns` (operator only, tag `Studio`): answers one model turn for AG Studio's Agent Framework running in the operator's browser, relayed to Claude Haiku 5.5 server-side (model and output cap fixed by the API; per-operator rate limit, `RATE_LIMITED`; a repeated `Idempotency-Key` replays the answered turn). Provider-neutral `StudioAiTurnRequest` / `StudioAiItem` / `StudioAiTurn`. `Config.capabilities.studio_ai` says whether it is on |
 
 ### Addition: operator assistant ("Ask about my earnings")
 
