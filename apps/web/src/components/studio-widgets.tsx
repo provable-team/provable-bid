@@ -12,6 +12,7 @@ import type {
   AgWidgetParams,
 } from "ag-studio";
 import { AgIncompleteDataMappingOverlay, AgNoDataOverlay } from "ag-studio-react";
+import { PAYOUT_STAGES, payoutStage } from "./studio-dashboard-data";
 
 // Two custom widgets for the operator dashboard, built on Studio's custom widget API: they read through the widget
 // API (so page filters, cross filters and the assistant's changes apply), and they are listed in the widget menu and
@@ -30,12 +31,9 @@ export const PAYOUT_LABELS: Record<string, string> = {
 export const payoutLabel = (state: unknown) => PAYOUT_LABELS[String(state)] ?? String(state ?? "Unknown");
 /** The same, short enough for a chart legend or axis: "Sent" rather than "Sent, awaiting PayPal". */
 export const payoutShortLabel = (state: unknown) => (String(state) === "pending" ? "Sent" : payoutLabel(state));
+/** Pill tone by payout stage: paid green, sent amber, waiting neutral, failed or on hold red. */
 export function payoutTone(state: unknown): "success" | "pending" | "danger" | "neutral" {
-  const s = String(state);
-  if (s === "paid" || s === "simulated") return "success";
-  if (s === "pending" || s === "queued" || s === "not_scheduled") return "pending";
-  if (s === "failed" || s === "blocked") return "danger";
-  return "neutral";
+  return ({ paid: "success", sent: "pending", waiting: "neutral", attention: "danger" } as const)[payoutStage(state).key];
 }
 
 export interface PayoutPipelineWidget {
@@ -54,12 +52,13 @@ export interface DashboardRegistry extends Omit<AgDefaultRegistry, "widgets"> {
   widgets: readonly (AgDefaultWidgetDefinition | PipelineDefinition | LatestDefinition)[];
 }
 
-const STAGES = [
-  { key: "waiting", label: "Waiting to send", states: ["not_scheduled", "queued"], hint: "Queued for PayPal Payouts" },
-  { key: "sent", label: "Sent", states: ["pending"], hint: "Awaiting PayPal (includes unclaimed)" },
-  { key: "paid", label: "Paid", states: ["paid", "simulated"], hint: "PayPal reported success" },
-  { key: "attention", label: "Needs attention", states: ["failed", "blocked"], hint: "Failed or on hold" },
-] as const;
+// The pipeline reads in flow order; colours come from the shared stage mapping. Captions stay short enough for a
+// phone without truncation.
+const HINTS = { waiting: "Not sent yet", sent: "Awaiting PayPal", paid: "Confirmed", attention: "Failed or on hold" } as const;
+const STAGES = (["waiting", "sent", "paid", "attention"] as const).map((key) => {
+  const stage = PAYOUT_STAGES.find((s) => s.key === key)!;
+  return { key, label: key === "waiting" ? "Waiting to send" : stage.label, states: stage.states, color: stage.color, hint: HINTS[key] };
+});
 
 function PayoutPipeline({ widgetApi, dataMapping }: AgWidgetParams<PayoutPipelineWidget>) {
   const stage = dataMapping.stage?.at(0);
@@ -102,12 +101,12 @@ function PayoutPipeline({ widgetApi, dataMapping }: AgWidgetParams<PayoutPipelin
       <div className="pb-pipeline-bar" aria-hidden="true">
         {/* Progress reads left to right: paid first, then sent, waiting, and anything that needs attention. */}
         {["paid", "sent", "waiting", "attention"].map((key) => stages.find((s) => s.key === key)!).filter((s) => s.amount > 0)
-          .map((s) => <span key={s.key} className={`pb-seg ${s.key}`} style={{ flexGrow: s.amount }} />)}
+          .map((s) => <span key={s.key} className={`pb-seg ${s.key}`} style={{ flexGrow: s.amount, background: s.color }} />)}
       </div>
       <ol className="pb-pipeline-stages">
         {stages.map((s) => (
           <li key={s.key} className={`pb-stage ${s.key}${s.amount > 0 || s.count > 0 ? "" : " empty"}`}>
-            <span className={`pb-dot ${s.key}`} aria-hidden="true" />
+            <span className={`pb-dot ${s.key}`} style={{ background: s.color }} aria-hidden="true" />
             <span className="pb-stage-label">{s.label}</span>
             <strong className="pb-stage-amount">{money(s.amount)}</strong>
             <span className="pb-stage-meta">{count ? `${s.count} · ` : ""}{s.hint}</span>

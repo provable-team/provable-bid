@@ -18,7 +18,7 @@ import {
 } from "ag-studio";
 import type { OperatorStudioRow } from "./operator-studio";
 import { studioAiAdapter } from "./studio-ai-adapter";
-import { bottom, phoneLayout, studioAllocationData } from "./studio-dashboard-data";
+import { bottom, PAYOUT_STAGES, payoutStageSummary, phoneLayout, studioAllocationData } from "./studio-dashboard-data";
 import { latestPayoutDefinition, payoutPipelineDefinition, payoutShortLabel, type DashboardRegistry } from "./studio-widgets";
 
 const usd = { format: "currencyFormat", formatOptions: { format: "$#,##0.00" } } as const;
@@ -28,8 +28,9 @@ const usd = { format: "currencyFormat", formatOptions: { format: "$#,##0.00" } }
 // The site's palette: ink, lime accent, olive, paper and line, with amber and terracotta for waiting and failed.
 const INK = "#20221d", LIME = "#d6ef73", OLIVE = "#657b19", PAPER = "#f6f5ef", WHITE = "#fffef9", LINE = "#dddfd4", MUTED = "#707168";
 const SANS = "DM Sans, Arial, sans-serif";
-// Site colours: green first, then ink, amber and terracotta. Categorical only: a series colour never means a payout state.
-const SERIES = ["#9ab832", INK, "#d9b45a", "#c98a72", "#718e24", "#93978a", "#5d7325", "#d6ef73"];
+// Studio 3.1 has no per-category colours, only palette position, so the first four slots are the payout stages in
+// their fixed order (paid, sent, waiting, needs attention) and every by-stage chart lists stages in that order.
+const SERIES = [...PAYOUT_STAGES.map((stage) => stage.color), INK, "#93978a", "#5d7325", "#d6ef73"];
 const theme = studioTheme.withParams({
   studioAiPanelWidth: 350,
   fontFamily: SANS, studioCanvasFontFamily: SANS, chartFontFamily: SANS,
@@ -50,7 +51,7 @@ const theme = studioTheme.withParams({
   studioWrapperSpacing: 0, studioCanvasBorder: false, studioCanvasShadow: "none",
   chartPaletteFills1Color: SERIES[0], chartPaletteFills2Color: SERIES[1], chartPaletteFills3Color: SERIES[2], chartPaletteFills4Color: SERIES[3],
   chartPaletteFills5Color: SERIES[4], chartPaletteFills6Color: SERIES[5], chartPaletteFills7Color: SERIES[6], chartPaletteFills8Color: SERIES[7],
-  chartPaletteStrokes1Color: OLIVE, chartPaletteStrokes2Color: INK, chartPaletteStrokes3Color: "#9a7417", chartPaletteStrokes4Color: "#8a3b25",
+  chartPaletteStrokes1Color: "#55691a", chartPaletteStrokes2Color: "#b07d0f", chartPaletteStrokes3Color: "#b9bbad", chartPaletteStrokes4Color: "#6e2f1d",
   chartPaletteStrokes5Color: "#5d7325", chartPaletteStrokes6Color: "#707168", chartPaletteStrokes7Color: "#3f4f12", chartPaletteStrokes8Color: OLIVE,
 });
 
@@ -89,8 +90,8 @@ const initialState: AgReportState<DashboardRegistry> = {
       },
       "win-count": {
         type: "value",
-        dataMapping: { value: [{ id: "allocations.allocation_count", aggregation: "sum" }] },
-        format: valueLabel("Winning entries"),
+        dataMapping: { value: [{ id: "allocations.allocation_count", aggregation: "sum" }], sparklineX: [{ id: "allocations.created_on" }] },
+        format: { style: { ...valueLabel("Winning entries").style, sparkline: { type: "bar" as const } } },
       },
       "payout-pipeline": {
         type: "payout-pipeline",
@@ -112,8 +113,9 @@ const initialState: AgReportState<DashboardRegistry> = {
       },
       "by-status": {
         type: "donut-chart",
-        dataMapping: { categoryKey: [{ id: "allocations.payout_state" }], valueKey: [{ id: "allocations.allocation_usd", aggregation: "sum" }] },
+        dataMapping: { categoryKey: [{ id: "payout_stages.stage" }], valueKey: [{ id: "payout_stages.amount_usd", aggregation: "sum" }] },
         format: title("By payout state", "Recorded allocation amounts, USD"),
+        sort: [{ field: { id: "payout_stages.stage_order", aggregation: "min" }, direction: "asc" }],
       },
     },
     // The canvas is never drawn narrower than the page's minimum width, so lower it for phones; match the site's
@@ -191,6 +193,18 @@ export default function OperatorStudioCanvas({ rows, licenseKey, assistant }: {
         { id: "paid_usd", name: "Paid (USD)", ...usd, description: "The allocation, when PayPal reported the payout as paid; else 0." },
         { id: "cumulative_usd", name: "Running net total (USD)", ...usd, description: "Running net allocation total in created order, excluding reversed obligations using their current ledger state." },
         { id: "allocation_count", name: "Allocations", format: "integerFormat", description: "1 per allocation; sum it to count wins." },
+      ],
+    }, {
+      // The same allocations summed per payout stage, always all four stages in a fixed order: charts of payout state
+      // use this so each stage keeps its colour.
+      id: "payout_stages",
+      name: "Payout stages",
+      data: payoutStageSummary(allocations),
+      fields: [
+        { id: "stage", name: "Payout stage", format: "textFormat", description: "Paid, Sent (awaiting PayPal), Waiting (not sent yet) or Issue (failed or on hold)." },
+        { id: "stage_order", name: "Stage order", format: "integerFormat", description: "1 to 4: sort stages by this (ascending) so each keeps its colour." },
+        { id: "amount_usd", name: "Recorded allocation (USD)", ...usd, description: "Recorded allocation amounts in this stage (historical payout activity, includes reversed obligations; use allocations.outstanding_usd for money still owed)." },
+        { id: "allocation_count", name: "Allocations", format: "integerFormat", description: "Number of allocations in this stage." },
       ],
     }],
   }) as AgDataSourcesDefinition<DashboardRegistry>, [allocations]);

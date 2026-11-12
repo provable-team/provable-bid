@@ -2595,25 +2595,39 @@ svg {
 }
 .ledger-status::before {
   content: "";
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: currentColor;
+  background: #dfe0d6; /* waiting: PAYOUT_STAGES neutral */
+  box-shadow: inset 0 0 0 1px #b9bbad;
 }
+/* Dot colours match PAYOUT_STAGES in studio-dashboard-data.ts: paid, sent, needs attention. */
 .ledger-status.success {
   background: #eff4de;
   border-color: #d8e4ba;
   color: #4f6519;
+}
+.ledger-status.success::before {
+  background: #6f8a1f;
+  box-shadow: none;
 }
 .ledger-status.pending {
   background: #f9f0dc;
   border-color: #e6d9b9;
   color: #7a5c10;
 }
+.ledger-status.pending::before {
+  background: #e5a51a;
+  box-shadow: none;
+}
 .ledger-status.danger {
   background: #f9ece7;
   border-color: #ead6cd;
   color: #8a3b25;
+}
+.ledger-status.danger::before {
+  background: #8a3b25;
+  box-shadow: none;
 }
 
 /* AG Studio earnings dashboard. Studio's frame is sized by the component to the rows it lays out, so nothing is
@@ -2675,6 +2689,12 @@ svg {
 /* Custom Studio widgets: the payout pipeline and the latest payout card. Container queries let each lay itself out for
    the width Studio gives it. */
 .pb-pipeline,
+.pb-pipeline *,
+.pb-latest,
+.pb-latest * {
+  font-family: var(--sans);
+}
+.pb-pipeline,
 .pb-latest {
   container-type: inline-size;
   box-sizing: border-box;
@@ -2701,11 +2721,11 @@ svg {
   gap: 12px;
 }
 .pb-pipeline-total {
-  font-family: var(--serif);
-  font-size: 30px;
-  font-weight: 400;
+  font-size: 28px;
+  font-weight: 650;
   line-height: 1.1;
   margin-right: 8px;
+  font-variant-numeric: tabular-nums;
 }
 .pb-pipeline-rate {
   border-radius: 999px;
@@ -2727,21 +2747,9 @@ svg {
 .pb-seg {
   min-width: 6px;
 }
-.pb-seg.paid,
-.pb-dot.paid {
-  background: #9ab832;
-}
-.pb-seg.sent,
-.pb-dot.sent {
-  background: var(--accent);
-}
-.pb-seg.waiting,
+/* Stage colours are set inline from PAYOUT_STAGES; the neutral "waiting" mark gets an outline on white. */
 .pb-dot.waiting {
-  background: #d9b45a;
-}
-.pb-seg.attention,
-.pb-dot.attention {
-  background: #c98a72;
+  box-shadow: inset 0 0 0 1px #b9bbad;
 }
 .pb-pipeline-stages {
   display: grid;
@@ -2781,9 +2789,7 @@ svg {
 .pb-stage-meta {
   color: var(--muted);
   font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
 }
 @container (max-width: 560px) {
   .pb-pipeline-stages {
