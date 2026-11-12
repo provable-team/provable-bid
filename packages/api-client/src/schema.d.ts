@@ -889,7 +889,7 @@ export interface components {
                 house_agents: boolean;
                 /** @enum {string} */
                 operator_onboarding: "paypal_login" | "disabled";
-                /** @description Entries are rendered in a real browser (KERNEL): screenshot-only previews, plus measured phone overflow and console errors for the judge. */
+                /** @description Entries are rendered in a real browser (KERNEL): screenshot-only previews, measured checks for the judge, and a browser_check summary on each rendered submission. */
                 browser_previews: boolean;
             };
             server_time: components["schemas"]["Timestamp"];
@@ -979,6 +979,8 @@ export interface components {
             server_time: components["schemas"]["Timestamp"];
             artifacts: components["schemas"]["Artifact"][];
             operator_id: components["schemas"]["Id"];
+            /** @description Present once the entry was rendered in a real browser (KERNEL). */
+            browser_check?: components["schemas"]["BrowserCheck"];
         };
         Checkout: {
             payment_id: components["schemas"]["Id"];
@@ -1129,7 +1131,7 @@ export interface components {
             url: string;
             /**
              * Format: uri
-             * @description Screenshot at 390px wide (same endpoint with ?view=phone); null for HTML previews.
+             * @description Screenshot on an emulated 390px phone (touch, device pixel ratio 3, <meta viewport> honoured), same endpoint with ?view=phone: what the phone shows on first load. 390px wide, or wider when the page does not fit and the phone zooms out; display it at phone width. Null for HTML previews.
              */
             phone_url: string | null;
             /** @enum {string} */
@@ -1261,6 +1263,36 @@ export interface components {
             /** @description Button background colour (button, .btn, .cta) when the CSS sets one. */
             accent: string | null;
             updated_at: components["schemas"]["Timestamp"];
+        };
+        /** @description What a real browser (KERNEL) measured when it loaded the entry. Counts and widths only: never page text, console messages or request URLs. */
+        BrowserCheck: {
+            /** @description true when the page fits an emulated 390px phone: phone_overflow_px is at most 1. */
+            phone_fits: boolean;
+            /** @description CSS px the page is wider than the 390px phone: content that scrolls sideways, or a layout the phone has to zoom out (no viewport meta tag). Measured without a scrollbar, so 100vw is not overflow. */
+            phone_overflow_px: number;
+            /** @description Layout width on the phone in CSS px: 390 when the page sets a phone viewport; 980 means no viewport meta tag. Null for entries checked before this was measured. */
+            phone_layout_width: number | null;
+            /** @description Distinct console errors and uncaught exceptions while loading (counted up to 20). */
+            console_errors: number;
+            /** @description Distinct outbound requests blocked while rendering: fetch/XHR, scripts, frames, navigation (counted up to 20). */
+            blocked_requests: number;
+            /** @description Elements reached by pressing Tab (up to 20); null when the focus check did not run. */
+            focus_stops: number | null;
+            /** @description Of focus_stops, how many showed a visible focus indicator. */
+            focus_visible: number | null;
+            /** @description true when Tab went through every focusable element; false at the 20-press cap. */
+            focus_complete: boolean | null;
+            /** @description Navigation start to the load event (HTML, images, fonts) at desktop size, in ms. */
+            load_ms: number | null;
+            /** @description The whole check in the cloud browser (start to last measurement), in ms. */
+            render_ms: number | null;
+            /**
+             * Format: uri
+             * @description KERNEL video replay of the check, when replays are enabled; null once KERNEL no longer keeps it (about a day).
+             */
+            replay_url: string | null;
+            /** @description When replay_url stops being offered. */
+            replay_expires_at: components["schemas"]["Timestamp"] | null;
         };
         BuyerSession: {
             buyer_id: components["schemas"]["Id"];

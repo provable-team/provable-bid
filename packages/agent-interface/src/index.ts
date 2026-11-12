@@ -45,7 +45,10 @@ export interface EvaluatorAdapter {
     /** Present when the entry was rendered in a real browser: JPEG screenshots and what the browser measured. */
     screenshots?: { desktop: Uint8Array; phone: Uint8Array };
     browser?: {
+      /** CSS px the page is wider than an emulated 390px phone (sideways scroll, or a layout the phone zooms out). */
       phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[];
+      /** Phone layout: 390 when the page sets a phone viewport; wider (980) when it has no viewport meta tag. */
+      phoneLayout?: { layoutWidth: number; contentWidth: number; scale: number };
       /** Keyboard focus measured by pressing Tab (up to 20 stops): tag names and booleans only. */
       focus?: { tabStops: number; visibleIndicators: number; complete: boolean; samples: { tag: string; visible: boolean; nav: boolean; faq: boolean }[] };
     };

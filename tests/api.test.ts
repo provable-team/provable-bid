@@ -9,7 +9,7 @@ import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface
 import { createApi, disputeVerdict, eventRef, payoutOutcome } from '../apps/api/src/app.js';
 import { heuristicEvaluator, judgeText, streamingHouseAgent } from '../apps/api/src/claude.js';
 import { colorTracker, parseStructure, progressTracker, structureTracker } from '../apps/api/src/progress.js';
-import type { PageRenderer } from '../apps/api/src/browser.js';
+import type { PageRenderer, RenderOptions } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
 import { agentPayoutFor, paypalCheckoutFee, processingFeeFor } from '../apps/api/src/money.js';
 import { fakeProvider } from '../apps/api/src/provider/fake.js';
@@ -863,10 +863,16 @@ test('PayPal returns the buyer to the allowed site they started on, never to an 
 test('KERNEL-rendered entries: screenshot-only previews, and phone requirements judged by the measured overflow', async t => {
   const overflowFor = new Map<string, number>();
   let failNext = false;
-  const renderer: PageRenderer = { name: 'fake-kernel', async render(html) {
+  const calls: RenderOptions[] = [];
+  const renderer: PageRenderer = { name: 'fake-kernel', async render(html, options = {}) {
+    calls.push(options);
     if (failNext) { failNext = false; throw new Error('browser unavailable'); }
+    const overflow = [...overflowFor].find(([needle]) => html.includes(needle))?.[1] ?? 0;
     return { desktop: Buffer.from(`DESKTOP-JPEG:${html.length}`), phone: Buffer.from('PHONE-JPEG'), desktopHeight: 1900, phoneHeight: 2400,
-      phoneOverflowPx: [...overflowFor].find(([needle]) => html.includes(needle))?.[1] ?? 0, consoleErrors: [], blockedRequests: [] };
+      phoneOverflowPx: overflow, phoneLayout: { layoutWidth: 390, contentWidth: 390 + overflow, scale: 1 },
+      consoleErrors: ['Uncaught TypeError: secret is not a function'], blockedRequests: ['fetch https://tracker.example/secret', 'script https://cdn.example/x.js'],
+      focus: { tabStops: 4, visibleIndicators: 3, complete: true, samples: [] }, loadMs: 412, renderMs: 6100,
+      replay: { id: 'replay_1', url: 'https://replays.kernel.example/r/replay_1', retentionMs: 3_600_000 } };
   } };
   const f = await fixture(t, { renderer });
   assert.equal((await f.get('/v1/config', null)).data.capabilities.browser_previews, true);
@@ -881,6 +887,14 @@ test('KERNEL-rendered entries: screenshot-only previews, and phone requirements 
 
   const gallery = (await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items;
   assert.deepEqual(gallery.map((s: any) => s.id), [good.id], 'the page that scrolls sideways on a phone does not qualify');
+  assert.deepEqual(calls[0].tags, { competition: c.id, submission: good.id }, 'KERNEL sessions are tagged with the competition and submission');
+  assert.ok(calls[0].signal instanceof AbortSignal, 'and take an abort signal');
+  assert.deepEqual(gallery[0].browser_check, {
+    phone_fits: true, phone_overflow_px: 0, phone_layout_width: 390, console_errors: 1, blocked_requests: 2,
+    focus_stops: 4, focus_visible: 3, focus_complete: true, load_ms: 412, render_ms: 6100,
+    replay_url: 'https://replays.kernel.example/r/replay_1', replay_expires_at: new Date(T0 + 3_600_000).toISOString(),
+  }, 'the buyer sees counts and widths from the real browser, never messages or URLs from the page');
+  assert.ok(!JSON.stringify(gallery[0]).includes('secret'));
   const art = gallery[0].artifacts[0];
   assert.equal(art.preview.mime_type, 'image/jpeg'); assert.equal(art.preview.width, 1280); assert.equal(art.preview.height, 1900);
   const desktop = await f.get(new URL(art.preview.url).pathname, b);
@@ -892,6 +906,11 @@ test('KERNEL-rendered entries: screenshot-only previews, and phone requirements 
   const failed = (await f.get(`/v1/submissions/${wide.id}`, ben.token)).data.qualification;
   assert.equal(failed.failure_code, 'requirements_not_met');
   assert.match(failed.checks.find((x: any) => x.requirement_id === 'req_mobile').reason, /scrolls sideways by 350px/);
+  assert.equal((await f.get(`/v1/submissions/${wide.id}`, ben.token)).data.browser_check.phone_fits, false, 'the agent sees its own measurements');
+  // The replay link is offered only while KERNEL keeps the video.
+  await f.advance(3601);
+  const later = (await f.get(`/v1/submissions/${good.id}`, b)).data.browser_check;
+  assert.equal(later.replay_url, null); assert.equal(later.replay_expires_at, null); assert.equal(later.console_errors, 1);
 
   // Renderer outage: the entry is still judged, but the buyer gets no preview rather than the markup.
   const c2 = (await f.open(b)).c;
@@ -899,6 +918,7 @@ test('KERNEL-rendered entries: screenshot-only previews, and phone requirements 
   await f.enter(ann.token, c2.id, page()); await f.settle();
   const unrendered = (await f.get(`/v1/competitions/${c2.id}/submissions`, b)).data.items[0].artifacts[0];
   assert.equal(unrendered.preview.mime_type, 'text/html'); assert.equal(unrendered.preview.phone_url, null);
+  assert.equal((await f.get(`/v1/competitions/${c2.id}/submissions`, b)).data.items[0].browser_check, undefined, 'no render, no browser check');
   const closed = await f.get(new URL(unrendered.preview.url).pathname, b);
   assert.equal(closed.status, 409, 'fail closed: with a renderer configured, a buyer never gets markup, even if the render failed');
   assert.equal((await f.get(new URL(unrendered.preview.url).pathname, ann.token)).headers['content-type'], 'text/html', 'the agent can still see its own page');
@@ -920,6 +940,18 @@ test('keyboard focus measured in the browser is ground truth for focus requireme
   assert.equal((await run(focus([true, true]))).status, 'qualified');
   assert.equal((await run(focus([true, false]))).status, 'failed');
   assert.equal((await run(focus([]))).status, 'failed', 'nothing focusable is not keyboard accessible');
+});
+
+test('phone measurements in words: a page without a phone viewport is called out for the judge and the keyword judge', async () => {
+  const requirements = [{ id: 'req_mobile', description: 'Works on a 375px phone without horizontal scrolling.' }];
+  const zoomed = { phoneOverflowPx: 590, phoneLayout: { layoutWidth: 980, contentWidth: 980, scale: 0.398 }, consoleErrors: [], blockedRequests: [] };
+  assert.match(judgeText({ title: 't', brief: 'b', requirements, browser: zoomed }, ''), /laid out 980px wide \(no working viewport meta tag\).*shrunk to 40%/);
+  assert.match(judgeText({ title: 't', brief: 'b', requirements, browser: { ...zoomed, phoneOverflowPx: 0, phoneLayout: { layoutWidth: 390, contentWidth: 390, scale: 1 } } }, ''), /0px wider than the screen.*laid out at the phone width \(390px\)\./);
+  const run = (browser: typeof zoomed) => heuristicEvaluator().qualify({ title: 't', brief: 'b', requirements, signal: AbortSignal.timeout(1000),
+    artifacts: [{ metadata: {} as any, bytes: new TextEncoder().encode(page()) }], browser });
+  const r = await run(zoomed);
+  assert.equal(r.status, 'failed', 'a viewport meta tag in the markup is not enough: the browser measured a 980px layout');
+  assert.match(r.checks[0].reason, /no phone viewport, so it lays out 980px wide/);
 });
 
 test('preview CSP precedes agent markup even when a script sits before <head>', () => {

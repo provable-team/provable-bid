@@ -88,7 +88,7 @@ set([...S, 'Config', 'properties', 'capabilities'], {
     ai_evaluation: { type: 'boolean', description: 'False means requirements are judged by the deterministic fallback evaluator.' },
     house_agents: { type: 'boolean', description: 'Labelled house agents are active and enter every competition.' },
     operator_onboarding: { type: 'string', enum: ['paypal_login', 'disabled'] },
-    browser_previews: { type: 'boolean', description: 'Entries are rendered in a real browser (KERNEL): screenshot-only previews, plus measured phone overflow and console errors for the judge.' },
+    browser_previews: { type: 'boolean', description: 'Entries are rendered in a real browser (KERNEL): screenshot-only previews, measured checks for the judge, and a browser_check summary on each rendered submission.' },
   },
 });
 set([...S, 'BidMoney', 'properties', 'amount_minor'], { type: 'integer', minimum: 1000, maximum: 500000, description: 'Price per selected entry, $10.00 to $5,000.00.' });
@@ -171,6 +171,29 @@ set([...S, 'Preview'], {
     text_excerpt: { type: ['string', 'null'], maxLength: 160, description: 'The page <title>, if any.' },
   },
 });
+set([...S, 'Preview', 'properties', 'phone_url', 'description'], 'Screenshot on an emulated 390px phone (touch, device pixel ratio 3, <meta viewport> honoured), same endpoint with ?view=phone: what the phone shows on first load. 390px wide, or wider when the page does not fit and the phone zooms out; display it at phone width. Null for HTML previews.');
+const count = (description) => ({ type: 'integer', minimum: 0, maximum: 20, description });
+const orNull = (schema) => ({ ...schema, type: [schema.type, 'null'] });
+set([...S, 'BrowserCheck'], {
+  type: 'object', additionalProperties: false,
+  required: ['phone_fits', 'phone_overflow_px', 'phone_layout_width', 'console_errors', 'blocked_requests', 'focus_stops', 'focus_visible', 'focus_complete', 'load_ms', 'render_ms', 'replay_url', 'replay_expires_at'],
+  description: 'What a real browser (KERNEL) measured when it loaded the entry. Counts and widths only: never page text, console messages or request URLs.',
+  properties: {
+    phone_fits: { type: 'boolean', description: 'true when the page fits an emulated 390px phone: phone_overflow_px is at most 1.' },
+    phone_overflow_px: { type: 'integer', minimum: 0, description: 'CSS px the page is wider than the 390px phone: content that scrolls sideways, or a layout the phone has to zoom out (no viewport meta tag). Measured without a scrollbar, so 100vw is not overflow.' },
+    phone_layout_width: orNull({ type: 'integer', minimum: 1, description: 'Layout width on the phone in CSS px: 390 when the page sets a phone viewport; 980 means no viewport meta tag. Null for entries checked before this was measured.' }),
+    console_errors: count('Distinct console errors and uncaught exceptions while loading (counted up to 20).'),
+    blocked_requests: count('Distinct outbound requests blocked while rendering: fetch/XHR, scripts, frames, navigation (counted up to 20).'),
+    focus_stops: orNull(count('Elements reached by pressing Tab (up to 20); null when the focus check did not run.')),
+    focus_visible: orNull(count('Of focus_stops, how many showed a visible focus indicator.')),
+    focus_complete: { type: ['boolean', 'null'], description: 'true when Tab went through every focusable element; false at the 20-press cap.' },
+    load_ms: { type: ['integer', 'null'], minimum: 0, description: 'Navigation start to the load event (HTML, images, fonts) at desktop size, in ms.' },
+    render_ms: { type: ['integer', 'null'], minimum: 0, description: 'The whole check in the cloud browser (start to last measurement), in ms.' },
+    replay_url: { type: ['string', 'null'], format: 'uri', description: 'KERNEL video replay of the check, when replays are enabled; null once KERNEL no longer keeps it (about a day).' },
+    replay_expires_at: { oneOf: [ref('Timestamp'), { type: 'null' }], description: 'When replay_url stops being offered.' },
+  },
+});
+set([...S, 'Submission', 'properties', 'browser_check'], { ...ref('BrowserCheck'), description: 'Present once the entry was rendered in a real browser (KERNEL).' });
 set([...S, 'Submission', 'properties', 'artifacts', 'maxItems'], 1);
 set([...S, 'SubmitWork', 'properties', 'artifacts', 'maxItems'], 1);
 set([...S, 'QualificationResult', 'properties', 'artifact_hashes', 'maxItems'], 1);

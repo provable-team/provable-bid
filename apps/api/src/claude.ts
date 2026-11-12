@@ -25,6 +25,16 @@ export const Verdict = z.object({
 
 type QualifyInput = Parameters<EvaluatorAdapter['qualify']>[0];
 
+/** The phone measurement in words: an emulated 390px phone (touch, viewport meta honoured, no scrollbar). */
+export function phoneText(b: NonNullable<QualifyInput['browser']>): string {
+  const layout = b.phoneLayout;
+  const base = `Phone (emulated 390px-wide phone: touch, <meta viewport> honoured, no scrollbar, so 100vw is not overflow): the page is ${b.phoneOverflowPx}px wider than the screen (0 means it fits without sideways scrolling or zooming out).`;
+  if (!layout) return base;
+  return layout.layoutWidth > 390
+    ? `${base} It laid out ${layout.layoutWidth}px wide (no working viewport meta tag), so the phone shows a desktop layout shrunk to ${Math.round(layout.scale * 100)}%: it is not built for phones.`
+    : `${base} It laid out at the phone width (390px)${layout.contentWidth > 390 ? `; content ${layout.contentWidth}px wide scrolls sideways` : ''}.`;
+}
+
 /** The judge's user message: brief, requirement IDs, browser measurements, then the untrusted page as data. */
 export function judgeText({ title, brief, requirements, browser }: Pick<QualifyInput, 'title' | 'brief' | 'requirements' | 'browser'>, html: string): string {
   const f = browser?.focus;
@@ -35,7 +45,7 @@ export function judgeText({ title, brief, requirements, browser }: Pick<QualifyI
       `Stops in order: ${f.samples.map(x => `${x.tag}${x.nav ? ' (nav)' : x.faq ? ' (faq)' : ''} ${x.visible ? 'visible' : 'NOT visible'}`).join(', ')}. ` +
       'If the controls a requirement names were all reached and all show a visible indicator, keyboard access with visible focus is established; do not fail it for lack of evidence.';
   const measured = browser
-    ? `<browser_measurements>\nHorizontal overflow at 390px wide: ${browser.phoneOverflowPx}px (0 means it fits a phone without sideways scrolling).\nConsole errors: ${browser.consoleErrors.length ? browser.consoleErrors.join(' | ') : 'none'}\nBlocked outbound requests: ${browser.blockedRequests.length ? browser.blockedRequests.join(' | ') : 'none'}${focus}\n</browser_measurements>\nTreat these measurements as ground truth for layout, phone, keyboard and focus requirements: screenshots cannot show focus, the measurement can.`
+    ? `<browser_measurements>\n${phoneText(browser)}\nConsole errors: ${browser.consoleErrors.length ? browser.consoleErrors.join(' | ') : 'none'}\nBlocked outbound requests: ${browser.blockedRequests.length ? browser.blockedRequests.join(' | ') : 'none'}${focus}\n</browser_measurements>\nTreat these measurements as ground truth for layout, phone, keyboard and focus requirements: screenshots cannot show focus, the measurement can.`
     : '';
   return [
     `<brief title="${title.replace(/"/g, "'")}">\n${brief}\n</brief>`,
@@ -87,7 +97,7 @@ export function claudeEvaluator(client: Anthropic): EvaluatorAdapter {
     async qualify({ title, brief, requirements, artifacts, signal, screenshots, browser }) {
       const html = Buffer.from(artifacts[0].bytes).toString('utf8');
       const shots = screenshots ? [
-        { type: 'text' as const, text: 'Screenshots taken in a real browser (KERNEL). First: desktop, 1280px wide. Second: phone, 390px wide.' },
+        { type: 'text' as const, text: 'Screenshots taken in a real browser (KERNEL). First: desktop, 1280px wide. Second: an emulated 390px phone, as the phone shows the page on first load (an image wider than 390px means the phone zoomed out to fit it).' },
         { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: Buffer.from(screenshots.desktop).toString('base64') } },
         { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: Buffer.from(screenshots.phone).toString('base64') } },
       ] : [];
@@ -129,8 +139,11 @@ export function heuristicEvaluator(): EvaluatorAdapter {
             : `Measured in a real browser: Tab reached ${tabStops} element(s), ${visibleIndicators} with a visible focus indicator.` };
         }
         if (/mobile|phone|responsive|375/.test(d) && browser) {
-          const ok = browser.phoneOverflowPx <= 2;
-          return { requirement_id: r.id, passed: ok, reason: ok ? 'Measured in a real browser at 390px: fits without sideways scrolling.' : `Measured in a real browser at 390px: scrolls sideways by ${browser.phoneOverflowPx}px.` };
+          const ok = browser.phoneOverflowPx <= 1;
+          const wide = (browser.phoneLayout?.layoutWidth ?? 0) > 390;
+          return { requirement_id: r.id, passed: ok, reason: ok ? 'Measured in a real browser on a 390px phone: fits without sideways scrolling.'
+            : wide ? `Measured in a real browser on a 390px phone: no phone viewport, so it lays out ${browser.phoneLayout!.layoutWidth}px wide and the phone zooms out.`
+            : `Measured in a real browser on a 390px phone: scrolls sideways by ${browser.phoneOverflowPx}px.` };
         }
         if (/mobile|phone|responsive|375/.test(d)) {
           const ok = /<meta[^>]+name=["']?viewport/i.test(html);

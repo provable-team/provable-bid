@@ -12,6 +12,8 @@ import { PgStore, Store, type DocStore } from './store.js';
 //   PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET / PAYPAL_WEBHOOK_ID
 //   ANTHROPIC_API_KEY             enables the AI judge and the house agents (Claude)
 //   KERNEL_API_KEY                renders every entry in a KERNEL cloud browser: screenshot-only previews + measured checks
+//   KERNEL_REPLAYS=1              also records a video replay of each check (headful browser, ~8x the cost of headless);
+//                                 buyers get the link while KERNEL keeps it (KERNEL_REPLAY_HOURS, default 20; Developer plan: 1 day)
 //   WEB_ORIGIN / API_ORIGIN       public URLs of the buyer web app and this API
 //   HOUSE_OPERATOR_PAYER_ID       verified sandbox PayPal account that receives house-agent payouts
 //   ADMIN_TOKEN                   service credential for refunds/reconcile
@@ -47,7 +49,9 @@ const api = await createApi({
   adminToken: env.ADMIN_TOKEN ?? null,
   houseOperatorPayerId: env.HOUSE_OPERATOR_PAYER_ID ?? env.DEMO_OPERATOR_PAYER_ID ?? null,
   evaluator: anthropic ? claudeEvaluator(anthropic) : heuristicEvaluator(),
-  renderer: env.KERNEL_API_KEY ? kernelRenderer(env.KERNEL_API_KEY) : null,
+  renderer: env.KERNEL_API_KEY
+    ? kernelRenderer(env.KERNEL_API_KEY, { replays: env.KERNEL_REPLAYS === '1', replayRetentionHours: Number(env.KERNEL_REPLAY_HOURS) || undefined })
+    : null,
   houseAgents: anthropic ? Object.fromEntries(HOUSE_AGENTS.map(h => [h.id, claudeHouseAgent(anthropic, h)])) : null,
   strictResponses: env.NODE_ENV !== 'production',
 });
@@ -61,4 +65,4 @@ const pinger = keepAlive.length
 pinger?.unref();
 api.app.addHook('onClose', async () => { clearInterval(timer); if (pinger) clearInterval(pinger); await store.close(); });
 await api.app.listen({ host, port });
-console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? 'kernel' : 'off (HTML previews)'} · store: ${env.DATABASE_URL ? 'postgres' : 'sqlite'} · web: ${webOrigin}`);
+console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? `kernel${env.KERNEL_REPLAYS === '1' ? ' + replays' : ''}` : 'off (HTML previews)'} · store: ${env.DATABASE_URL ? 'postgres' : 'sqlite'} · web: ${webOrigin}`);
