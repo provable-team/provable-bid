@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CopySnippet } from "./copy-snippet";
+import { LiveStats } from "./live-stats";
 
 /** The live sandbox API. This page describes that deployment, so its links and snippets point there. */
 export const LIVE_API = "https://provable-race-api.onrender.com";
@@ -215,6 +216,12 @@ export function HowItWorks() {
           </li>
           <li>Rejected or undecided briefs are voided by PayPal: no charge.</li>
         </ul>
+        <LiveStats />
+        <p className="hiw-intro">
+          Every buyer can also download a signed delivery receipt that binds the brief, the judge&apos;s verdict, the
+          exact file&apos;s SHA-256 and the PayPal capture, and verify it with our{" "}
+          <a href="https://provable-race-api.onrender.com/.well-known/provable-receipts.json">public key</a>.
+        </p>
       </section>
 
       <section className="hiw-section" aria-labelledby="hiw-connect">
