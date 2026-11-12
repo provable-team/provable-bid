@@ -6,7 +6,7 @@ import type { components } from '../../../packages/api-client/src/schema.js';
 import { operations, resolve, validator, validateResponse } from '../../../scripts/contract.js';
 import type { PageRenderer, RenderResult } from './browser.js';
 import { gateHtml, prepareHtml } from './html.js';
-import { safeColors, safeLabel, STEP } from './progress.js';
+import { safeColors, safeLabel, safeStructure, STEP } from './progress.js';
 import {
   HOUSE_AGENTS, HOUSE_OPERATOR_ID, hashToken, newSecret, newToken, resolvePrincipal,
   type AgentPrincipal, type AgentRecord, type Credential, type Operator, type Principal,
@@ -738,22 +738,34 @@ export async function createApi(o: ApiOptions) {
 
   // ---------------------------------------------------------------- house-agent build progress (in memory, for the run)
   // Coarse step labels only (see progress.ts): never generated text, markup or CSS. Shown to the competition's buyer.
-  type Progress = S['BuildProgress'] & { at: number; submission_id: string | null };
+  type Progress = S['BuildProgress'] & { at: number; shapedAt: number; submission_id: string | null };
   const buildProgress = new Map<string, Map<string, Progress>>(); // competition ID → agent ID → latest step
   const progressInterval = o.progressIntervalMs ?? 1000;
   const buildProgressFor = (competitionId: string): S['BuildProgress'][] =>
-    [...(buildProgress.get(competitionId)?.values() ?? [])].map(({ agent_id, step, label, state, colors, updated_at }) => ({ agent_id, step, label, state, colors: [...colors], updated_at }));
+    [...(buildProgress.get(competitionId)?.values() ?? [])].map(({ agent_id, step, label, state, colors, blocks, current_block, accent, updated_at }) =>
+      ({ agent_id, step, label, state, colors: [...colors], blocks: structuredClone(blocks), current_block, accent, updated_at }));
   function setProgress(competitionId: string, agentId: string, label: string, state: S['BuildProgress']['state'], submissionId: string | null = null, colors?: string[]) {
     let byAgent = buildProgress.get(competitionId);
     if (!byAgent) buildProgress.set(competitionId, byAgent = new Map());
     const cur = byAgent.get(agentId);
-    byAgent.set(agentId, { agent_id: agentId, step: (cur?.step ?? -1) + 1, label, state, colors: colors ?? cur?.colors ?? [], updated_at: stamp(), at: time(), submission_id: submissionId ?? cur?.submission_id ?? null });
+    byAgent.set(agentId, {
+      agent_id: agentId, step: (cur?.step ?? -1) + 1, label, state, colors: colors ?? cur?.colors ?? [],
+      blocks: cur?.blocks ?? [], current_block: cur?.current_block ?? null, accent: cur?.accent ?? null,
+      updated_at: stamp(), at: time(), shapedAt: cur?.shapedAt ?? 0, submission_id: submissionId ?? cur?.submission_id ?? null,
+    });
   }
-  function reportProgress(competitionId: string, agentId: string, raw: string, immediate = false, rawColors?: unknown) {
+  function reportProgress(competitionId: string, agentId: string, raw: string, immediate = false, rawColors?: unknown, rawStructure?: unknown) {
     const label = safeLabel(raw);
     const colors = safeColors(rawColors); // only exact #rrggbb strings ever leave the server
-    const cur = buildProgress.get(competitionId)?.get(agentId);
+    const shape = safeStructure(rawStructure); // only known block kinds, small integers and #rrggbb
+    let cur = buildProgress.get(competitionId)?.get(agentId);
     if (cur && cur.state !== 'building') return;
+    if (!cur && label) { setProgress(competitionId, agentId, label, 'building', null, colors); cur = buildProgress.get(competitionId)!.get(agentId)!; }
+    // The page's shape moves the cursor: up to ~2 updates a second, never a new step on its own.
+    if (cur && shape && (immediate || time() - cur.shapedAt >= progressInterval / 2)) {
+      const changed = JSON.stringify([shape.blocks, shape.current, shape.accent]) !== JSON.stringify([cur.blocks, cur.current_block, cur.accent]);
+      if (changed) { cur.blocks = shape.blocks; cur.current_block = shape.current; cur.accent = shape.accent; cur.shapedAt = time(); cur.updated_at = stamp(); }
+    }
     // New colours are kept straight away (at most 3 changes per run); they never move the step on their own.
     if (cur && colors.length > cur.colors.length) { cur.colors = colors; cur.updated_at = stamp(); }
     if (!label || cur?.label === label) return;
@@ -793,7 +805,7 @@ export async function createApi(o: ApiOptions) {
           }
           return s;
         },
-        progress: (label, opts) => reportProgress(c.id, agentId, label, opts?.immediate, opts?.colors),
+        progress: (label, opts) => reportProgress(c.id, agentId, label, opts?.immediate, opts?.colors, opts?.structure),
       });
     } catch (e) { log(`house agent ${agentId} on ${c.id} failed`, (e as Error).message); }
     finally {

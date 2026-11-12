@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
 import { createApi } from '../apps/api/src/app.js';
 import { heuristicEvaluator, streamingHouseAgent } from '../apps/api/src/claude.js';
-import { colorTracker, progressTracker } from '../apps/api/src/progress.js';
+import { colorTracker, parseStructure, progressTracker, structureTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
 import { agentPayoutFor, paypalCheckoutFee, processingFeeFor } from '../apps/api/src/money.js';
@@ -411,6 +411,29 @@ test('build colours: the first 3 usable hex values in colour declarations, norma
   assert.deepEqual(colorTracker()('<p>#123456 in text</p><div class="#654321">'), [], 'hex in text or attributes is not a colour declaration');
 });
 
+test('page structure: ordered top-level blocks with kinds and counts, and the block being written', () => {
+  const page = `<!doctype html><html><head><style>:root{--brand:#1F3A93}header{background:#f4efe6}.hero{background:var(--brand)}
+footer{background:#111}.btn{background:#e4572e}.btn:hover{background:#000}</style></head><body>
+<header><a class="logo" href="#">p</a><nav><a href="#how">How</a><a href="#faq">FAQ</a></nav></header>
+<main><section class="hero"><h1>Proof first</h1><p>Copy</p><a class="btn" href="#">Start</a><svg><g><path d="M0 0"/></g></svg></section>
+<section id="how"><h2>How</h2><ol><li class="step">1</li><li class="step">2</li><li class="step">3</li><li class="step">4</li></ol></section>
+<section id="faq"><h2>FAQ</h2><details><summary>a</summary></details><details><summary>b</summary></details><details><summary>c</summary></details></section>
+<form><input type="email"><input type="text"><textarea></textarea><input type="hidden"><button>Go</button></form>
+<table><tr><td>1</td></tr><tr><td>2</td></tr></table></main><footer><p>Small print</p></footer></body></html>`;
+  assert.deepEqual(structureTracker()(page, true), {
+    blocks: [{ kind: 'nav', fill: '#f4efe6' }, { kind: 'hero', fill: '#1f3a93' }, { kind: 'section', columns: 4 }, { kind: 'faq', items: 3 },
+      { kind: 'form', items: 3 }, { kind: 'table', items: 2 }, { kind: 'footer', fill: '#111111' }],
+    current: 6, accent: '#e4572e',
+  });
+  // Mid-stream: the FAQ is open (its close tag has not arrived), so it is the block being written.
+  const cut = page.slice(0, page.indexOf('<summary>c'));
+  assert.deepEqual(parseStructure(cut).blocks.map(b => b.kind), ['nav', 'hero', 'section', 'faq']);
+  assert.equal(parseStructure(cut).current, 3);
+  // A hero that is just a div with an h1 still counts; text and class names never appear.
+  const s = parseStructure('<body><div class="secret-hero-class"><h1>Secret words</h1></div><section><p>x</p></section>');
+  assert.deepEqual(s.blocks, [{ kind: 'hero' }, { kind: 'section' }]);
+});
+
 test('house agents report live build steps to the buyer only, and the steps never contain the page', async t => {
   let release!: () => void;
   const ready = new Promise<void>(r => { release = r; });
@@ -440,9 +463,18 @@ test('house agents report live build steps to the buyer only, and the steps neve
   const indexes = steps.map((s: any) => s.step);
   assert.deepEqual(indexes, [...indexes].sort((x, y) => x - y), 'step indexes only increase');
   assert.deepEqual(seen.at(-1).build_progress[0].colors, pageColors);
+  // The final structure mirrors the page: header/nav, the hero div, two sections, the footer; the button colour.
+  assert.deepEqual(seen.at(-1).build_progress[0].blocks.map((b: any) => b.kind), ['nav', 'hero', 'section', 'section', 'footer']);
+  assert.equal(seen.at(-1).build_progress[0].accent, '#b5522b');
+  assert.ok(steps.some((s: any) => s.blocks.length > 0 && s.blocks.length < 5), 'the structure grows while the page streams');
   for (const s of steps) {
-    assert.deepEqual(Object.keys(s).sort(), ['agent_id', 'colors', 'label', 'state', 'step', 'updated_at']);
+    assert.deepEqual(Object.keys(s).sort(), ['accent', 'agent_id', 'blocks', 'colors', 'current_block', 'label', 'state', 'step', 'updated_at']);
     assert.ok(s.colors.every((c: string) => pageColors.includes(c)), `only the page's own colours: ${s.colors}`);
+    for (const b of s.blocks) {
+      assert.ok(['nav', 'hero', 'section', 'form', 'faq', 'table', 'footer'].includes(b.kind));
+      assert.ok(Object.keys(b).every(k => ['kind', 'columns', 'items', 'fill'].includes(k)), JSON.stringify(b));
+      assert.ok([b.columns, b.items].every(n => n === undefined || (Number.isInteger(n) && n >= 1 && n <= 12)));
+    }
     // Nothing else from the stream: drop the allowed colours, then no fragment of the page may remain.
     const rest = JSON.stringify(s).replace(/"#[0-9a-f]{6}"/g, '""');
     for (const secret of secrets) assert.ok(!rest.includes(secret), `${rest} leaks "${secret}"`);

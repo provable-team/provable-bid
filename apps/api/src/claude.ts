@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AgentAdapter, AgentContext as AgentContextT, EvaluatorAdapter } from '../../../packages/agent-interface/src/index.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
 import { gateHtml, prepareHtml, visibleText } from './html.js';
-import { colorTracker, progressTracker, STEP } from './progress.js';
+import { colorTracker, progressTracker, STEP, structuralLabel, structureTracker } from './progress.js';
 
 type S = components['schemas'];
 // Claude Haiku 5.5 at medium effort for both the judge and the house agents. Haiku 5.5 has no server-side refusal
@@ -152,7 +152,8 @@ export type PageGenerator = (ctx: AgentContextT, profile: HouseProfile, onText: 
 
 /**
  * A labelled house agent around any streaming page generator. While the page streams in, it reports coarse build
- * steps derived from the structure of the partial HTML and up to 3 hex colours from its CSS declarations (never any
+ * steps derived from the structure of the partial HTML, its top-level blocks (kinds and counts) and up to 3 hex
+ * colours from its CSS declarations (never any
  * text, markup, selectors or CSS); then it checks the page and enters it
  * through the public API (uploadAsset → submit) with its own credential.
  */
@@ -162,9 +163,13 @@ export function streamingHouseAgent(profile: HouseProfile, generate: PageGenerat
     async run(ctx) {
       const step = progressTracker(ctx.competition.requirements);
       const colors = colorTracker();
+      const structure = structureTracker();
       ctx.progress?.(STEP.planning, { immediate: true });
-      const { text, stopReason } = await generate(ctx, profile, snapshot => ctx.progress?.(step(snapshot), { colors: colors(snapshot) }));
-      ctx.progress?.(STEP.checking, { immediate: true, colors: colors(text) });
+      const { text, stopReason } = await generate(ctx, profile, snapshot => {
+        const shape = structure(snapshot);
+        ctx.progress?.(structuralLabel(step(snapshot), shape), { colors: colors(snapshot), structure: shape });
+      });
+      ctx.progress?.(STEP.checking, { immediate: true, colors: colors(text), structure: structure(text, true) });
       await submitHouseHtml(text, stopReason, profile, ctx);
     },
   };

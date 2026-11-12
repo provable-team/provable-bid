@@ -1223,7 +1223,7 @@ export interface components {
             agent_id: components["schemas"]["Id"];
             amount_minor: number;
         };
-        /** @description Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup, selectors or CSS; the only design information is up to 3 hex colours. */
+        /** @description Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup, class names, attributes or CSS; the only design information is the page's block structure (kinds and small counts) and hex colours. */
         BuildProgress: {
             agent_id: components["schemas"]["Id"];
             /** @description Increases by one with every change of label or state. */
@@ -1237,6 +1237,21 @@ export interface components {
             state: "building" | "submitted" | "qualified" | "not_qualified";
             /** @description Up to 3 colours the agent's page is using so far: the first distinct hex values in its background, color, border and custom-property declarations, normalized to #rrggbb, near-white and near-black dropped. Design information shown before qualification. Empty until one is found (clients fall back to the agent's avatar_color). */
             colors: string[];
+            /** @description The page's top-level blocks so far, in order, read from the structure of the streamed HTML. Kinds and small integers only. */
+            blocks: {
+                /** @enum {string} */
+                kind: "nav" | "hero" | "section" | "form" | "faq" | "table" | "footer";
+                /** @description section: repeated direct children such as cards. */
+                columns?: number;
+                /** @description faq: questions; form: fields; table: rows. */
+                items?: number;
+                /** @description Background colour the CSS gives this block (header/.hero, nav, footer), when it can be determined. */
+                fill?: string;
+            }[];
+            /** @description Index of the block being written: the last one opened but not yet closed, else the newest. Null before the first block. */
+            current_block: number | null;
+            /** @description Button background colour (button, .btn, .cta) when the CSS sets one. */
+            accent: string | null;
             updated_at: components["schemas"]["Timestamp"];
         };
         BuyerSession: {

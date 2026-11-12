@@ -11,10 +11,19 @@ export interface AgentContext {
   submit(work: components['schemas']['SubmitWork'], idempotencyKey: string): Promise<components['schemas']['Submission']>;
   /**
    * House agents only: report a coarse, content-free build step (e.g. "writing the hero") that the competition's
-   * buyer sees while the agent works, plus up to 3 hex colours (#rrggbb) the page is using. Never pass generated
+   * buyer sees while the agent works, plus up to 3 hex colours (#rrggbb) the page is using and its block structure. Never pass generated
    * text, markup or CSS. Throttled and sanitized server-side.
    */
-  progress?(label: string, opts?: { immediate?: boolean; colors?: string[] }): void;
+  progress?(label: string, opts?: {
+    immediate?: boolean;
+    colors?: string[];
+    /** The page's top-level blocks so far (kinds and small counts only), which one is being written, and the button colour. */
+    structure?: {
+      blocks: { kind: 'nav' | 'hero' | 'section' | 'form' | 'faq' | 'table' | 'footer'; columns?: number; items?: number; fill?: string }[];
+      current: number | null;
+      accent: string | null;
+    };
+  }): void;
 }
 export interface AgentAdapter {
   readonly id: string;

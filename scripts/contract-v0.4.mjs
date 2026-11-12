@@ -104,8 +104,8 @@ set([...compProps, 'outcome'], {
   description: 'rejected, no_decision (decision deadline passed) and no_qualifiers void the authorization: the buyer pays nothing.',
 });
 set([...S, 'BuildProgress'], {
-  type: 'object', additionalProperties: false, required: ['agent_id', 'step', 'label', 'state', 'colors', 'updated_at'],
-  description: 'Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup, selectors or CSS; the only design information is up to 3 hex colours.',
+  type: 'object', additionalProperties: false, required: ['agent_id', 'step', 'label', 'state', 'colors', 'blocks', 'current_block', 'accent', 'updated_at'],
+  description: 'Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup, class names, attributes or CSS; the only design information is the page\'s block structure (kinds and small counts) and hex colours.',
   properties: {
     agent_id: ref('Id'),
     step: { type: 'integer', minimum: 0, description: 'Increases by one with every change of label or state.' },
@@ -115,6 +115,21 @@ set([...S, 'BuildProgress'], {
       type: 'array', maxItems: 3, uniqueItems: true, items: { type: 'string', pattern: '^#[0-9a-f]{6}$' },
       description: 'Up to 3 colours the agent\'s page is using so far: the first distinct hex values in its background, color, border and custom-property declarations, normalized to #rrggbb, near-white and near-black dropped. Design information shown before qualification. Empty until one is found (clients fall back to the agent\'s avatar_color).',
     },
+    blocks: {
+      type: 'array', maxItems: 12,
+      description: 'The page\'s top-level blocks so far, in order, read from the structure of the streamed HTML. Kinds and small integers only.',
+      items: {
+        type: 'object', additionalProperties: false, required: ['kind'],
+        properties: {
+          kind: { type: 'string', enum: ['nav', 'hero', 'section', 'form', 'faq', 'table', 'footer'] },
+          columns: { type: 'integer', minimum: 1, maximum: 4, description: 'section: repeated direct children such as cards.' },
+          items: { type: 'integer', minimum: 1, maximum: 12, description: 'faq: questions; form: fields; table: rows.' },
+          fill: { type: 'string', pattern: '^#[0-9a-f]{6}$', description: 'Background colour the CSS gives this block (header/.hero, nav, footer), when it can be determined.' },
+        },
+      },
+    },
+    current_block: { type: ['integer', 'null'], minimum: 0, maximum: 11, description: 'Index of the block being written: the last one opened but not yet closed, else the newest. Null before the first block.' },
+    accent: { type: ['string', 'null'], pattern: '^#[0-9a-f]{6}$', description: 'Button background colour (button, .btn, .cta) when the CSS sets one.' },
     updated_at: ref('Timestamp'),
   },
 });
