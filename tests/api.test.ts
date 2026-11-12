@@ -7,7 +7,8 @@ import Database from 'better-sqlite3';
 import { join } from 'node:path';
 import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
 import { createApi } from '../apps/api/src/app.js';
-import { heuristicEvaluator } from '../apps/api/src/claude.js';
+import { heuristicEvaluator, judgeText, streamingHouseAgent } from '../apps/api/src/claude.js';
+import { colorTracker, parseStructure, progressTracker, structureTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
 import { agentPayoutFor, paypalCheckoutFee, processingFeeFor } from '../apps/api/src/money.js';
@@ -37,14 +38,14 @@ const brief = {
   accepted_terms_version: 'race-v1',
 };
 
-async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer } = {}) {
+async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number } = {}) {
   let now = T0;
   const store = new Store(opts.dbPath ?? ':memory:');
   const fake = fakeProvider({ webOrigin: WEB, now: () => now });
   const notices: { url: string; body: string; sig: string }[] = [];
   const api = await createApi({
     store, provider: fake.provider, evaluator: opts.evaluator ?? heuristicEvaluator(), webOrigin: WEB, apiOrigin: 'http://api.test',
-    adminToken: ADMIN, houseOperatorPayerId: 'HOUSEPAYER0001', houseAgents: opts.houseAgents ?? null, now: () => now, renderer: opts.renderer ?? null,
+    adminToken: ADMIN, houseOperatorPayerId: 'HOUSEPAYER0001', houseAgents: opts.houseAgents ?? null, progressIntervalMs: opts.progressIntervalMs, now: () => now, renderer: opts.renderer ?? null,
     strictResponses: true, simulatePayouts: opts.simulatePayouts ?? false, log: () => {},
     notify: async (url, body, sig) => { notices.push({ url, body, sig }); },
   });
@@ -308,7 +309,7 @@ test('PayPal webhooks: signature checked with PayPal, deduplicated, then canonic
   assert.equal((await f.post(`/v1/purchases/${c.first_purchase_id ?? (await f.get(`/v1/competitions/${c.id}`, b)).data.first_purchase_id}/delivery-access`, undefined, b)).data.code, 'DELIVERY_LOCKED');
 });
 
-test('permissions, gates and one-entry rule', async t => {
+test('permissions, gates and the attempts rule', async t => {
   const f = await fixture(t);
   const b = await f.buyer(); const other = await f.buyer();
   const opToken = await f.operator('PAYERANN0001', 'Ann');
@@ -323,7 +324,9 @@ test('permissions, gates and one-entry rule', async t => {
   const gated = await f.enter(ann.token, c.id, external); await f.settle();
   const seen = (await f.get(`/v1/submissions/${gated.id}`, ann.token)).data;
   assert.equal(seen.qualification.failure_code, 'invalid_output');
-  assert.equal((await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'again', artifacts: [{ asset_id: gated.artifacts[0].asset_id }] }, ann.token)).data.code, 'DUPLICATE_SUBMISSION');
+  // A failed attempt may be revised; while the new attempt is being checked, no further one is accepted.
+  assert.equal((await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'again', artifacts: [{ asset_id: gated.artifacts[0].asset_id }] }, ann.token)).status, 201);
+  assert.equal((await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'third', artifacts: [{ asset_id: gated.artifacts[0].asset_id }] }, ann.token)).data.code, 'DUPLICATE_SUBMISSION');
   assert.equal((await f.get(`/v1/submissions/${gated.id}`, ben.token)).status, 404, 'agents cannot read rivals');
   assert.equal((await f.get(`/v1/submissions/${gated.id}`, b)).status, 404, 'buyers never see unqualified work');
   assert.equal((await f.get(`/v1/competitions/${c.id}/purchases`, other)).status, 404, 'other buyers cannot read purchases');
@@ -364,6 +367,193 @@ test('house agents enter every competition through the public API, labelled as h
   assert.equal(gallery[0].agent_id, 'agent_house_atelier');
   await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: gallery[0].id }, b); await f.settle();
   assert.deepEqual(f.fake.controls.calls.filter(x => x.op === 'sendPayout').map(x => x.target), ['HOUSEPAYER0001']);
+});
+
+// A house agent's streamed page: the build steps shown to the buyer come from its structure, never its content.
+const streamedPage = `Here is the page.\n<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crumb &amp; Co.</title><style>:root{--brand:#2F5D8A;--ink:#111}body{font-family:Georgia,serif;margin:0;color:#222;background:#fffdf8}
+.cta{background:#b5522b;color:#fff;box-shadow:0 0 4px #ff00aa}.card{border:1px solid #3a7d44}.extra{color:#c0ffee}
+@media (max-width:600px){.grid{display:block}}</style></head><body>
+<header><nav><a href="#story">Our story</a></nav></header>
+<div class="hero"><h1>Warm cardamom buns since 1987</h1><p>Sourdough proofed for two full days.</p></div>
+<section id="story"><h2>Three generations of bakers</h2><p>Grandma Ilse opened the shop with one oven and a stubborn starter.</p>
+${'<p>The rye loaves sell out by nine on Saturdays, so come early.</p>'.repeat(6)}</section>
+<section id="when"><h2>Opening hours</h2><p>Tuesday to Sunday, 7am to 3pm. Closed Mondays.</p></section>
+<a class="cta" href="#preorder">Pre-order now</a><footer><p>Corner of Elm and 4th.</p></footer></body></html>`;
+const secrets = ['cardamom', 'Sourdough', 'Ilse', 'rye loaves', 'Georgia', 'font-family', '--brand', 'cta', 'max-width', 'Tuesday', 'Elm and 4th', '#ff00aa', '#c0ffee', '<', '>', ';', ':root'];
+// The only design information that may leave the server: the first 3 usable hex colours in colour declarations.
+const pageColors = ['#2f5d8a', '#b5522b', '#3a7d44'];
+
+test('build progress: coarse steps from the stream structure; requirement words only when the stream has them', () => {
+  const step = progressTracker(brief.requirements);
+  const labels: string[] = [];
+  for (let i = 0; i <= streamedPage.length + 7; i += 7) {
+    const l = step(streamedPage.slice(0, i));
+    if (labels.at(-1) !== l) labels.push(l);
+  }
+  assert.deepEqual(labels, ['planning the page', 'setting up the page', 'writing the styles', 'styling for phones', 'writing the header',
+    'writing the hero', 'adding a section', 'adding opening hours', 'writing the footer', 'finishing up']);
+  // A section that mentions no requirement stays generic; nothing from the page itself ever becomes a label.
+  const other = progressTracker([{ description: 'Has a menu with prices.' }]);
+  assert.equal(other(`<!doctype html><body><section>${'x'.repeat(500)}</section>`), 'adding a section');
+  assert.equal(progressTracker([{ description: 'Has a menu with prices.' }])('<!doctype html><body><section class="menu"><h2>Cakes</h2>'), 'adding the menu');
+});
+
+test('build colours: the first 3 usable hex values in colour declarations, normalized, never half-streamed', () => {
+  const colors = colorTracker();
+  let last: string[] = [];
+  for (let i = 0; i <= streamedPage.length + 5; i += 5) {
+    last = colors(streamedPage.slice(0, i));
+    assert.ok(last.every(c => /^#[0-9a-f]{6}$/.test(c) && pageColors.includes(c)), `only whole, usable colours: ${last}`);
+  }
+  assert.deepEqual(last, pageColors, 'near-black #111/#222, near-white #fff/#fffdf8 and non-colour properties are skipped');
+  const split = colorTracker();
+  assert.deepEqual(split('.a{color:#b55'), [], 'a hex value cut off by the stream is not read');
+  assert.deepEqual(split('.a{color:#b5522b}'), ['#b5522b']);
+  assert.deepEqual(colorTracker()('<p>#123456 in text</p><div class="#654321">'), [], 'hex in text or attributes is not a colour declaration');
+});
+
+test('page structure: ordered top-level blocks with kinds and counts, and the block being written', () => {
+  const page = `<!doctype html><html><head><style>:root{--brand:#1F3A93}header{background:#f4efe6}.hero{background:var(--brand)}
+footer{background:#111}.btn{background:#e4572e}.btn:hover{background:#000}</style></head><body>
+<header><a class="logo" href="#">p</a><nav><a href="#how">How</a><a href="#faq">FAQ</a></nav></header>
+<main><section class="hero"><h1>Proof first</h1><p>Copy</p><a class="btn" href="#">Start</a><svg><g><path d="M0 0"/></g></svg></section>
+<section id="how"><h2>How</h2><ol><li class="step">1</li><li class="step">2</li><li class="step">3</li><li class="step">4</li></ol></section>
+<section id="faq"><h2>FAQ</h2><details><summary>a</summary></details><details><summary>b</summary></details><details><summary>c</summary></details></section>
+<form><input type="email"><input type="text"><textarea></textarea><input type="hidden"><button>Go</button></form>
+<table><tr><td>1</td></tr><tr><td>2</td></tr></table></main><footer><p>Small print</p></footer></body></html>`;
+  assert.deepEqual(structureTracker()(page, true), {
+    blocks: [{ kind: 'nav', fill: '#f4efe6' }, { kind: 'hero', fill: '#1f3a93' }, { kind: 'section', columns: 4 }, { kind: 'faq', items: 3 },
+      { kind: 'form', items: 3 }, { kind: 'table', items: 2 }, { kind: 'footer', fill: '#111111' }],
+    current: 6, accent: '#e4572e',
+  });
+  // Mid-stream: the FAQ is open (its close tag has not arrived), so it is the block being written.
+  const cut = page.slice(0, page.indexOf('<summary>c'));
+  assert.deepEqual(parseStructure(cut).blocks.map(b => b.kind), ['nav', 'hero', 'section', 'faq']);
+  assert.equal(parseStructure(cut).current, 3);
+  // A hero that is just a div with an h1 still counts; text and class names never appear.
+  const s = parseStructure('<body><div class="secret-hero-class"><h1>Secret words</h1></div><section><p>x</p></section>');
+  assert.deepEqual(s.blocks, [{ kind: 'hero' }, { kind: 'section' }]);
+});
+
+test('house agents report live build steps to the buyer only, and the steps never contain the page', async t => {
+  let release!: () => void;
+  const ready = new Promise<void>(r => { release = r; });
+  const seen: any[] = [];
+  let look: () => Promise<void> = async () => {};
+  const house = {
+    agent_house_atelier: streamingHouseAgent({ id: 'agent_house_atelier', name: 'Atelier', style: 'Editorial.', description: 'Atelier.' }, async (_ctx, _p, onText) => {
+      await ready;
+      for (let i = 0; i < streamedPage.length; i += 40) { onText(streamedPage.slice(0, i + 40)); await look(); }
+      return { text: streamedPage, stopReason: 'end_turn' };
+    }),
+  };
+  const f = await fixture(t, { houseAgents: house, progressIntervalMs: 0 });
+  const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const { c } = await f.open(b);
+  look = async () => { seen.push((await f.get(`/v1/competitions/${c.id}`, b)).data); };
+  release();
+  await f.settle();
+  await look();
+  const steps = seen.flatMap(x => x.build_progress ?? []);
+  assert.ok(steps.length > 0 && steps.every((s: any) => s.agent_id === 'agent_house_atelier'));
+  const labels = [...new Set(steps.map((s: any) => s.label))];
+  for (const expected of ['writing the styles', 'styling for phones', 'writing the header', 'writing the hero', 'adding opening hours', 'finishing up', 'qualified'])
+    assert.ok(labels.includes(expected), `saw "${expected}" in ${JSON.stringify(labels)}`);
+  assert.equal(seen.at(-1).build_progress[0].state, 'qualified');
+  const indexes = steps.map((s: any) => s.step);
+  assert.deepEqual(indexes, [...indexes].sort((x, y) => x - y), 'step indexes only increase');
+  assert.deepEqual(seen.at(-1).build_progress[0].colors, pageColors);
+  // The final structure mirrors the page: header/nav, the hero div, two sections, the footer; the button colour.
+  assert.deepEqual(seen.at(-1).build_progress[0].blocks.map((b: any) => b.kind), ['nav', 'hero', 'section', 'section', 'footer']);
+  assert.equal(seen.at(-1).build_progress[0].accent, '#b5522b');
+  assert.ok(steps.some((s: any) => s.blocks.length > 0 && s.blocks.length < 5), 'the structure grows while the page streams');
+  for (const s of steps) {
+    assert.deepEqual(Object.keys(s).sort(), ['accent', 'agent_id', 'attempt', 'blocks', 'colors', 'current_block', 'label', 'max_attempts', 'missed_requirement_ids', 'state', 'step', 'updated_at']);
+    assert.ok(s.missed_requirement_ids.every((x: string) => brief.requirements.some(r => r.id === x)));
+    assert.ok(s.colors.every((c: string) => pageColors.includes(c)), `only the page's own colours: ${s.colors}`);
+    for (const b of s.blocks) {
+      assert.ok(['nav', 'hero', 'section', 'form', 'faq', 'table', 'footer'].includes(b.kind));
+      assert.ok(Object.keys(b).every(k => ['kind', 'columns', 'items', 'fill'].includes(k)), JSON.stringify(b));
+      assert.ok([b.columns, b.items].every(n => n === undefined || (Number.isInteger(n) && n >= 1 && n <= 12)));
+    }
+    // Nothing else from the stream: drop the allowed colours, then no fragment of the page may remain.
+    const rest = JSON.stringify(s).replace(/"#[0-9a-f]{6}"/g, '""');
+    for (const secret of secrets) assert.ok(!rest.includes(secret), `${rest} leaks "${secret}"`);
+  }
+  // Only the buyer who owns the competition sees it; agents, other buyers and anonymous callers never do.
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, ann.token)).data.build_progress, undefined);
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, null)).data.build_progress, undefined);
+  assert.equal((await f.get(`/v1/competitions/${c.id}`, await f.buyer())).data.build_progress, undefined);
+});
+
+test('a house agent that fails mid-build disappears quietly; a failed check says so', async t => {
+  const failing = streamingHouseAgent({ id: 'agent_house_meadow', name: 'Meadow', style: '.', description: '.' }, async (_ctx, _p, onText) => {
+    onText('<!doctype html><html><head><style>');
+    throw new Error('model unavailable');
+  });
+  const noHours = streamingHouseAgent({ id: 'agent_house_voltage', name: 'Voltage', style: '.', description: '.' }, async (_ctx, _p, onText) => {
+    const html = streamedPage.replace(/<section id="when">[\s\S]*?<\/section>/, '');
+    onText(html);
+    return { text: html, stopReason: 'end_turn' };
+  });
+  const f = await fixture(t, { houseAgents: { agent_house_meadow: failing, agent_house_voltage: noHours }, progressIntervalMs: 0 });
+  const b = await f.buyer();
+  const { c } = await f.open(b);
+  await f.settle();
+  const progress = (await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress;
+  assert.deepEqual(progress.map((p: any) => [p.agent_id, p.label, p.state]), [['agent_house_voltage', "didn't qualify", 'not_qualified']]);
+});
+
+test('feedback and revision: an outside agent reads its failed checks and resubmits; at most 3 attempts, none after a pass', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const ben = await f.agent(await f.operator('PAYERBEN0002', 'Ben'), 'Beta');
+  const { c } = await f.open(b);
+  // Attempt 1 has no opening hours: the agent reads which requirement it missed, and why.
+  const first = await f.enter(ann.token, c.id, page('', false)); await f.settle();
+  const mine = (await f.get(`/v1/submissions/${first.id}`, ann.token)).data;
+  assert.equal(mine.qualification_status, 'failed');
+  assert.deepEqual(mine.qualification.checks.filter((x: any) => !x.passed).map((x: any) => x.requirement_id), ['req_hours']);
+  // Attempt 2 fixes it and qualifies; the failed attempt stays recorded; no attempt after a pass.
+  const second = await f.enter(ann.token, c.id, page()); await f.settle();
+  assert.equal((await f.get(`/v1/submissions/${second.id}`, ann.token)).data.qualification_status, 'qualified');
+  assert.equal((await f.get(`/v1/submissions/${first.id}`, ann.token)).data.qualification_status, 'failed', 'earlier attempts stay recorded');
+  const asset = (await f.post('/v1/assets', { competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: Buffer.from(page()).toString('base64') }, ann.token)).data;
+  const again = await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'One more try', artifacts: [{ asset_id: asset.id }] }, ann.token);
+  assert.equal(again.data.code, 'DUPLICATE_SUBMISSION', JSON.stringify([asset, again.data]));
+  // Three failed attempts are the limit.
+  for (let i = 0; i < 3; i++) { await f.enter(ben.token, c.id, page('', false)); await f.settle(); }
+  const fourth = (await f.post('/v1/assets', { competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: Buffer.from(page()).toString('base64') }, ben.token)).data;
+  const refused = await f.post(`/v1/competitions/${c.id}/submissions`, { title: 'Fourth attempt', artifacts: [{ asset_id: fourth.id }] }, ben.token);
+  assert.equal(refused.data.code, 'DUPLICATE_SUBMISSION', JSON.stringify([fourth, refused.data]).slice(0, 600));
+  assert.match(refused.data.detail, /At most 3 attempts/);
+  // The buyer sees one qualified entry from Ann, nothing from Ben.
+  assert.deepEqual((await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items.map((x: any) => x.id), [second.id]);
+});
+
+test('house agents revise a failed attempt from its checks: attempt 2 passes, then they stop', async t => {
+  const calls: { revision?: any }[] = [];
+  const atelier = streamingHouseAgent({ id: 'agent_house_atelier', name: 'Atelier', style: '.', description: '.' }, async (_ctx, _p, onText, revision) => {
+    calls.push({ revision });
+    const html = revision ? page() : page('', false); // the first page has no opening hours
+    onText(html);
+    return { text: html, stopReason: 'end_turn' };
+  });
+  const f = await fixture(t, { houseAgents: { agent_house_atelier: atelier }, progressIntervalMs: 0 });
+  const b = await f.buyer();
+  const { c } = await f.open(b);
+  await f.settle();
+  assert.equal(calls.length, 2, 'one revision, and nothing after the pass');
+  assert.equal(calls[0].revision, undefined);
+  assert.deepEqual(calls[1].revision.failed.map((x: any) => x.requirement), ['Shows opening hours.'], 'the revision gets the failed requirement');
+  assert.match(calls[1].revision.html, /^<!doctype html>/, 'and its own previous page');
+  const [p] = (await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress;
+  assert.deepEqual([p.state, p.attempt, p.max_attempts], ['qualified', 2, 3]);
+  assert.deepEqual(p.missed_requirement_ids, ['req_hours'], 'the buyer can see which requirement attempt 1 missed (by ID)');
+  assert.equal((await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items.length, 1);
 });
 
 test('state survives a restart; an operation interrupted mid-call resumes with the same request ID', async t => {
@@ -451,6 +641,24 @@ test('KERNEL-rendered entries: screenshot-only previews, and phone requirements 
   const closed = await f.get(new URL(unrendered.preview.url).pathname, b);
   assert.equal(closed.status, 409, 'fail closed: with a renderer configured, a buyer never gets markup, even if the render failed');
   assert.equal((await f.get(new URL(unrendered.preview.url).pathname, ann.token)).headers['content-type'], 'text/html', 'the agent can still see its own page');
+});
+
+test('keyboard focus measured in the browser is ground truth for focus requirements (judge text and keyword judge)', async () => {
+  const requirements = [{ id: 'req_keys', description: 'Navigation and FAQ controls are keyboard accessible with visible focus styles.' }];
+  const base = { phoneOverflowPx: 0, consoleErrors: [], blockedRequests: [] };
+  const focus = (visible: boolean[]) => ({ tabStops: visible.length, visibleIndicators: visible.filter(Boolean).length, complete: true,
+    samples: visible.map((v, i) => ({ tag: i ? 'summary' : 'a', visible: v, nav: i === 0, faq: i > 0 })) });
+  const text = judgeText({ title: 't', brief: 'b', requirements, browser: { ...base, focus: focus([true, false]) } }, '<p>x</p>');
+  assert.match(text, /went through every focusable element on the page: 2 in total; 1 of 2 showed a visible focus indicator/);
+  assert.match(text, /Navigation controls reached: 1 \(1 visible\)\. FAQ\/disclosure controls reached: 1 \(0 visible\)/);
+  assert.match(text, /a \(nav\) visible, summary \(faq\) NOT visible/);
+  assert.match(judgeText({ title: 't', brief: 'b', requirements, browser: { ...base, focus: focus([]) } }, ''), /reached no focusable element/);
+  const judge = heuristicEvaluator();
+  const run = (f: ReturnType<typeof focus>) => judge.qualify({ title: 't', brief: 'b', requirements, signal: AbortSignal.timeout(1000),
+    artifacts: [{ metadata: {} as any, bytes: new TextEncoder().encode(page()) }], browser: { ...base, focus: f } });
+  assert.equal((await run(focus([true, true]))).status, 'qualified');
+  assert.equal((await run(focus([true, false]))).status, 'failed');
+  assert.equal((await run(focus([]))).status, 'failed', 'nothing focusable is not keyboard accessible');
 });
 
 test('preview CSP precedes agent markup even when a script sits before <head>', () => {

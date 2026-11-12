@@ -6,6 +6,7 @@ import type { components } from '../../../packages/api-client/src/schema.js';
 import { operations, resolve, validator, validateResponse } from '../../../scripts/contract.js';
 import type { PageRenderer, RenderResult } from './browser.js';
 import { gateHtml, prepareHtml } from './html.js';
+import { safeColors, safeLabel, safeStructure, STEP } from './progress.js';
 import {
   HOUSE_AGENTS, HOUSE_OPERATOR_ID, hashToken, newSecret, newToken, resolvePrincipal,
   type AgentPrincipal, type AgentRecord, type Credential, type Operator, type Principal,
@@ -28,6 +29,10 @@ function canonical(value: any): string {
   return JSON.stringify(value ?? null);
 }
 const id = (prefix: string) => `${prefix}_${randomUUID()}`;
+/** Attempts per agent per competition: a new one only after every earlier attempt failed qualification. */
+export const MAX_ATTEMPTS = 3;
+/** A house agent revises a failed attempt only with at least this much of the submission window left. */
+const REVISION_MIN_MS = 60_000;
 const money = (amount_minor: number): S['Money'] => ({ currency: 'USD', amount_minor });
 const digests = (s: S['Submission']): S['ArtifactDigest'][] => s.artifacts.map(a => ({ asset_id: a.asset_id, sha256: a.sha256 }));
 
@@ -44,7 +49,7 @@ type StoredAsset = {
   metadata: S['Asset']; original_base64: string; preview: string;
   /** Real-browser render (KERNEL): JPEG screenshots (base64) and measurements. Once present, buyers only ever get images. */
   shots?: { desktop: string; phone: string; desktopHeight: number; phoneHeight: number };
-  browser?: { renderer: string; phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[] };
+  browser?: { renderer: string; phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[]; focus?: RenderResult['focus'] };
 };
 
 export interface ApiOptions {
@@ -62,6 +67,8 @@ export interface ApiOptions {
   renderer?: PageRenderer | null;
   /** House agents (null when no model key is configured). They use the public API with their own credentials. */
   houseAgents?: Record<string, AgentAdapter> | null;
+  /** Minimum time between two build-progress updates from one house agent (default 1000 ms). */
+  progressIntervalMs?: number;
   now?: () => number;
   strictResponses?: boolean;
   /** Record payouts as simulated instead of calling the provider. Defaults to true with the fake provider. */
@@ -335,7 +342,9 @@ export async function createApi(o: ApiOptions) {
   function ingest(input: S['UploadAsset'], who: Principal): S['Asset'] {
     demand(who.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
     const c = fetchOne(competitions, input.competition_id); readCompetition(c, who); requireOpen(c);
-    demand([...assets.values()].filter(a => a.metadata.competition_id === c.id && a.metadata.owner_agent_id === who.agent_id).length < 3, 'INVALID_STATE', 'At most three staged assets per agent and competition.');
+    // Staged = uploaded but not yet used in a submission (each attempt uses one).
+    const used = new Set(compSubmissions(c).flatMap(s => s.artifacts.map(x => x.asset_id)));
+    demand([...assets.values()].filter(a => a.metadata.competition_id === c.id && a.metadata.owner_agent_id === who.agent_id && !used.has(a.metadata.id)).length < 3, 'INVALID_STATE', 'At most three staged assets per agent and competition.');
     let prepared: ReturnType<typeof prepareHtml>;
     try { prepared = prepareHtml(input.content_base64); } catch (e) { throw new Fault(400, 'VALIDATION_ERROR', (e as Error).message); }
     const assetId = id('asset');
@@ -350,7 +359,11 @@ export async function createApi(o: ApiOptions) {
   }
   function submit(c: S['Competition'], who: AgentPrincipal, title: string, refs: { asset_id: string }[]): S['Submission'] {
     requireOpen(c);
-    demand(!compSubmissions(c).some(s => s.agent_id === who.agent_id), 'DUPLICATE_SUBMISSION', 'One immutable submission per registered agent.');
+    // Up to MAX_ATTEMPTS per agent, and a new attempt only when every earlier one failed qualification.
+    const mine = compSubmissions(c).filter(s => s.agent_id === who.agent_id);
+    demand(mine.every(s => s.qualification_status === 'failed'), 'DUPLICATE_SUBMISSION',
+      mine.some(s => s.qualification_status === 'pending') ? 'Your previous attempt is still being checked.' : 'You already have an entry in this competition.');
+    demand(mine.length < MAX_ATTEMPTS, 'DUPLICATE_SUBMISSION', `At most ${MAX_ATTEMPTS} attempts per agent; all of yours failed qualification.`);
     const originals = refs.map(r => fetchOne(assets, r.asset_id));
     demand(originals.every(a => a.metadata.owner_agent_id === who.agent_id && a.metadata.competition_id === c.id), 'NOT_FOUND', 'Resource not found.', 404);
     const artifacts: S['Artifact'][] = originals.map(({ metadata: a }) => ({ asset_id: a.id, type: a.type, mime_type: a.mime_type, size_bytes: a.size_bytes, sha256: a.sha256, width: null, height: null, preview: a.preview }));
@@ -505,7 +518,12 @@ export async function createApi(o: ApiOptions) {
         competitions.set(c.id, c); return ok(view(c), 201);
       }
       case 'listCompetitions': { const me = who(); return ok(page([...competitions.values()].filter(c => c.opens_at || c.buyer_id === me.id || me.role === 'admin'), query)); }
-      case 'getCompetition': { const c = fetchOne(competitions, params.competition_id); readCompetition(c, who()); return ok(view(c)); }
+      case 'getCompetition': {
+        const me = who(); const c = fetchOne(competitions, params.competition_id); readCompetition(c, me);
+        const body = view(c);
+        if (me.role === 'buyer' && me.id === c.buyer_id) body.build_progress = buildProgressFor(c.id); // the buyer only
+        return ok(body);
+      }
       case 'createInitialCheckout': {
         const c = fetchOne(competitions, params.competition_id); owner(c, who());
         demand(['draft', 'awaiting_authorization'].includes(c.state));
@@ -728,33 +746,125 @@ export async function createApi(o: ApiOptions) {
     if (o.houseAgents) for (const [agentId, adapter] of Object.entries(o.houseAgents)) track(runHouseAgent(agentId, adapter, c));
   }
 
+  // ---------------------------------------------------------------- house-agent build progress (in memory, for the run)
+  // Coarse step labels only (see progress.ts): never generated text, markup or CSS. Shown to the competition's buyer.
+  type Progress = S['BuildProgress'] & { at: number; shapedAt: number; submission_id: string | null };
+  const buildProgress = new Map<string, Map<string, Progress>>(); // competition ID → agent ID → latest step
+  const progressInterval = o.progressIntervalMs ?? 1000;
+  const buildProgressFor = (competitionId: string): S['BuildProgress'][] =>
+    [...(buildProgress.get(competitionId)?.values() ?? [])].map(({ agent_id, step, label, state, colors, blocks, current_block, accent, attempt, max_attempts, missed_requirement_ids, updated_at }) =>
+      ({ agent_id, step, label, state, colors: [...colors], blocks: structuredClone(blocks), current_block, accent, attempt, max_attempts, missed_requirement_ids: [...missed_requirement_ids], updated_at }));
+  function setProgress(competitionId: string, agentId: string, label: string, state: S['BuildProgress']['state'], submissionId: string | null = null, colors?: string[]) {
+    let byAgent = buildProgress.get(competitionId);
+    if (!byAgent) buildProgress.set(competitionId, byAgent = new Map());
+    const cur = byAgent.get(agentId);
+    byAgent.set(agentId, {
+      agent_id: agentId, step: (cur?.step ?? -1) + 1, label, state, colors: colors ?? cur?.colors ?? [],
+      blocks: cur?.blocks ?? [], current_block: cur?.current_block ?? null, accent: cur?.accent ?? null,
+      attempt: cur?.attempt ?? 1, max_attempts: MAX_ATTEMPTS, missed_requirement_ids: cur?.missed_requirement_ids ?? [],
+      updated_at: stamp(), at: time(), shapedAt: cur?.shapedAt ?? 0, submission_id: submissionId ?? cur?.submission_id ?? null,
+    });
+  }
+  function reportProgress(competitionId: string, agentId: string, raw: string, immediate = false, rawColors?: unknown, rawStructure?: unknown) {
+    const label = safeLabel(raw);
+    const colors = safeColors(rawColors); // only exact #rrggbb strings ever leave the server
+    const shape = safeStructure(rawStructure); // only known block kinds, small integers and #rrggbb
+    let cur = buildProgress.get(competitionId)?.get(agentId);
+    if (cur && cur.state !== 'building' && cur.state !== 'revising') return;
+    if (!cur && label) { setProgress(competitionId, agentId, label, 'building', null, colors); cur = buildProgress.get(competitionId)!.get(agentId)!; }
+    // The page's shape moves the cursor: up to ~2 updates a second, never a new step on its own.
+    if (cur && shape && (immediate || time() - cur.shapedAt >= progressInterval / 2)) {
+      const changed = JSON.stringify([shape.blocks, shape.current, shape.accent]) !== JSON.stringify([cur.blocks, cur.current_block, cur.accent]);
+      if (changed) { cur.blocks = shape.blocks; cur.current_block = shape.current; cur.accent = shape.accent; cur.shapedAt = time(); cur.updated_at = stamp(); }
+    }
+    // New colours are kept straight away (at most 3 changes per run); they never move the step on their own.
+    if (cur && colors.length > cur.colors.length) { cur.colors = colors; cur.updated_at = stamp(); }
+    if (!label || cur?.label === label) return;
+    if (cur && !immediate && time() - cur.at < progressInterval) return; // at most one step per interval per agent
+    setProgress(competitionId, agentId, label, cur?.state === 'revising' ? 'revising' : 'building', null, colors.length > (cur?.colors.length ?? 0) ? colors : undefined);
+  }
+  const activeRuns = new Set<string>(); // `${competition}:${agent}` while a house agent's run is going
+  /** After evaluation: an honest end state for a house agent's placeholder, or none if the check could not finish. */
+  function settleProgress(s: S['Submission']) {
+    const byAgent = buildProgress.get(s.competition_id);
+    const cur = byAgent?.get(s.agent_id);
+    if (!cur || cur.submission_id !== s.id) return;
+    if (s.qualification_status === 'qualified') setProgress(s.competition_id, s.agent_id, 'qualified', 'qualified');
+    else if (s.qualification_status === 'failed') {
+      // Which of the buyer's requirements were missed (IDs only; never the judge's reasons or anything from the page).
+      cur.missed_requirement_ids = (s.qualification?.checks ?? []).filter(x => !x.passed).map(x => x.requirement_id).slice(0, 20);
+      const c = competitions.get(s.competition_id)!;
+      const canRevise = activeRuns.has(`${s.competition_id}:${s.agent_id}`) && cur.attempt < MAX_ATTEMPTS
+        && Date.parse(c.submission_deadline!) - time() >= REVISION_MIN_MS;
+      if (canRevise) { setProgress(s.competition_id, s.agent_id, 'revising', 'revising'); const n = byAgent!.get(s.agent_id)!; n.attempt = cur.attempt + 1; n.blocks = []; n.current_block = null; }
+      else setProgress(s.competition_id, s.agent_id, "didn't qualify", 'not_qualified');
+    }
+    else if (s.qualification_status !== 'pending') byAgent!.delete(s.agent_id);
+  }
+
   /** House agents act through the public API with their own credentials, exactly like an outside agent. */
   async function runHouseAgent(agentId: string, adapter: AgentAdapter, c: S['Competition']) {
     const token = houseTokens.get(agentId)!;
-    const call = async (method: 'POST', url: string, payload: unknown, key: string) => {
-      const r = await app.inject({ method, url, payload: payload as any, headers: { authorization: `Bearer ${token}`, 'idempotency-key': key } });
+    const call = async (method: 'POST' | 'GET', url: string, payload: unknown, key: string) => {
+      const r = await app.inject(method === 'GET'
+        ? { method, url, headers: { authorization: `Bearer ${token}` } }
+        : { method, url, payload: payload as any, headers: { authorization: `Bearer ${token}`, 'idempotency-key': key } });
       if (r.statusCode >= 300) throw new Error(`${url} → ${r.statusCode} ${r.body.slice(0, 200)}`);
       return r.json();
     };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(1000, Date.parse(c.submission_deadline!) - time() - 5000));
+    const run = `${c.id}:${agentId}`;
+    activeRuns.add(run);
     try {
       await adapter.run({
         competition: c, signal: controller.signal,
         uploadAsset: (asset, key) => call('POST', '/v1/assets', asset, key),
-        submit: (work, key) => call('POST', `/v1/competitions/${c.id}/submissions`, work, key),
+        submit: async (work, key) => {
+          const s: S['Submission'] = await call('POST', `/v1/competitions/${c.id}/submissions`, work, key);
+          const state = buildProgress.get(c.id)?.get(agentId)?.state;
+          if (state === 'building' || state === 'revising') {
+            setProgress(c.id, agentId, STEP.submitted, 'submitted', s.id);
+            buildProgress.get(c.id)!.get(agentId)!.attempt = compSubmissions(c).filter(x => x.agent_id === agentId).length;
+            const stored = submissions.get(s.id);
+            if (stored) settleProgress(stored); // in case it was already checked
+          }
+          return s;
+        },
+        progress: (label, opts) => reportProgress(c.id, agentId, label, opts?.immediate, opts?.colors, opts?.structure),
+        timeLeftMs: () => Date.parse(c.submission_deadline!) - time(),
+        // Waits for this agent's own check, then reads the result through the public API like an outside agent would.
+        waitForResult: async (submissionId) => {
+          for (;;) {
+            if (controller.signal.aborted) throw new Error('submission deadline');
+            const s = submissions.get(submissionId);
+            if (!s) throw new Error('submission not found');
+            if (s.qualification_status !== 'pending') return call('GET', `/v1/submissions/${submissionId}`, undefined, '');
+            await evaluatePending();
+            const evaluation = evalRuns.get(submissionId);
+            await (evaluation ?? new Promise(r => setTimeout(r, 500)));
+          }
+        },
       });
     } catch (e) { log(`house agent ${agentId} on ${c.id} failed`, (e as Error).message); }
-    finally { clearTimeout(timer); }
+    finally {
+      clearTimeout(timer);
+      activeRuns.delete(run);
+      const cur = buildProgress.get(c.id)?.get(agentId);
+      // Never submitted (or declined): the placeholder goes away. Stopped after a failed attempt: it says so.
+      if (cur?.state === 'building' && !cur.submission_id) buildProgress.get(c.id)!.delete(agentId);
+      else if (cur?.state === 'building' || cur?.state === 'revising') setProgress(c.id, agentId, "didn't qualify", 'not_qualified');
+    }
   }
 
   // ---------------------------------------------------------------- worker: evaluation + provider operations
   const evaluating = new Set<string>();
+  const evalRuns = new Map<string, Promise<unknown>>();
   async function evaluatePending() {
     const due = [...submissions.values()].filter(s => s.qualification_status === 'pending' && !evaluating.has(s.id));
     for (const s of due) {
       evaluating.add(s.id);
-      track((async () => {
+      const evaluation = (async () => {
         const c = competitions.get(s.competition_id)!;
         const files = s.artifacts.map(a => ({ metadata: a, bytes: new Uint8Array(Buffer.from(assets.get(a.asset_id)!.original_base64, 'base64')) }));
         let result: S['QualificationResult'];
@@ -774,7 +884,7 @@ export async function createApi(o: ApiOptions) {
             await exclusive(async () => {
               const asset = assets.get(assetId)!;
               asset.shots = { desktop: r.desktop.toString('base64'), phone: r.phone.toString('base64'), desktopHeight: r.desktopHeight, phoneHeight: r.phoneHeight };
-              asset.browser = { renderer: o.renderer!.name, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests };
+              asset.browser = { renderer: o.renderer!.name, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests, focus: r.focus };
               const preview: S['Preview'] = { ...asset.metadata.preview, mime_type: 'image/jpeg', phone_url: `${asset.metadata.preview.url}?view=phone`, width: 1280, height: r.desktopHeight };
               asset.metadata.preview = preview;
               const current = submissions.get(s.id);
@@ -786,7 +896,7 @@ export async function createApi(o: ApiOptions) {
               title: c.title, brief: c.brief, requirements: c.requirements, artifacts: files, signal: AbortSignal.timeout(90_000),
               ...(rendered ? {
                 screenshots: { desktop: new Uint8Array(rendered.desktop), phone: new Uint8Array(rendered.phone) },
-                browser: { phoneOverflowPx: rendered.phoneOverflowPx, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests },
+                browser: { phoneOverflowPx: rendered.phoneOverflowPx, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests, focus: rendered.focus },
               } : {}),
             });
             result = { ...r, artifact_hashes: digests(s) }; // bind to the server-computed digests, never evaluator claims
@@ -798,8 +908,11 @@ export async function createApi(o: ApiOptions) {
         await exclusive(async () => {
           const current = submissions.get(s.id);
           if (current?.qualification_status === 'pending' && time() < Date.parse(c.qualification_deadline!)) { current.qualification_status = result.status; current.qualification = result; }
+          if (current) settleProgress(current);
         });
-      })().finally(() => evaluating.delete(s.id)));
+      })().finally(() => { evaluating.delete(s.id); evalRuns.delete(s.id); });
+      evalRuns.set(s.id, evaluation);
+      track(evaluation);
     }
   }
 

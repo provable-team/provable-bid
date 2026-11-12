@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AgentAdapter, AgentContext as AgentContextT, EvaluatorAdapter } from '../../../packages/agent-interface/src/index.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
 import { gateHtml, prepareHtml, visibleText } from './html.js';
+import { colorTracker, progressTracker, STEP, structuralLabel, structureTracker } from './progress.js';
 
 type S = components['schemas'];
 // Claude Haiku 5.5 at medium effort for both the judge and the house agents. Haiku 5.5 has no server-side refusal
@@ -26,8 +27,15 @@ type QualifyInput = Parameters<EvaluatorAdapter['qualify']>[0];
 
 /** The judge's user message: brief, requirement IDs, browser measurements, then the untrusted page as data. */
 export function judgeText({ title, brief, requirements, browser }: Pick<QualifyInput, 'title' | 'brief' | 'requirements' | 'browser'>, html: string): string {
+  const f = browser?.focus;
+  const focus = !f ? ''
+    : f.tabStops === 0 ? '\nKeyboard focus: pressing Tab reached no focusable element.'
+    : `\nKeyboard focus: pressing Tab ${f.complete ? `went through every focusable element on the page: ${f.tabStops} in total` : `reached the first ${f.tabStops} focusable elements (the page has more; measurement stopped at 20 presses)`}; ${f.visibleIndicators} of ${f.tabStops} showed a visible focus indicator (computed outline, box-shadow, border, background, underline or colour differs from the unfocused element). ` +
+      `Navigation controls reached: ${f.samples.filter(x => x.nav).length} (${f.samples.filter(x => x.nav && x.visible).length} visible). FAQ/disclosure controls reached: ${f.samples.filter(x => x.faq).length} (${f.samples.filter(x => x.faq && x.visible).length} visible). ` +
+      `Stops in order: ${f.samples.map(x => `${x.tag}${x.nav ? ' (nav)' : x.faq ? ' (faq)' : ''} ${x.visible ? 'visible' : 'NOT visible'}`).join(', ')}. ` +
+      'If the controls a requirement names were all reached and all show a visible indicator, keyboard access with visible focus is established; do not fail it for lack of evidence.';
   const measured = browser
-    ? `<browser_measurements>\nHorizontal overflow at 390px wide: ${browser.phoneOverflowPx}px (0 means it fits a phone without sideways scrolling).\nConsole errors: ${browser.consoleErrors.length ? browser.consoleErrors.join(' | ') : 'none'}\nBlocked outbound requests: ${browser.blockedRequests.length ? browser.blockedRequests.join(' | ') : 'none'}\n</browser_measurements>\nTreat these measurements as ground truth for layout and phone requirements.`
+    ? `<browser_measurements>\nHorizontal overflow at 390px wide: ${browser.phoneOverflowPx}px (0 means it fits a phone without sideways scrolling).\nConsole errors: ${browser.consoleErrors.length ? browser.consoleErrors.join(' | ') : 'none'}\nBlocked outbound requests: ${browser.blockedRequests.length ? browser.blockedRequests.join(' | ') : 'none'}${focus}\n</browser_measurements>\nTreat these measurements as ground truth for layout, phone, keyboard and focus requirements: screenshots cannot show focus, the measurement can.`
     : '';
   return [
     `<brief title="${title.replace(/"/g, "'")}">\n${brief}\n</brief>`,
@@ -52,17 +60,19 @@ export const builderBrief = (c: AgentContextT['competition']) =>
   `Brief title: ${c.title}\n\nBrief:\n${c.brief}\n\nRequirements (each is checked):\n${c.requirements.map(r => `- ${r.description}`).join('\n')}`;
 
 /** Takes a model's output, checks the page the way the API will, and enters it through the public API. */
-export async function submitHouseHtml(text: string, stopReason: string | null | undefined, profile: { id: string; name: string }, { competition: c, uploadAsset, submit }: AgentContextT) {
+export async function submitHouseHtml(text: string, stopReason: string | null | undefined, profile: { id: string; name: string }, { competition: c, uploadAsset, submit }: AgentContextT, attempt = 1) {
   const start = text.search(/<!doctype html/i);
   const end = text.toLowerCase().lastIndexOf('</html>');
   if (start < 0 || end < start) throw new Error(`no HTML document in output (stop_reason ${stopReason})`);
   const html = text.slice(start, end + 7);
   const gate = gateHtml(html);
-  if (gate) throw new Error(`own page fails the gate: ${gate.reason}`); // don't burn the one submission
+  if (gate) throw new Error(`own page fails the gate: ${gate.reason}`); // don't spend an attempt on it
   const base64 = Buffer.from(html, 'utf8').toString('base64');
   prepareHtml(base64); // throws on anything the API would reject
-  const asset = await uploadAsset({ competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: base64 }, `${profile.id}-${c.id}-upload`.slice(0, 128));
-  await submit({ title: `${c.title.slice(0, 80)} — ${profile.name}`.slice(0, 120), artifacts: [{ asset_id: asset.id }] }, `${profile.id}-${c.id}-submit`.slice(0, 128));
+  const n = attempt > 1 ? `-${attempt}` : '';
+  const asset = await uploadAsset({ competition_id: c.id, type: 'html', mime_type: 'text/html', content_base64: base64 }, `${profile.id}-${c.id}-upload${n}`.slice(0, 128));
+  const submission = await submit({ title: `${c.title.slice(0, 80)} — ${profile.name}`.slice(0, 120), artifacts: [{ asset_id: asset.id }] }, `${profile.id}-${c.id}-submit${n}`.slice(0, 128));
+  return { submission, html };
 }
 
 export const JUDGE_SYSTEM = `You are the qualification judge for provable.bid, a marketplace where AI agents submit finished single-page websites for a buyer's brief.
@@ -111,6 +121,13 @@ export function heuristicEvaluator(): EvaluatorAdapter {
       const text = visibleText(html).toLowerCase();
       const checks = requirements.map(r => {
         const d = r.description.toLowerCase();
+        if (/keyboard|focus/.test(d) && browser?.focus) {
+          const { tabStops, visibleIndicators } = browser.focus;
+          const ok = tabStops > 0 && visibleIndicators === tabStops;
+          return { requirement_id: r.id, passed: ok, reason: tabStops === 0
+            ? 'Measured in a real browser: Tab reached no focusable element.'
+            : `Measured in a real browser: Tab reached ${tabStops} element(s), ${visibleIndicators} with a visible focus indicator.` };
+        }
         if (/mobile|phone|responsive|375/.test(d) && browser) {
           const ok = browser.phoneOverflowPx <= 2;
           return { requirement_id: r.id, passed: ok, reason: ok ? 'Measured in a real browser at 390px: fits without sideways scrolling.' : `Measured in a real browser at 390px: scrolls sideways by ${browser.phoneOverflowPx}px.` };
@@ -145,22 +162,80 @@ Hard rules (pages that break them are disqualified automatically):
 - Write real, specific copy for this buyer (no lorem ipsum, no placeholders like "Your text here").
 - Give it a <title>.`;
 
-/** A labelled house agent. It enters through the public API (uploadAsset → submit) with its own credential. */
-export function claudeHouseAgent(client: Anthropic, profile: { id: string; name: string; style: string; description: string }): AgentAdapter {
+export type HouseProfile = { id: string; name: string; style: string; description: string };
+/** A failed attempt to revise: the agent's own previous page and the checks it failed (requirement text and reason). */
+export type Revision = { html: string; failed: { requirement: string; reason: string }[] };
+/**
+ * Produces a page for the brief, calling onText with the growing output as it streams in. With `revision`, it
+ * produces a complete revised page that fixes the failed checks.
+ */
+export type PageGenerator = (ctx: AgentContextT, profile: HouseProfile, onText: (snapshot: string) => void, revision?: Revision) => Promise<{ text: string; stopReason: string | null }>;
+
+export const MAX_HOUSE_ATTEMPTS = 3;
+const REVISION_MIN_MS = 60_000;
+const revisionPrompt = (r: Revision) =>
+  `Your page was checked and did not pass these requirements:\n${r.failed.map(f => `- ${f.requirement}\n  Judge: ${f.reason}`).join('\n')}\n\n` +
+  'Return one complete, revised HTML document that fixes these while keeping everything that already passed. Same rules as before: start with <!doctype html>, end with </html>, nothing else.';
+
+/**
+ * A labelled house agent around any streaming page generator. While the page streams in, it reports coarse build
+ * steps derived from the structure of the partial HTML, its top-level blocks (kinds and counts) and up to 3 hex
+ * colours from its CSS declarations (never any
+ * text, markup, selectors or CSS); then it checks the page and enters it
+ * through the public API (uploadAsset → submit) with its own credential.
+ */
+export function streamingHouseAgent(profile: HouseProfile, generate: PageGenerator): AgentAdapter {
   return {
     id: profile.id,
     async run(ctx) {
-      const { competition: c, signal } = ctx;
-      const stream = client.beta.messages.stream({
-        model: MODEL, max_tokens: 64000,
-        output_config: { effort: EFFORT },
-        system: BUILDER_SYSTEM(profile.name, `${profile.description} ${profile.style}`),
-        messages: [{ role: 'user', content: builderBrief(c) }],
-      }, { signal });
-      const message = await stream.finalMessage();
-      if (message.stop_reason === 'refusal') throw new Error(`declined (${message.stop_details?.category ?? 'no category'})`);
-      const text = message.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map(b => b.text).join('');
-      await submitHouseHtml(text, message.stop_reason, profile, ctx);
+      let revision: Revision | undefined;
+      for (let attempt = 1; attempt <= MAX_HOUSE_ATTEMPTS; attempt++) {
+        const step = progressTracker(ctx.competition.requirements);
+        const colors = colorTracker();
+        const structure = structureTracker();
+        ctx.progress?.(STEP.planning, { immediate: true });
+        const { text, stopReason } = await generate(ctx, profile, snapshot => {
+          const shape = structure(snapshot);
+          ctx.progress?.(structuralLabel(step(snapshot), shape), { colors: colors(snapshot), structure: shape });
+        }, revision);
+        ctx.progress?.(STEP.checking, { immediate: true, colors: colors(text), structure: structure(text, true) });
+        const { submission, html } = await submitHouseHtml(text, stopReason, profile, ctx, attempt);
+        // Feedback: wait for this entry's own check; revise only a failed one, with time left, up to 3 attempts.
+        if (!ctx.waitForResult) return;
+        const result = await ctx.waitForResult(submission.id);
+        if (result.qualification_status !== 'failed' || attempt === MAX_HOUSE_ATTEMPTS) return;
+        if ((ctx.timeLeftMs?.() ?? 0) < REVISION_MIN_MS) return;
+        const failed = (result.qualification?.checks ?? []).filter(x => !x.passed).map(x => ({
+          requirement: ctx.competition.requirements.find(r => r.id === x.requirement_id)?.description ?? x.requirement_id,
+          reason: x.reason,
+        }));
+        if (!failed.length) failed.push({ requirement: 'The automated page checks', reason: result.qualification?.reason ?? 'failed' });
+        revision = { html, failed };
+      }
     },
   };
+}
+
+/** Claude as a page generator: streams the reply so build steps track real progress. */
+export function claudeGenerator(client: Anthropic): PageGenerator {
+  return async ({ competition: c, signal }, profile, onText, revision) => {
+    const stream = client.beta.messages.stream({
+      model: MODEL, max_tokens: 64000,
+      output_config: { effort: EFFORT },
+      system: BUILDER_SYSTEM(profile.name, `${profile.description} ${profile.style}`),
+      messages: revision
+        ? [{ role: 'user', content: builderBrief(c) }, { role: 'assistant', content: revision.html }, { role: 'user', content: revisionPrompt(revision) }]
+        : [{ role: 'user', content: builderBrief(c) }],
+    }, { signal });
+    stream.on('text', (_delta, snapshot) => onText(snapshot));
+    const message = await stream.finalMessage();
+    if (message.stop_reason === 'refusal') throw new Error(`declined (${message.stop_details?.category ?? 'no category'})`);
+    const text = message.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map(b => b.text).join('');
+    return { text, stopReason: message.stop_reason };
+  };
+}
+
+/** A labelled house agent built by Claude. */
+export function claudeHouseAgent(client: Anthropic, profile: HouseProfile): AgentAdapter {
+  return streamingHouseAgent(profile, claudeGenerator(client));
 }

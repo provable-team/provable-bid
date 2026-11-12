@@ -103,6 +103,46 @@ set([...compProps, 'outcome'], {
   enum: ['undecided', 'winner_selected', 'rejected', 'no_decision', 'no_qualifiers', 'infrastructure_failure', 'cancelled'],
   description: 'rejected, no_decision (decision deadline passed) and no_qualifiers void the authorization: the buyer pays nothing.',
 });
+set([...S, 'BuildProgress'], {
+  type: 'object', additionalProperties: false, required: ['agent_id', 'step', 'label', 'state', 'colors', 'blocks', 'current_block', 'accent', 'attempt', 'max_attempts', 'missed_requirement_ids', 'updated_at'],
+  description: 'Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup, class names, attributes or CSS; the only design information is the page\'s block structure (kinds and small counts) and hex colours.',
+  properties: {
+    agent_id: ref('Id'),
+    step: { type: 'integer', minimum: 0, description: 'Increases by one with every change of label or state.' },
+    label: { type: 'string', minLength: 1, maxLength: 48, pattern: "^[a-z0-9 '-]+$", description: 'Plain words, e.g. "writing the hero", "adding opening hours", "checking the page", "submitted". Topic words come only from the buyer\'s own requirements.' },
+    state: { type: 'string', enum: ['building', 'submitted', 'revising', 'qualified', 'not_qualified'], description: 'building: still working. submitted: entered, being checked. revising: its last attempt failed and it is building a revised page (attempt is the new one). qualified / not_qualified: the check finished and the agent is done. An agent that fails before ever submitting is removed from the list.' },
+    attempt: { type: 'integer', minimum: 1, maximum: 3, description: 'The attempt being built or checked (1 = first entry).' },
+    max_attempts: { type: 'integer', const: 3 },
+    missed_requirement_ids: {
+      type: 'array', maxItems: 20, items: ref('Id'),
+      description: 'IDs of the buyer\'s requirements the latest failed attempt did not meet (from the buyer\'s own brief; show the requirement text). Never the judge\'s reasons. Empty when nothing has failed or a page failed the automatic gates.',
+    },
+    colors: {
+      type: 'array', maxItems: 3, uniqueItems: true, items: { type: 'string', pattern: '^#[0-9a-f]{6}$' },
+      description: 'Up to 3 colours the agent\'s page is using so far: the first distinct hex values in its background, color, border and custom-property declarations, normalized to #rrggbb, near-white and near-black dropped. Design information shown before qualification. Empty until one is found (clients fall back to the agent\'s avatar_color).',
+    },
+    blocks: {
+      type: 'array', maxItems: 12,
+      description: 'The page\'s top-level blocks so far, in order, read from the structure of the streamed HTML. Kinds and small integers only.',
+      items: {
+        type: 'object', additionalProperties: false, required: ['kind'],
+        properties: {
+          kind: { type: 'string', enum: ['nav', 'hero', 'section', 'form', 'faq', 'table', 'footer'] },
+          columns: { type: 'integer', minimum: 1, maximum: 4, description: 'section: repeated direct children such as cards.' },
+          items: { type: 'integer', minimum: 1, maximum: 12, description: 'faq: questions; form: fields; table: rows.' },
+          fill: { type: 'string', pattern: '^#[0-9a-f]{6}$', description: 'Background colour the CSS gives this block (header/.hero, nav, footer), when it can be determined.' },
+        },
+      },
+    },
+    current_block: { type: ['integer', 'null'], minimum: 0, maximum: 11, description: 'Index of the block being written: the last one opened but not yet closed, else the newest. Null before the first block.' },
+    accent: { type: ['string', 'null'], pattern: '^#[0-9a-f]{6}$', description: 'Button background colour (button, .btn, .cta) when the CSS sets one.' },
+    updated_at: ref('Timestamp'),
+  },
+});
+set([...compProps, 'build_progress'], {
+  type: 'array', maxItems: 16, items: ref('BuildProgress'),
+  description: 'Only in GET /v1/competitions/{competition_id} for the buyer who owns the competition: live build steps of the house agents for this run (kept in memory; empty after a restart). Absent for everyone else.',
+});
 
 const html = { type: 'string', enum: ['html'] };
 const htmlMime = { type: 'string', enum: ['text/html'] };
@@ -279,7 +319,8 @@ set(['webhooks'], { competitionOpened: { post: {
 
 // Descriptions that still described text/image work or participation fees.
 const op = (path, method) => [...P(path), method];
-set([...op('/v1/competitions/{competition_id}/submissions', 'post'), 'summary'], 'Submit one finished single-page website during the open window');
+set([...op('/v1/competitions/{competition_id}/submissions', 'post'), 'summary'], 'Submit a finished single-page website during the open window');
+set([...op('/v1/competitions/{competition_id}/submissions', 'post'), 'description'], 'Agent only. Agent/operator derive from the server credential binding. Each submission is immutable. Attempts: an agent may submit again only while every earlier submission of its own in this competition has failed qualification, it has made fewer than 3 attempts, and the submission deadline has not passed; otherwise DUPLICATE_SUBMISSION (including while the previous attempt is still being checked, and after any attempt qualified). Earlier failed attempts stay recorded. Feedback: read your own submission with GET /v1/submissions/{submission_id}; qualification.checks lists each requirement with passed and the judge\'s reason. Upload one owned HTML asset bound to this competition first; the server derives MIME/hash/preview. Receipt must precede submission_deadline; qualification may finish during grace. No original bytes in responses.');
 set([...op('/v1/competitions/{competition_id}/additional-purchases', 'post'), 'description'], 'Buyer owner only; first purchase must be payment_completed; now < original decision_deadline even after the competition closes. One purchase per competition and submission; an existing purchase is returned across keys. Creates a separate CAPTURE checkout for price + processing fee. Approval alone never unlocks work.');
 set([...op('/v1/purchases/{purchase_id}/delivery-access', 'post'), 'description'], 'Buyer owner only, after PayPal confirms the capture. Pending/failed refunds and open/lost disputes lock delivery. Returns 60-second buyer-bound URLs to the original HTML; every read rechecks entitlement. Replaying the same Idempotency-Key returns the original URLs, even if expired; request fresh access with a new key. No-store.');
 set([...op('/v1/payments/{payment_id}/refunds', 'post'), 'description'], 'Admin only. Full remaining refund of a completed capture. Refund state is independent; a requested refund immediately locks delivery and blocks an unpaid payout.');

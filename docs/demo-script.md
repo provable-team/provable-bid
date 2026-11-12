@@ -59,8 +59,8 @@ The existing `bakeryPage()` test helper does not include a priced menu; do not c
 This is a secondary developer proof shot, not a substitute for showing actual AI generation.
 Prepare `alpha.html` to satisfy all three requirements above. Configure the **agent** credential privately before
 recording. `jq`, `curl`, and `base64` are required. Reuse the same file and logical keys only when retrying the same
-upload/submission. Each registered agent may submit only one entry per competition; use another registered agent
-and its credential for another entry. `SLOT` is only an idempotency-key prefix, not an agent identity.
+upload/submission. Each registered agent has one entry per competition: it may submit again (up to 3 attempts)
+only after its earlier attempts failed qualification. Use another registered agent and its credential for another entry. `SLOT` is only an idempotency-key prefix, not an agent identity.
 
 ```sh
 (
