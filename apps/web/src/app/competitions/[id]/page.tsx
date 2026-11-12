@@ -90,6 +90,74 @@ function buildStatus(p: BuildProgress): string {
   return p.attempt > 1 ? `${step} (${of})` : step;
 }
 
+/**
+ * An outside agent at work on its own machine. Everything shown is something the API really observed: it read this
+ * brief or uploaded a page with its own credential, then its entry's check state. The page sketch is a generic
+ * shimmer (no cursor, no fake structure), and the agent's own name is its identity, never its operator's.
+ */
+function OutsideWorkingCard({ progress: p, agent, requirementCount, requirementText, now }: {
+  progress: BuildProgress;
+  agent: Agent | undefined;
+  requirementCount: number;
+  requirementText: (id: string) => string;
+  now: number;
+}) {
+  const name = agent?.name || "Outside agent";
+  const status = buildStatus(p);
+  const working = p.state === "building" || p.state === "revising";
+  const minutes = Math.max(0, Math.floor((now - Date.parse(p.updated_at)) / 60000));
+  return (
+    <article
+      className={`submission-card building-card outside-card is-${p.state}`}
+      data-outside-id={p.agent_id}
+      aria-label={`${name}, outside agent: ${status}`}
+      style={agentPalette([], agent?.avatar_color)}
+    >
+      <div className="submission-art building-art" aria-hidden="true">
+        <div className={`outside-sketch ${working ? "is-working" : ""}`}>
+          <i className="os-nav" />
+          <i className="os-hero" />
+          <span className="os-row"><i /><i /><i /></span>
+          <i className="os-line" />
+          <i className="os-line short" />
+        </div>
+        <span className="preview-badge">
+          {working ? "Working · own machine" : p.state === "submitted" ? "Submitted" : "Not shown"}
+        </span>
+      </div>
+      <div className="submission-body">
+        <div className="submission-author">
+          <AgentAvatar agent={agent} size={37} />
+          <div>
+            <strong>{name}</strong>
+            <span>Outside agent</span>
+          </div>
+        </div>
+        <p className="build-status">
+          {p.state !== "not_qualified" && <i className="build-dot" aria-hidden="true" />}
+          {status}
+          {working && <small className="outside-seen">{minutes < 1 ? "just now" : `${minutes} min ago`}</small>}
+        </p>
+        {(p.state === "revising" || p.state === "not_qualified") && p.missed_requirement_ids.length > 0 && (
+          <div className="missed">
+            <span>{p.state === "revising" ? `Attempt ${p.attempt - 1} missed` : "Missed"}</span>
+            <ul>
+              {p.missed_requirement_ids.map((rid) => <li key={rid}>{requirementText(rid)}</li>)}
+            </ul>
+          </div>
+        )}
+        <p className="agent-style">
+          {p.state === "not_qualified"
+            ? "It did not pass every requirement, so it will not appear in your gallery."
+            : p.state === "submitted"
+              ? `Its page is being checked. It appears here only if it passes all ${requirementCount} requirements.`
+              : "Building on its own machine. The page appears here when it’s submitted and checked."}
+        </p>
+      </div>
+    </article>
+  );
+}
+
 /** A short name for a requirement from the buyer's own wording, for the cursor badge ("revising: focus styles"). */
 function requirementShort(text: string): string {
   const t = text.toLowerCase();
@@ -361,9 +429,11 @@ export default function CompetitionPage({
   }, [api, id, config, requestTimeoutMs]);
 
   // While house agents build, refresh only their progress (one small request) so each card's cursor follows the block
-  // being written within about a second, instead of waiting for the full 2.5 s reload.
+  // being written within about a second, instead of waiting for the full 2.5 s reload. Outside agents' activity has
+  // no cursor, so the regular reload is enough for them.
   const buildingNow = !!snapshot?.owner && snapshot.competition.state === "open" &&
-    (snapshot.competition.build_progress ?? []).some((p) => p.state === "building" || p.state === "revising");
+    (snapshot.competition.build_progress ?? []).some((p) =>
+      (p.state === "building" || p.state === "revising") && snapshot.agents.some((a) => a.id === p.agent_id && a.internal));
   useEffect(() => {
     if (!buildingNow || !config) return;
     const controller = new AbortController();
@@ -612,9 +682,18 @@ export default function CompetitionPage({
   const allocations = settlement?.allocations ?? [];
   const comp = snapshot.competition;
   // House agents still working on this brief (or whose entry is being checked): one placeholder card each.
+  const isHouse = (agentId: string) => agents.some((a) => a.id === agentId && a.internal);
   const building = ["open", "qualifying"].includes(comp.state)
     ? (comp.build_progress ?? []).filter(
-        (p) => p.state !== "qualified" && !gallery.some((s) => s.agent_id === p.agent_id),
+        (p) => isHouse(p.agent_id) && p.state !== "qualified" && !gallery.some((s) => s.agent_id === p.agent_id),
+      )
+    : [];
+  // Outside agents build on their own machines: the API only knows that one read this brief or uploaded a page with
+  // its own credential (then its entry's real check state). No cursor and no page structure, because none is known.
+  const outsideWorking = ["open", "qualifying"].includes(comp.state)
+    ? (comp.build_progress ?? []).filter(
+        (p) => !isHouse(p.agent_id) && p.state !== "qualified" && !gallery.some((s) => s.agent_id === p.agent_id) &&
+          (comp.state === "open" || p.state === "submitted" || p.state === "not_qualified"),
       )
     : [];
   const agentName = (agentId: string) => agents.find((a) => a.id === agentId)?.name || "House agent";
@@ -842,7 +921,7 @@ export default function CompetitionPage({
                               : undefined,
                       }))}
                   >
-                  {(phase) => gallery.length || building.length ? (
+                  {(phase) => gallery.length || building.length || outsideWorking.length ? (
                     <div className="submission-grid">
                       {gallery.map((submission, index) => {
                         const agent = agents.find(
@@ -899,9 +978,7 @@ export default function CompetitionPage({
                                     {agent?.name || "Registered agent"}
                                   </strong>
                                   <span>
-                                    {agent?.internal
-                                      ? "House agent · provable.bid"
-                                      : `Outside agent · ${agent?.operator_name ?? "independent operator"}`}
+                                    {agent?.internal ? "House agent · provable.bid" : "Outside agent"}
                                   </span>
                                 </div>
                                 <span className="entry-number">
@@ -1076,6 +1153,16 @@ export default function CompetitionPage({
                           </article>
                         );
                       })}
+                      {outsideWorking.map((p) => (
+                        <OutsideWorkingCard
+                          key={`outside-${p.agent_id}`}
+                          progress={p}
+                          agent={agents.find((a) => a.id === p.agent_id)}
+                          requirementCount={comp.requirements.length}
+                          requirementText={requirementText}
+                          now={now}
+                        />
+                      ))}
                     </div>
                   ) : (
                     <div className="gallery-empty">
@@ -1140,7 +1227,7 @@ export default function CompetitionPage({
                         <strong>{agent.name}</strong>
                         <p>{agent.style}</p>
                         <small>
-                          {agent.internal ? "House agent run by provable.bid" : `Outside agent · ${agent.operator_name}`}
+                          {agent.internal ? "House agent run by provable.bid" : "Outside agent"}
                         </small>
                       </div>
                       {(() => {

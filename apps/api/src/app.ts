@@ -719,7 +719,11 @@ export async function createApi(o: ApiOptions) {
       case 'getAgent': { const a = agentProfile(params.agent_id); demand(a, 'NOT_FOUND', 'Agent not found.', 404); return ok(a); }
 
       // ---------------- assets / submissions
-      case 'uploadAsset': return ok(view(ingest(body, who())), 201);
+      case 'uploadAsset': {
+        const me = who(); const asset = ingest(body, me);
+        if (me.role === 'agent') outsideActivity(fetchOne(competitions, asset.competition_id), me.agent_id, OUTSIDE_STEP.upload);
+        return ok(view(asset), 201);
+      }
       case 'getAsset': {
         const me = who(); const asset = fetchOne(assets, params.asset_id);
         demand((me.role === 'agent' && asset.metadata.owner_agent_id === me.agent_id) || me.role === 'admin', 'NOT_FOUND', 'Resource not found.', 404);
@@ -739,9 +743,11 @@ export async function createApi(o: ApiOptions) {
         const me = who(); demand(me.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
         const c = fetchOne(competitions, params.competition_id); readCompetition(c, me);
         const s = submit(c, me, body.title, body.artifacts);
-        // A house agent building on another instance submits over HTTP: its live progress moves to "submitted" here.
-        const remoteHouse = houseRunner.remote && agents.get(me.agent_id)?.profile.internal;
-        return { status: 201, body: submissionView(s, me), ...(remoteHouse ? { after: () => houseSubmitted(c, me.agent_id, s.id) } : {}) };
+        // A house agent building on another instance, or an outside agent, submits over HTTP: its live progress (if
+        // any) moves to "submitted" here. In-process house agents are moved by runHouseAgent.
+        const internal = agents.get(me.agent_id)?.profile.internal;
+        const viaHttp = (houseRunner.remote && internal) || internal === false;
+        return { status: 201, body: submissionView(s, me), ...(viaHttp ? { after: () => houseSubmitted(c, me.agent_id, s.id) } : {}) };
       }
       case 'listSubmissions': {
         const me = who(); const c = fetchOne(competitions, params.competition_id);
@@ -773,6 +779,7 @@ export async function createApi(o: ApiOptions) {
         const me = who(); const c = fetchOne(competitions, params.competition_id); readCompetition(c, me);
         const body = view(c);
         if (me.role === 'buyer' && me.id === c.buyer_id) body.build_progress = buildProgressFor(c.id); // the buyer only
+        if (me.role === 'agent') outsideActivity(c, me.agent_id, OUTSIDE_STEP.read);
         return ok(body);
       }
       case 'createInitialCheckout': {
@@ -1129,7 +1136,7 @@ export async function createApi(o: ApiOptions) {
     else if (s.qualification_status !== 'pending') byAgent!.delete(s.agent_id);
   }
 
-  /** A house agent's entry was accepted: its placeholder says "submitted" (and settles at once if already checked). */
+  /** An agent's entry was accepted: its placeholder (house build or outside activity) says "submitted" (and settles at once if already checked). */
   function houseSubmitted(c: S['Competition'], agentId: string, submissionId: string) {
     const state = buildProgress.get(c.id)?.get(agentId)?.state;
     if (state !== 'building' && state !== 'revising') return;
@@ -1137,6 +1144,31 @@ export async function createApi(o: ApiOptions) {
     buildProgress.get(c.id)!.get(agentId)!.attempt = compSubmissions(c).filter(x => x.agent_id === agentId).length;
     const stored = submissions.get(submissionId);
     if (stored) settleProgress(stored); // in case it was already checked
+  }
+
+  // ---------------------------------------------------------------- outside-agent activity (in memory, a live indicator)
+  // Outside agents build on their own machines, so the only honest signals are their own authenticated calls on this
+  // brief: reading it and uploading a page. Kept in the same list as house progress, so only the competition's buyer
+  // sees it; never persisted. Once the agent submits, houseSubmitted/settleProgress move it like a house entry.
+  const OUTSIDE_STEP = { read: 'read the brief', upload: 'uploading its page' } as const;
+  const OUTSIDE_RANK: Record<string, number> = { [OUTSIDE_STEP.read]: 0, [OUTSIDE_STEP.upload]: 1 };
+  const MAX_PROGRESS_PER_COMPETITION = 50;
+  function outsideActivity(c: S['Competition'], agentId: string, label: string) {
+    if (c.state !== 'open' || !c.submission_deadline || time() >= Date.parse(c.submission_deadline)) return;
+    if (agents.get(agentId)?.profile.internal !== false) return; // house agents report their own build steps
+    const mine = compSubmissions(c).filter(s => s.agent_id === agentId);
+    // A pending or qualified entry, or no attempts left: the submission flow owns this agent's card.
+    if (mine.length >= MAX_ATTEMPTS || mine.some(s => s.qualification_status !== 'failed')) return;
+    const byAgent = buildProgress.get(c.id);
+    const cur = byAgent?.get(agentId);
+    if (!cur && (byAgent?.size ?? 0) >= MAX_PROGRESS_PER_COMPETITION) return;
+    if (cur && time() - cur.at < progressInterval) return; // at most one update per interval per agent
+    const state: S['BuildProgress']['state'] = mine.length ? 'revising' : 'building';
+    // Still at it: re-reading the brief after uploading never moves the step back; it only says "still active".
+    if (cur && cur.state === state && (OUTSIDE_RANK[cur.label] ?? -1) >= OUTSIDE_RANK[label]) { cur.updated_at = stamp(); cur.at = time(); return; }
+    setProgress(c.id, agentId, label, state);
+    const next = buildProgress.get(c.id)!.get(agentId)!;
+    next.attempt = mine.length + 1; next.submission_id = null; next.blocks = []; next.current_block = null;
   }
 
   /** House agents act through the public API with their own credentials, exactly like an outside agent. */
