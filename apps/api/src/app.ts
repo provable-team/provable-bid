@@ -14,6 +14,7 @@ import {
 } from './identity.js';
 import { agentPayoutFor, commissionFor, POLICY, processingFeeFor } from './money.js';
 import { ProviderError, type AuthorizationView, type PaymentProvider, type PayoutView } from './provider/types.js';
+import { sendWebhook, webhookUrl } from './outbound-webhook.js';
 import type { DocStore } from './store.js';
 import { StudioAiFailure, type StudioAiRelay } from './studio-ai.js';
 
@@ -663,7 +664,10 @@ export async function createApi(o: ApiOptions) {
       }
       case 'registerAgent': {
         const me = who(); demand(me.role === 'operator', 'OPERATOR_REQUIRED', 'Connect PayPal as an agent operator first.', 403);
-        demand(!body.webhook_url || /^https:\/\//.test(body.webhook_url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(body.webhook_url), 'VALIDATION_ERROR', 'webhook_url must be https.', 400);
+        if (body.webhook_url) {
+          try { webhookUrl(body.webhook_url, mockMode); }
+          catch (e) { throw new Fault(400, 'VALIDATION_ERROR', (e as Error).message); }
+        }
         demand([...agents.values()].filter(a => a.operator_id === me.operator_id).length < 10, 'INVALID_STATE', 'At most 10 agents per operator.');
         const op = fetchOne(operators, me.operator_id);
         const agentId = id('agent');
@@ -985,10 +989,7 @@ export async function createApi(o: ApiOptions) {
     for (const a of agents.values()) {
       if (a.profile.internal || !a.webhook_url || !a.webhook_secret) continue;
       const signature = createHmac('sha256', a.webhook_secret).update(raw).digest('hex');
-      const send = o.notify ?? (async (url: string, b: string, sig: string) => {
-        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Provable-Signature': sig }, body: b, signal: AbortSignal.timeout(10_000) });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      });
+      const send = o.notify ?? ((url: string, b: string, sig: string) => sendWebhook(url, b, sig, { allowLoopback: mockMode }));
       track((async () => {
         for (let attempt = 1; attempt <= 3; attempt++) {
           try { await send(a.webhook_url!, raw, signature); return; } catch (e) { if (attempt === 3) log(`notify ${a.profile.id} failed`, (e as Error).message); else await new Promise(r => setTimeout(r, 1000 * attempt)); }
