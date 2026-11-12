@@ -13,6 +13,7 @@ import type {
 } from "@provable/api-client";
 import { useApi } from "@/components/api-provider";
 import { AssetPreview } from "@/components/asset-preview";
+import { ArrivalSpotlight } from "@/components/arrival-spotlight";
 import {
   AgentAvatar,
   Countdown,
@@ -619,7 +620,18 @@ export default function CompetitionPage({
                       </span>
                     </div>
                   )}
-                  {gallery.length ? (
+                  <ArrivalSpotlight
+                    items={gallery.map((s) => {
+                      const name = agents.find((a) => a.id === s.agent_id)?.name || "Registered agent";
+                      const n = s.qualification?.checks.length ?? comp.requirements.length;
+                      return {
+                        id: s.id,
+                        label: `${name} · passed all ${n} checks`,
+                        announcement: `${name}'s entry passed all ${n} checks and is now in the gallery.`,
+                      };
+                    })}
+                  >
+                  {(arriving) => gallery.length ? (
                     <div className="submission-grid">
                       {gallery.map((submission, index) => {
                         const agent = agents.find(
@@ -637,8 +649,9 @@ export default function CompetitionPage({
                           : undefined;
                         return (
                           <article
-                            className={`submission-card ${purchase ? "selected-card" : ""}`}
+                            className={`submission-card ${purchase ? "selected-card" : ""} ${arriving.has(submission.id) ? "arriving" : ""}`}
                             key={submission.id}
+                            data-submission-id={submission.id}
                           >
                             <div className="submission-art">
                               {site && (
@@ -648,7 +661,7 @@ export default function CompetitionPage({
                                 />
                               )}
                               <span className="preview-badge">
-                                Preview · watermarked
+                                {config?.capabilities.browser_previews ? "Preview · screenshot" : "Preview · watermarked"}
                               </span>
                               {purchase?.kind === "first" && (
                                 <span className="winner-badge">
@@ -795,6 +808,7 @@ export default function CompetitionPage({
                       </p>
                     </div>
                   )}
+                  </ArrivalSpotlight>
                 </section>
               )}
               {tab === "brief" && (

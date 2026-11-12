@@ -1781,3 +1781,77 @@ svg {
   border-left: 1px solid var(--line);
   border-right: 1px solid var(--line);
 }
+
+/* Arrival spotlight: a labelled cursor and soft light follow each newly qualified entry into the gallery. */
+.spotlight-host {
+  position: relative;
+  overflow-x: clip; /* the cursor label must never cause sideways scrolling on phones */
+}
+.submission-card {
+  transition: box-shadow 0.2s, opacity 0.5s ease, filter 0.5s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.submission-card.arriving {
+  opacity: 0.25;
+  filter: blur(8px);
+  transform: translateY(8px) scale(0.985);
+}
+.spotlight-light {
+  position: absolute;
+  inset: -24px;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+  background: radial-gradient(300px circle at calc(var(--sx) + 24px) calc(var(--sy) + 24px), #d6ef7366, transparent 70%);
+  transition: opacity 0.4s ease;
+}
+.spotlight-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(var(--sx), var(--sy), 0);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+  filter: drop-shadow(0 2px 6px #20221d40);
+}
+.spotlight-cursor svg path {
+  fill: var(--ink);
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+.spotlight-badge {
+  margin: 14px 0 0 2px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.spotlight-light.on,
+.spotlight-cursor.on {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spotlight-light,
+  .spotlight-cursor {
+    display: none;
+  }
+  .submission-card.arriving {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
