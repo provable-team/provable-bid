@@ -146,9 +146,12 @@ const PRINT_CSS_PROBE = `(() => {
  * by an ancestor that clips (overflow not visible), crossing a drawn frame (an empty bordered box) it overlaps, within
  * 3 mm of the edge of the page-sized box holding it (or past it), and its font size. Also fixed-size clipping boxes
  * whose content is bigger than the box, and the page-sized boxes themselves (outermost only: one per printed page).
+ * For blank-print detection: the characters of visible text (non-zero box, not hidden, not under an opacity-0 ancestor,
+ * not pushed off the page sideways) and the painted artwork area (visible svg/img/canvas/video, and boxes whose
+ * background prints because print-color-adjust is exact).
  * The preview watermark (a fixed overlay at the top z-index) is ignored.
  */
-const PRINT_SCAN = `(({ pageW, pageH }) => {
+export const PRINT_SCAN = `(({ pageW, pageH }) => {
   const MM = 96 / 25.4;
   const hint = el => { if (!el) return ''; const c = typeof el.className === 'string' ? el.className.trim().split(/\\s+/)[0] : '';
     return (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (c ? '.' + c : '')).replace(/[^A-Za-z0-9#._-]/g, '').slice(0, 40); };
@@ -165,7 +168,10 @@ const PRINT_SCAN = `(({ pageW, pageH }) => {
   const sized = pageW ? [document.body, ...all].filter(el => { const r = el.getBoundingClientRect(); return Math.abs(r.width - pageW) < 3 && Math.abs(r.height - pageH) < 3; }) : [];
   const pageBoxes = sized.filter(el => !sized.some(o => o !== el && o.contains(el)));
   const clipped = [], frameHits = [], safe = [], small = [], seen = new Set();
-  let minPx = null;
+  let minPx = null, chars = 0;
+  const viewW = pageW || window.innerWidth;
+  const onPage = r => r.right > 0 && r.left < viewW && r.bottom > 0;
+  const faded = el => { for (let a = el; a && a !== document.documentElement; a = a.parentElement) if (parseFloat(cs(a).opacity) === 0) return true; return false; };
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (!/\\S/.test(n.data)) continue;
@@ -176,6 +182,7 @@ const PRINT_SCAN = `(({ pageW, pageH }) => {
     const range = document.createRange(); range.selectNodeContents(n);
     const rects = [...range.getClientRects()].filter(r => r.width > 0.5 && r.height > 0.5);
     if (!rects.length) continue;
+    if (rects.some(onPage) && !faded(el)) chars += n.data.replace(/\s+/g, '').length;
     const text = n.data.trim().replace(/\\s+/g, ' ').slice(0, 60);
     const px = parseFloat(st.fontSize);
     if (minPx === null || px < minPx) minPx = px;
@@ -208,10 +215,20 @@ const PRINT_SCAN = `(({ pageW, pageH }) => {
     const d = Math.max(s.overflowY !== 'visible' ? dy : 0, s.overflowX !== 'visible' ? dx : 0);
     if (d > 1) boxes.push({ hint: hint(el), px: d });
   }
-  return { pageBoxes: pageBoxes.length, clipped: clipped.slice(0, 12), boxes: boxes.slice(0, 12), frames: frameHits.slice(0, 12), safe: safe.slice(0, 40), safeCount: safe.length, small: small.slice(0, 12), smallCount: small.length, minPt: minPx === null ? null : Math.round(minPx * 72 / 96 * 10) / 10 };
+  let painted = 0;
+  for (const el of all) {
+    if (!shown(el)) continue;
+    const s = cs(el), tag = el.tagName.toLowerCase();
+    const art = tag === 'svg' || tag === 'img' || tag === 'canvas' || tag === 'video'
+      || ((s.printColorAdjust === 'exact' || s.webkitPrintColorAdjust === 'exact') && (s.backgroundImage !== 'none' || !/^(transparent|rgba\(.*,\s*0\))$/.test(s.backgroundColor)));
+    if (!art || (tag !== 'svg' && el.closest('svg')) || faded(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 0.5 && r.height > 0.5 && onPage(r)) painted += Math.min(r.width, viewW) * r.height;
+  }
+  return { chars, painted: Math.round(painted), pageArea: Math.round(viewW * (pageH || window.innerHeight)), pageBoxes: pageBoxes.length, clipped: clipped.slice(0, 12), boxes: boxes.slice(0, 12), frames: frameHits.slice(0, 12), safe: safe.slice(0, 40), safeCount: safe.length, small: small.slice(0, 12), smallCount: small.length, minPt: minPx === null ? null : Math.round(minPx * 72 / 96 * 10) / 10 };
 })`;
 type PrintScan = {
-  pageBoxes: number; clipped: { hint: string; text: string; by: string; px: number }[]; boxes: { hint: string; px: number }[];
+  chars: number; painted: number; pageArea: number; pageBoxes: number; clipped: { hint: string; text: string; by: string; px: number }[]; boxes: { hint: string; px: number }[];
   frames: { hint: string; text: string; frame: string }[]; safe: { hint: string; text: string; mm: number }[]; safeCount: number;
   small: { hint: string; text: string; pt: number }[]; smallCount: number; minPt: number | null;
 };
@@ -229,6 +246,15 @@ export function pdfPages(pdf: Buffer): { pages: number; size_mm: [number, number
 }
 
 export const PRINT_BUDGET_MS = 5_000;
+
+/** Fewer visible characters than this across all printed pages counts as no text. */
+export const BLANK_PRINT_MIN_CHARS = 20;
+/**
+ * Blank print: (near) no visible text and no artwork worth the name (painted area under 5% of one page). A page whose
+ * print CSS hides its content wrapper prints an empty sheet while page count and size still pass.
+ */
+export const printBlank = (scan: { chars: number; painted: number; pageArea: number }) =>
+  scan.chars < BLANK_PRINT_MIN_CHARS && scan.painted < 0.05 * Math.max(1, scan.pageArea);
 
 /**
  * The print pass, on an already-loaded page: confirms print CSS from the document's stylesheets, then switches to
@@ -262,6 +288,7 @@ export async function measurePrint(page: Page, deadline = Date.now() + PRINT_BUD
   if (pages === null && scan.pageBoxes > 0) { pages = scan.pageBoxes; source = 'page_boxes'; }
 
   const issues: string[] = [];
+  if (printBlank(scan)) issues.push(`print output is blank: the print styles hide the content (${scan.chars} visible character(s) of text and no artwork on the printed page(s))`);
   const expected = scan.pageBoxes > 0 ? scan.pageBoxes : undefined;
   if (expected !== undefined && source === 'pdf' && pages !== expected) issues.push(`prints as ${pages} page(s), but the page draws ${expected} page-sized box(es), so ${expected} page(s) are expected`);
   if (size && printed && (Math.abs(printed[0] - size[0]) > 1 || Math.abs(printed[1] - size[1]) > 1)) issues.push(`prints at ${printed[0]} x ${printed[1]} mm, not the declared ${size[0]} x ${size[1]} mm`);

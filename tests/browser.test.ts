@@ -2,7 +2,7 @@
 // renderer runs. Classic 15px scrollbars are switched back on so the browser behaves like a KERNEL session, where a
 // narrow desktop window measured 100vw as overflow and passed pages with no viewport meta tag.
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { parsePageSize, renderInBrowser } from '../apps/api/src/browser.js';
@@ -111,6 +111,40 @@ test('print: small text, safe-area text and a wrong page count are issues; a cle
   assert.equal(good.print!.checked, true);
   assert.deepEqual(good.print!.issues, []);
   assert.deepEqual([good.print!.pages, good.print!.expected_pages, good.print!.safe_area_violations], [1, 1, 0]);
+});
+
+// Modeled on samples/riverside-night-market-poster/v3/meadow.html: the print CSS hides the screen wrapper, which holds
+// the poster, so the A3 page prints empty while its page count and size still pass.
+const HIDDEN_WRAP = (hide: string) => doc(VIEWPORT + `<style>.screen-wrap{padding:16px}.poster{max-width:560px;margin:0 auto;background:#1d2340;color:#fff;padding:24px}
+@media print{@page{size:A3 portrait;margin:0}html,body{margin:0!important;padding:0!important}${hide}
+.poster{width:297mm!important;height:420mm!important;max-width:none!important;margin:0!important;padding:24mm!important;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>`,
+  `<div class="screen-wrap"><p class="screen-note">A3 portrait poster. Print at A3 with no margins.</p>
+<main class="poster"><h1>Riverside Night Market</h1><p>Fridays in June, 6pm to 11pm</p><p>Free entry</p><div class="qr">Scan for vendors</div></main></div>`);
+
+test('print: print CSS that hides the content wrapper is a blank print, even though page count and size pass', { skip }, async () => {
+  const r = await renderInBrowser(browser, previewHtml(HIDDEN_WRAP('.screen-wrap,.screen-note{display:none!important}')));
+  const p = r.print!;
+  assert.equal(p.checked, true);
+  assert.deepEqual(p.page_size_mm, [297, 420]);
+  assert.equal(p.pages, 1);
+  assert.ok(p.issues!.some(i => /^print output is blank: the print styles hide the content/.test(i)), JSON.stringify(p.issues));
+  const hidden = await renderInBrowser(browser, HIDDEN_WRAP('.screen-wrap{visibility:hidden}'));
+  assert.ok(hidden.print!.issues!.some(i => /^print output is blank/.test(i)), 'visibility:hidden hides it too');
+
+  const shown = await renderInBrowser(browser, previewHtml(HIDDEN_WRAP('.screen-note{display:none!important}.screen-wrap{padding:0!important}')));
+  assert.ok(!shown.print!.issues!.some(i => /blank/.test(i)), JSON.stringify(shown.print!.issues));
+  const sample = new URL('../samples/riverside-night-market-poster/v3/meadow.html', import.meta.url);
+  if (existsSync(sample)) {
+    const real = await renderInBrowser(browser, previewHtml(readFileSync(sample, 'utf8')));
+    assert.ok(real.print!.issues!.some(i => /^print output is blank/.test(i)), JSON.stringify(real.print!.issues));
+  }
+});
+
+test('print: artwork with little text is not blank', { skip }, async () => {
+  const r = await renderInBrowser(browser, doc(VIEWPORT + '<style>@page{size:A3 portrait;margin:0}@media print{body{margin:0}svg{width:297mm;height:400mm}}</style>',
+    '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#c33"/></svg><p>Jazz</p>'));
+  assert.equal(r.print!.checked, true);
+  assert.ok(!r.print!.issues!.some(i => /blank/.test(i)), JSON.stringify(r.print!.issues));
 });
 
 test('print: a page without print CSS is not print-checked; "@page" in the text alone does not count', { skip }, async () => {

@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import type { AgentContext } from '../packages/agent-interface/src/index.js';
 import type { components } from '../packages/api-client/src/schema.js';
-import { kernelRenderer } from '../apps/api/src/browser.js';
+import { kernelRenderer, PRINT_SCAN, printBlank } from '../apps/api/src/browser.js';
 import { preflightHouseHtml } from '../apps/api/src/agent-preflight.js';
 import { claudeEvaluator, claudeGenerator, MAX_HOUSE_ATTEMPTS, MAX_PREFLIGHT_REPAIRS, streamingHouseAgent, type PageGenerator } from '../apps/api/src/claude.js';
 import { gateHtml, prepareHtml } from '../apps/api/src/html.js';
@@ -283,7 +283,8 @@ const OVERFLOW_SCAN = `(({ pageW, pageH, print }) => {
 
 /**
  * Our local checks (not part of the live pipeline), in local Chrome with the network blocked:
- *   print_check: print media, page.pdf() with the page's own @page size, to read the printed page size and page count;
+ *   print_check: print media, page.pdf() with the page's own @page size, to read the printed page size and page count,
+ *     plus the live blank-print test (browser.ts PRINT_SCAN + printBlank: visible text and painted artwork in print);
  *   overflow_check: OVERFLOW_SCAN at a 390px and a 1280px screen and in print media at the page size.
  */
 async function localChecks(b: Brief, dir: string, entries: Record<string, unknown>[]) {
@@ -311,14 +312,17 @@ async function localChecks(b: Brief, dir: string, entries: Record<string, unknow
       const mm = (pt: number) => Math.round(pt * 25.4 / 72 * 10) / 10;
       const sizes = [...new Set(boxes.map(([w, h]) => `${mm(w)}x${mm(h)}`))];
       const [w, h] = boxes[0] ?? [0, 0];
+      const ink = await printPage.evaluate(`${PRINT_SCAN}(${JSON.stringify({ pageW: px(b.print.width_mm), pageH: px(b.print.height_mm) })})`) as { chars: number; painted: number; pageArea: number };
+      const blank = printBlank(ink);
       const sizeOk = boxes.length > 0 && boxes.every(([bw, bh]) => Math.abs(mm(bw) - b.print.width_mm) <= 1 && Math.abs(mm(bh) - b.print.height_mm) <= 1);
       p.print_check = {
         by: 'local Chrome (playwright-core page.pdf, emulateMedia print, preferCSSPageSize) run by the sample generator; not part of the live provable.bid pipeline',
         expected: { ...b.print },
         page_size_mm: boxes.length ? [mm(w), mm(h)] : null, distinct_page_sizes_mm: sizes, pages,
         size_matches: sizeOk, pages_match: pages === b.print.pages,
+        blank, visible_chars: ink.chars, painted_area_ratio: Math.round(ink.painted / Math.max(1, ink.pageArea) * 1000) / 1000,
         checked_at: new Date().toISOString(),
-        caveat: 'Checks the printed page box and page count only; not bleed, colour or whether artwork fills the page.',
+        caveat: 'Checks the printed page box, page count and that the print is not blank (visible text and artwork); not bleed, colour or whether artwork fills the page.',
       };
 
       const scan = async (page: Awaited<ReturnType<typeof open>>, print: boolean) => {
@@ -330,6 +334,7 @@ async function localChecks(b: Brief, dir: string, entries: Record<string, unknow
       };
       const views: Record<string, { kind: string }[]> = {};
       views.print = await scan(printPage, true);
+      if (blank) views.print.unshift({ kind: 'print_blank', text: '', element: null, detail: `print output is blank: the print styles hide the content (${ink.chars} visible character(s), no artwork)` } as { kind: string });
       await printPage.close();
       for (const [name, width] of [['phone_390', 390], ['desktop_1280', 1280]] as const) {
         const page = await open(width, 844, 'screen');
@@ -346,7 +351,7 @@ async function localChecks(b: Brief, dir: string, entries: Record<string, unknow
         checked_at: new Date().toISOString(),
         caveat: 'Heuristic DOM scan: covered text is hit-tested only at each line\'s centre, and elements with pointer-events: none are not seen. Read the findings, not just the flag.',
       };
-      console.log(`  local ${b.slug}/${file}: print ${sizes.join(', ')} mm, ${pages} page(s); overflow ${JSON.stringify(counts)}`);
+      console.log(`  local ${b.slug}/${file}: print ${sizes.join(', ')} mm, ${pages} page(s)${blank ? ', BLANK' : ''}; overflow ${JSON.stringify(counts)}`);
     }
   } finally { await browser.close(); }
 }
