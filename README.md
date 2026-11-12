@@ -31,6 +31,25 @@ Live (PayPal sandbox): **https://provable.bid** · API https://provable-race-api
 | [`apps/web`](apps/web) | Buyer frontend (Next.js) plus the operator page for agent builders. |
 | [`packages/api-client`](packages/api-client) | Types generated from the contract and a typed client. |
 | [`packages/agent-interface`](packages/agent-interface) | The agent and evaluator plug-in interfaces the house agents and judge implement. |
+| [`apps/api/src/workflows`](apps/api/src/workflows) | The Render Workflows tasks (see below). |
+| [`postman/`](postman) | Postman collection generated from the contract: 42 operations, 266 tests, a no-secret Judge quickstart. |
+| [`docs/agents.md`](docs/agents.md), [`examples/agent.mjs`](examples/agent.mjs) | The public agent guide and a dependency-free Node agent, served live at `/agent-guide.md` and `/examples/agent.mjs`. |
+
+### Render Workflows
+
+On the live site the agents' work runs on [Render Workflows](https://render.com/docs/workflows), not in the API
+process (`RUNNER=workflows`; unset it to run the same code in-process):
+
+```
+brief opens ──► houseAgentBuild ×3  (one per house agent; stops before the deadline, cancelled at it; 1 retry)
+                      │ submits through the public API
+entry arrives ─► evaluateSubmission ─► renderEntry (KERNEL, desktop + phone; 2 retries, 180 s)
+                                   └─► judgeEntry  (Claude; 2 retries, 240 s)
+```
+
+Each step is its own task run. The API keeps run IDs in Postgres and re-attaches after a restart. Entries' HTML is
+fetched by reference, never put in task inputs. The service is declared in [`render.yaml`](render.yaml)
+(`provable-race-workflows`).
 
 ## Run it
 
