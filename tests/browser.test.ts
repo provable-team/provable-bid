@@ -2,10 +2,11 @@
 // renderer runs. Classic 15px scrollbars are switched back on so the browser behaves like a KERNEL session, where a
 // narrow desktop window measured 100vw as overflow and passed pages with no viewport meta tag.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
-import { kernelRenderer, parsePageSize, renderInBrowser } from '../apps/api/src/browser.js';
+import { kernelRenderer, parsePageSize, printInBrowser, renderInBrowser } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
 
 const CHROME = process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
@@ -133,10 +134,50 @@ test('print: print CSS that hides the content wrapper is a blank print, even tho
 
   const shown = await renderInBrowser(browser, previewHtml(HIDDEN_WRAP('.screen-note{display:none!important}.screen-wrap{padding:0!important}')));
   assert.ok(!shown.print!.issues!.some(i => /blank/.test(i)), JSON.stringify(shown.print!.issues));
-  const sample = new URL('../samples/riverside-night-market-poster/v3/meadow.html', import.meta.url);
-  if (existsSync(sample)) {
-    const real = await renderInBrowser(browser, previewHtml(readFileSync(sample, 'utf8')));
-    assert.ok(real.print!.issues!.some(i => /^print output is blank/.test(i)), JSON.stringify(real.print!.issues));
+  const sample = readFileSync(new URL('../samples/riverside-night-market-poster/v3/meadow.html', import.meta.url), 'utf8');
+  assert.equal(createHash('sha256').update(sample).digest('hex'), 'e567ab865b271a64dc41513d95c2adf260acb7cf7cdb15e91668d4f358c2cddc');
+  const real = await renderInBrowser(browser, previewHtml(sample));
+  assert.ok(real.print!.issues!.some(i => /^print output is blank/.test(i)), JSON.stringify(real.print!.issues));
+});
+
+test('print: transparent empty boxes are blank, but short text and small artwork are content', { skip }, async () => {
+  const css = '<style>@page{size:A3 portrait;margin:0}body{margin:0}.art{display:block;width:40mm;height:40mm;margin:30mm}</style>';
+  const empty = await printInBrowser(browser, doc(VIEWPORT + css, '<div class="art" style="width:297mm;height:420mm;margin:0"></div>'));
+  assert.ok(empty.issues!.some(i => /^print output is blank/.test(i)), JSON.stringify(empty.issues));
+  const positives = [
+    '<span style="display:inline-block;margin:30mm">s</span>', // template regex must preserve s and remove whitespace, not vice versa
+    '<svg class="art" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#c33"/></svg>',
+    '<div class="art" style="background:repeating-linear-gradient(45deg,red 0 2mm,blue 2mm 4mm)"></div>',
+    '<div class="art" style="border:3mm solid red;box-sizing:border-box"></div>',
+    '<canvas class="art" id="art" width="40" height="40"></canvas><script>document.getElementById("art").getContext("2d").fillRect(0,0,40,40)</script>',
+  ];
+  for (const body of positives) {
+    const result = await printInBrowser(browser, doc(VIEWPORT + css, body));
+    assert.equal(result.checked, true);
+    assert.ok(!result.issues!.some(i => /blank/.test(i)), `${body}: ${JSON.stringify(result.issues)}`);
+  }
+});
+
+test('print: font points include SVG viewBox/transforms and HTML ancestor transforms/zoom', { skip }, async () => {
+  const css = '<style>@page{size:A3 portrait;margin:0}body{margin:0}.inset{margin:20mm;transform-origin:top left}</style>';
+  const fixtures: [string, string, number][] = [
+    ['card SVG user units', '<svg class="inset" width="336" height="192" viewBox="0 0 1050 600"><text x="100" y="100" font-size="10">Contact details</text></svg>', 2.4],
+    ['unscaled SVG', '<svg class="inset" width="800" height="200" viewBox="0 0 800 200"><text x="100" y="100" font-size="10">Contact details</text></svg>', 7.5],
+    ['SVG group transform', '<svg class="inset" width="800" height="200" viewBox="0 0 800 200"><g transform="translate(100 50) scale(.2)"><text x="0" y="100" font-size="20pt">Contact details</text></g></svg>', 4],
+    ['HTML ancestor transform', '<div class="inset" style="transform:scale(.2)"><span style="font-size:20pt">Contact details</span></div>', 4],
+    ['ignored inline transform', '<div class="inset"><span style="font-size:20pt;transform:scale(.2)">Contact details</span></div>', 20],
+    ['ignored inline individual scale', '<div class="inset"><span style="font-size:20pt;scale:.2">Contact details</span></div>', 20],
+    ['HTML ancestor individual scale', '<div class="inset" style="scale:.2"><span style="font-size:20pt">Contact details</span></div>', 4],
+    ['HTML individual rotation with ancestor scale', '<div class="inset" style="transform:scale(2,1)"><div style="rotate:90deg;scale:.2"><span style="font-size:20pt">Contact details</span></div></div>', 8],
+    ['HTML ancestor zoom', '<div class="inset" style="zoom:.2"><span style="font-size:20pt">Contact details</span></div>', 4],
+    ['HTML nested transform and zoom', '<div class="inset" style="zoom:.5;transform:scale(.4)"><span style="font-size:20pt">Contact details</span></div>', 4],
+    ['unscaled HTML', '<div class="inset"><span style="font-size:8pt">Contact details</span></div>', 8],
+  ];
+  for (const [name, body, pt] of fixtures) {
+    const result = await printInBrowser(browser, doc(VIEWPORT + css, body));
+    assert.equal(result.checked, true, name);
+    assert.equal(result.min_font_pt, pt, `${name}: ${JSON.stringify(result)}`);
+    assert.equal(result.issues!.some(i => /under 7 pt/.test(i)), pt < 7, `${name}: ${JSON.stringify(result.issues)}`);
   }
 });
 

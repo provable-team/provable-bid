@@ -147,8 +147,9 @@ const PRINT_CSS_PROBE = `(() => {
  * 3 mm of the edge of the page-sized box holding it (or past it), and its font size. Also fixed-size clipping boxes
  * whose content is bigger than the box, and the page-sized boxes themselves (outermost only: one per printed page).
  * For blank-print detection: the characters of visible text (non-zero box, not hidden, not under an opacity-0 ancestor,
- * not pushed off the page sideways) and the painted artwork area (visible svg/img/canvas/video, and boxes other than
- * html/body with a non-transparent background colour or image).
+ * not pushed off the page sideways) and evidence of artwork (visible svg/img/canvas/video, and boxes other than
+ * html/body with a non-transparent background, image or border). This is a DOM heuristic, not a pixel/ink proof:
+ * empty media elements, white-on-white art and fully clipped artwork can still look empty when printed.
  * The preview watermark (a fixed overlay at the top z-index) is ignored.
  */
 export const PRINT_SCAN = `(({ pageW, pageH }) => {
@@ -156,6 +157,44 @@ export const PRINT_SCAN = `(({ pageW, pageH }) => {
   const hint = el => { if (!el) return ''; const c = typeof el.className === 'string' ? el.className.trim().split(/\\s+/)[0] : '';
     return (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (c ? '.' + c : '')).replace(/[^A-Za-z0-9#._-]/g, '').slice(0, 40); };
   const cs = el => getComputedStyle(el);
+  const transparent = color => /^(transparent|rgba\\(.*,\\s*0\\))$/.test(color);
+  // Computed SVG font-size is in user units. CTM includes viewBox, SVG transforms and outer CSS transforms/zoom.
+  // For HTML, compose ancestor linear transforms and zoom; translations/origins do not change the font's scale.
+  const physicalFontPx = el => {
+    const px = parseFloat(cs(el).fontSize);
+    if (typeof el.getScreenCTM === 'function') {
+      const m = el.getScreenCTM();
+      if (m) return px * Math.hypot(m.c, m.d);
+    }
+    let m = new DOMMatrix();
+    for (let a = el; a; a = a.parentElement) {
+      const s = cs(a);
+      // Computed transform values can exist on non-transformable boxes, but Chromium does not paint them there.
+      const replaced = /^(img|video|audio|iframe|embed|object|canvas|input|textarea|select)$/.test(a.localName);
+      const transformable = !['contents', 'table-column', 'table-column-group'].includes(s.display)
+        && (s.display !== 'inline' || replaced);
+      if (transformable) {
+        let local = s.transform === 'none' ? new DOMMatrix() : new DOMMatrix(s.transform);
+        // Individual properties precede the transform list: translate (irrelevant to scale), rotate, scale, transform.
+        if (s.scale && s.scale !== 'none') {
+          const factors = s.scale.split(/\\s+/).map(v => parseFloat(v) * (v.endsWith('%') ? 0.01 : 1));
+          local = new DOMMatrix().scale(factors[0], factors[1] ?? factors[0], factors[2] ?? 1).multiply(local);
+        }
+        if (s.rotate && s.rotate !== 'none') {
+          const parts = s.rotate.split(/\\s+/), angle = parts.pop();
+          const degrees = parseFloat(angle) * (angle.endsWith('rad') && !angle.endsWith('grad') ? 180 / Math.PI
+            : angle.endsWith('grad') ? 0.9 : angle.endsWith('turn') ? 360 : 1);
+          const axis = parts.length === 0 ? [0, 0, 1] : parts.length === 1
+            ? ({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }[parts[0]] || [0, 0, 1]) : parts.map(Number);
+          local = new DOMMatrix().rotateAxisAngle(axis[0], axis[1], axis[2], degrees).multiply(local);
+        }
+        m = local.multiply(m);
+      }
+      const zoom = parseFloat(s.zoom);
+      if (Number.isFinite(zoom) && zoom > 0 && zoom !== 1) m = new DOMMatrix().scale(zoom).multiply(m);
+    }
+    return px * Math.hypot(m.c, m.d);
+  };
   const clips = el => { const s = cs(el); return s.overflowX !== 'visible' || s.overflowY !== 'visible'; };
   const bordered = el => { const s = cs(el); return ['Top', 'Right', 'Bottom', 'Left'].some(k => parseFloat(s['border' + k + 'Width']) > 0 && s['border' + k + 'Style'] !== 'none' && s['border' + k + 'Style'] !== 'hidden'); };
   const inner = el => { const r = el.getBoundingClientRect(), s = cs(el); return { left: r.left + parseFloat(s.borderLeftWidth), right: r.right - parseFloat(s.borderRightWidth), top: r.top + parseFloat(s.borderTopWidth), bottom: r.bottom - parseFloat(s.borderBottomWidth) }; };
@@ -182,9 +221,9 @@ export const PRINT_SCAN = `(({ pageW, pageH }) => {
     const range = document.createRange(); range.selectNodeContents(n);
     const rects = [...range.getClientRects()].filter(r => r.width > 0.5 && r.height > 0.5);
     if (!rects.length) continue;
-    if (rects.some(onPage) && !faded(el)) chars += n.data.replace(/\s+/g, '').length;
+    if (rects.some(onPage) && !faded(el)) chars += n.data.replace(/\\s+/g, '').length;
     const text = n.data.trim().replace(/\\s+/g, ' ').slice(0, 60);
-    const px = parseFloat(st.fontSize);
+    const px = physicalFontPx(el);
     if (minPx === null || px < minPx) minPx = px;
     if (px < 7 * 96 / 72 - 0.05) small.push({ hint: hint(el), text, pt: Math.round(px * 72 / 96 * 10) / 10 });
     const key = hint(el) + '|' + text;
@@ -219,8 +258,10 @@ export const PRINT_SCAN = `(({ pageW, pageH }) => {
   for (const el of all) {
     if (!shown(el)) continue;
     const s = cs(el), tag = el.tagName.toLowerCase();
+    const borderArt = ['Top', 'Right', 'Bottom', 'Left'].some(k => parseFloat(s['border' + k + 'Width']) > 0
+      && s['border' + k + 'Style'] !== 'none' && s['border' + k + 'Style'] !== 'hidden' && !transparent(s['border' + k + 'Color']));
     const art = tag === 'svg' || tag === 'img' || tag === 'canvas' || tag === 'video'
-      || (s.backgroundImage !== 'none' || !/^(transparent|rgba\(.*,\s*0\))$/.test(s.backgroundColor));
+      || s.backgroundImage !== 'none' || !transparent(s.backgroundColor) || borderArt;
     if (!art || (tag !== 'svg' && el.closest('svg')) || faded(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.width > 0.5 && r.height > 0.5 && onPage(r)) painted += Math.min(r.width, viewW) * r.height;
@@ -247,15 +288,13 @@ export function pdfPages(pdf: Buffer): { pages: number; size_mm: [number, number
 
 export const PRINT_BUDGET_MS = 5_000;
 
-/** Fewer visible characters than this across all printed pages counts as no text. */
-export const BLANK_PRINT_MIN_CHARS = 20;
 /**
- * Blank print: (near) no visible text AND no painted content worth the name (visible svg/img/canvas/video and
- * backgrounds under 5% of one page). Image- or vector-only art is not blank. A page whose print CSS hides its content
- * wrapper prints an empty sheet while page count and size still pass.
+ * Flag only absence of both visible text and DOM artwork evidence. Short text and small artwork are still content;
+ * their size/quality belongs to separate checks. This conservative heuristic does not prove that media contains ink.
+ * A page whose print CSS hides its entire content wrapper is caught even when page count and size pass.
  */
 export const printBlank = (scan: { chars: number; painted: number; pageArea: number }) =>
-  scan.chars < BLANK_PRINT_MIN_CHARS && scan.painted < 0.05 * Math.max(1, scan.pageArea);
+  scan.chars === 0 && scan.painted === 0;
 
 /**
  * The print pass, on an already-loaded page: confirms print CSS from the document's stylesheets, then switches to
