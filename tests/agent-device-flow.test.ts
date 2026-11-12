@@ -286,3 +286,40 @@ test('example agent connects with a code, honours slow_down, and then works with
   await assert.rejects(connectWithCode({ baseUrl, clientName: 'Slow', wait: async (ms: number) => { f.advance(ms / 1000); } }), /expired/);
   await assert.rejects(connectWithCode({ baseUrl, clientName: '' }), /1–80/);
 });
+
+test('example agent stops polling at the code\'s deadline, counting request timeouts as well as waits', async t => {
+  let clock = 0;
+  const timeouts: number[] = [];
+  // Each request's timeout is read from AbortSignal.timeout; the fake transport "hangs" for exactly that long.
+  t.mock.method(AbortSignal, 'timeout', (ms: number) => { timeouts.push(ms); return new AbortController().signal; });
+  const polls: number[] = [];
+  const run = connectWithCode({
+    baseUrl: 'http://127.0.0.1:9', clientName: 'Stalled', now: () => clock,
+    wait: async (ms: number) => { clock += ms; },
+    fetch: async (url: URL) => {
+      if (url.pathname === '/v1/agent-device-codes') {
+        return new Response(JSON.stringify({ device_code: 'd'.repeat(43), user_code: 'BCDF-GHJK', verification_uri: 'http://web.test/operators/activate',
+          verification_uri_complete: 'http://web.test/operators/activate?code=BCDF-GHJK', expires_in: 3, interval: 1, server_time: 'x' }), { status: 200 });
+      }
+      polls.push(clock);
+      clock += timeouts.at(-1)!; // the API never answers: the request times out
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    },
+  });
+  await assert.rejects(run, /expired before the operator approved/);
+  assert.ok(clock <= 3_000 + 1_000, `stopped by the deadline (plus at most one interval), at ${clock} ms`);
+  assert.deepEqual(polls, [1_000], 'one poll, after the first interval');
+  assert.deepEqual(timeouts, [30_000, 2_000], 'the poll waits only for the code\'s remaining lifetime');
+
+  // A ten-minute code under sustained timeouts ends within its ten minutes.
+  clock = 0; polls.length = 0; timeouts.length = 0;
+  await assert.rejects(connectWithCode({
+    baseUrl: 'http://127.0.0.1:9', clientName: 'Stalled', now: () => clock, wait: async (ms: number) => { clock += ms; },
+    fetch: async (url: URL) => {
+      if (url.pathname === '/v1/agent-device-codes') return new Response(JSON.stringify({ device_code: 'd'.repeat(43), user_code: 'BCDF-GHJK', verification_uri: 'http://web.test/a', verification_uri_complete: 'http://web.test/a?code=BCDF-GHJK', expires_in: 600, interval: 5, server_time: 'x' }), { status: 200 });
+      polls.push(clock); clock += timeouts.at(-1)!; throw new DOMException('The operation timed out.', 'TimeoutError');
+    },
+  }), /expired/);
+  assert.ok(clock <= 605_000, `ended at ${clock} ms`);
+  assert.ok(timeouts.slice(1).every(ms => ms <= 30_000));
+});

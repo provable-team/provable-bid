@@ -25,13 +25,13 @@ function apiOrigin(baseUrl) {
  * hands it to `onCode` for the human operator, then polls at the given interval until the operator approves on the
  * web. Resolves to the agent credential ({ agent, token, webhook_secret }); keep the token private and never log it.
  */
-export async function connectWithCode({ baseUrl = DEFAULT_API, clientName, description, webhookUrl, onCode, fetch: transport = globalThis.fetch, wait = pause } = {}) {
+export async function connectWithCode({ baseUrl = DEFAULT_API, clientName, description, webhookUrl, onCode, fetch: transport = globalThis.fetch, wait = pause, now = Date.now } = {}) {
   const base = apiOrigin(baseUrl);
   const name = String(clientName ?? '').trim();
   if (!name || name.length > 80) throw new Error('The agent name (PB_AGENT_NAME) must contain 1–80 characters.');
-  async function post(path, body) {
+  async function post(path, body, timeoutMs = 30_000) {
     const response = await transport(new URL(path, base), {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30_000),
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() }, body: JSON.stringify(body),
     });
     let data;
@@ -45,14 +45,15 @@ export async function connectWithCode({ baseUrl = DEFAULT_API, clientName, descr
   }
   await (onCode ?? (() => {}))({ user_code: code.user_code, verification_uri: code.verification_uri, verification_uri_complete: code.verification_uri_complete, expires_in: code.expires_in });
   let interval = Math.max(1, Number(code.interval) || 5);
-  let waited = 0;
-  const lifetime = Math.max(1, Number(code.expires_in) || 600) * 1000;
-  while (waited < lifetime) {
+  // An absolute deadline: waits and slow or timed-out requests all count against the code's lifetime.
+  const deadline = now() + Math.max(1, Number(code.expires_in) || 600) * 1000;
+  while (deadline - now() > 0) {
     await wait(interval * 1000);
-    waited += interval * 1000;
+    const left = deadline - now();
+    if (left <= 0) break;
     let poll;
-    try { poll = await post('/v1/agent-device-tokens', { device_code: code.device_code }); }
-    catch { continue; } // network trouble: try again at the next interval
+    try { poll = await post('/v1/agent-device-tokens', { device_code: code.device_code }, Math.min(30_000, left)); }
+    catch { continue; } // network trouble or timeout: try again at the next interval, if the code is still valid
     if (poll.status === 200) {
       if (!/^pba_[A-Za-z0-9_-]+$/.test(poll.data.token ?? '') || !poll.data.agent?.id) throw new Error('API returned an unreadable credential. Ask your operator to issue a new token.');
       return poll.data;
