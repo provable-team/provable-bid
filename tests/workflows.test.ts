@@ -52,6 +52,8 @@ const brief = {
   ],
 };
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+const PRINT = { checked: true, page_size_mm: [88.9, 50.8] as [number, number], pages: 3, pages_source: 'pdf' as const, printed_size_mm: [88.9, 50.8] as [number, number], expected_pages: 2,
+  overflow: [{ selector_hint: 'div.card', px: 19 }], safe_area_violations: 0, min_font_pt: 6.5, issues: ['prints as 3 page(s), but the page draws 2 page-sized box(es), so 2 page(s) are expected'] };
 const ATELIER = { id: 'agent_house_atelier', name: 'Atelier', style: '.', description: '.' };
 const freePort = () => new Promise<number>(resolve => { const s = createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as any).port; s.close(() => resolve(p)); }); });
 async function until(cond: () => boolean | Promise<boolean>, work: () => Promise<unknown> = async () => {}, ms = 8000) {
@@ -120,10 +122,14 @@ test('Render Workflows runner: house agents build on task runs over HTTP; render
   let renders = 0;
   const renderer: PageRenderer = { name: 'fake-kernel', async render() {
     if (++renders === 1) throw new Error('KERNEL session dropped'); // the render task retries this
-    return { desktop: jpeg, phone: jpeg, desktopHeight: 900, phoneHeight: 1800, phoneOverflowPx: 0, consoleErrors: [], blockedRequests: [] };
+    return { desktop: jpeg, phone: jpeg, desktopHeight: 900, phoneHeight: 1800, phoneOverflowPx: 0, consoleErrors: [], blockedRequests: [], print: PRINT };
   } };
+  // The judge task sees the print measurement after it crossed the render → judge task boundary as JSON.
+  const judged: unknown[] = [];
+  const inner = heuristicEvaluator();
+  const evaluator: EvaluatorAdapter = { version: inner.version, async qualify(i) { judged.push(i.browser?.print); return inner.qualify(i); } };
   const atelier = streamingHouseAgent(ATELIER, reviser(calls));
-  const local = localWorkflows(defineTasks(deps({ renderer, houseAgent: id => id === ATELIER.id ? atelier : null })), { workflow: 'provable-race-workflows', timeScale: 0.001 });
+  const local = localWorkflows(defineTasks(deps({ renderer, evaluator, houseAgent: id => id === ATELIER.id ? atelier : null })), { workflow: 'provable-race-workflows', timeScale: 0.001 });
   const f = await boot({ client: local.client, workflow: local.workflow, port: await freePort(), houseAgents: [ATELIER.id] });
   t.after(() => f.api.app.close());
 
@@ -140,6 +146,7 @@ test('Render Workflows runner: house agents build on task runs over HTTP; render
   assert.deepEqual(builds.map(r => [r.status, r.attempts]), [['succeeded', 1]], 'one build run per agent per competition');
   const count = (name: string) => local.runs.filter(r => r.task === name).length;
   assert.deepEqual([count(TASKS.evaluate), count(TASKS.render), count(TASKS.judge)], [2, 2, 2], 'each attempt: one evaluation, chaining one render and one judge');
+  assert.deepEqual(judged, [PRINT, PRINT], 'each judge run got the print measurement through the Workflows JSON round trip');
   const firstRender = local.runs.find(r => r.task === TASKS.render)!;
   assert.deepEqual([firstRender.status, firstRender.attempts], ['succeeded', 2], 'the dropped KERNEL session was retried by the render task');
 

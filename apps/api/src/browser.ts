@@ -1,6 +1,9 @@
 import Kernel from '@onkernel/sdk';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 import { chromium } from 'playwright-core';
+import type { PrintMeasurement } from '../../../packages/agent-interface/src/index.js';
+
+export type { PrintMeasurement };
 
 /** Keyboard focus as measured in a real browser: Tab through the page and check each stop for a visible indicator. */
 export interface FocusMeasurement {
@@ -35,6 +38,8 @@ export interface RenderResult {
   consoleErrors: string[];
   blockedRequests: string[];  // fetch/XHR/scripts/frames to other sites, blocked while rendering
   focus?: FocusMeasurement;
+  /** Print media, only for pages with print CSS (@page / @media print); `{ checked: false }` otherwise. */
+  print?: PrintMeasurement;
   /** Navigation start to the load event (HTML, images, fonts) in the desktop pass, ms. */
   loadMs?: number;
   /** The whole check (browser start to last measurement), ms. */
@@ -83,6 +88,198 @@ export async function measureFocus(page: Page): Promise<FocusMeasurement> {
     samples.push({ tag: r.tag.slice(0, 20), visible: !!r.visible, nav: !!r.nav, faq: !!r.faq });
   }
   return { tabStops: samples.length, visibleIndicators: samples.filter(x => x.visible).length, complete, samples };
+}
+
+// ---------------------------------------------------------------- print
+
+/** Cheap test on the markup: no print CSS anywhere in it means no print pass (and no extra browser context). */
+export const mayHavePrintCss = (html: string) => /@page\b|@media[^{]*\bprint\b|\bmedia\s*=\s*["']?[^"'>]*\bprint\b/i.test(html);
+
+/** Named @page sizes (CSS Paged Media), portrait, mm. */
+const PAGE_SIZES: Record<string, [number, number]> = {
+  a5: [148, 210], a4: [210, 297], a3: [297, 420], b5: [176, 250], b4: [250, 353], 'jis-b5': [182, 257], 'jis-b4': [257, 364],
+  letter: [215.9, 279.4], legal: [215.9, 355.6], ledger: [279.4, 431.8],
+};
+const UNIT_MM: Record<string, number> = { mm: 1, cm: 10, q: 0.25, in: 25.4, pt: 25.4 / 72, pc: 25.4 / 6, px: 25.4 / 96 };
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/** The `size` of an @page rule in mm (width, height), or null for auto/unknown. */
+export function parsePageSize(size: string | null | undefined): [number, number] | null {
+  const words = (size ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length || words[0] === 'auto') return null;
+  const lengths: number[] = [];
+  let named: [number, number] | null = null;
+  let orientation: 'portrait' | 'landscape' | null = null;
+  for (const w of words) {
+    if (w === 'portrait' || w === 'landscape') { orientation = w; continue; }
+    if (PAGE_SIZES[w]) { named = PAGE_SIZES[w]; continue; }
+    const m = /^(\d*\.?\d+)(mm|cm|q|in|pt|pc|px)$/.exec(w);
+    if (!m) return null;
+    lengths.push(Number(m[1]) * UNIT_MM[m[2]]);
+  }
+  let wh: [number, number] | null = lengths.length === 2 ? [lengths[0], lengths[1]] : lengths.length === 1 ? [lengths[0], lengths[0]] : named ?? (orientation ? PAGE_SIZES.a4 : null);
+  if (!wh) return null;
+  if (orientation && !lengths.length) wh = orientation === 'landscape' ? [Math.max(...wh), Math.min(...wh)] : [Math.min(...wh), Math.max(...wh)];
+  return [round1(wh[0]), round1(wh[1])];
+}
+
+// Runs in the page. Whether it has print CSS (an @page rule, @media print, a print-only stylesheet), and the last @page size.
+const PRINT_CSS_PROBE = `(() => {
+  let print = false, size = null;
+  const walk = (rules) => {
+    for (const r of rules) {
+      if (r.type === 6) { print = true; const s = r.style && r.style.getPropertyValue('size'); if (s && !r.selectorText) size = s.trim(); else if (s && size === null) size = s.trim(); }
+      else if (r.type === 4) { if (/\\bprint\\b/i.test(r.media.mediaText)) print = true; walk(r.cssRules); }
+      else if (r.type === 3) { if (r.media && /\\bprint\\b/i.test(r.media.mediaText)) print = true; try { if (r.styleSheet) walk(r.styleSheet.cssRules); } catch (e) {} }
+      else if (r.cssRules) { try { walk(r.cssRules); } catch (e) {} }
+    }
+  };
+  for (const sheet of document.styleSheets) {
+    if (sheet.media && /\\bprint\\b/i.test(sheet.media.mediaText)) print = true;
+    try { walk(sheet.cssRules); } catch (e) {} // a cross-origin stylesheet (web fonts) cannot be read
+  }
+  return { print, size };
+})()`;
+
+/**
+ * Runs in the page with print media emulated and the viewport at the page size. For every run of visible text: cut off
+ * by an ancestor that clips (overflow not visible), crossing a drawn frame (an empty bordered box) it overlaps, within
+ * 3 mm of the edge of the page-sized box holding it (or past it), and its font size. Also fixed-size clipping boxes
+ * whose content is bigger than the box, and the page-sized boxes themselves (outermost only: one per printed page).
+ * The preview watermark (a fixed overlay at the top z-index) is ignored.
+ */
+const PRINT_SCAN = `(({ pageW, pageH }) => {
+  const MM = 96 / 25.4;
+  const hint = el => { if (!el) return ''; const c = typeof el.className === 'string' ? el.className.trim().split(/\\s+/)[0] : '';
+    return (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (c ? '.' + c : '')).replace(/[^A-Za-z0-9#._-]/g, '').slice(0, 40); };
+  const cs = el => getComputedStyle(el);
+  const clips = el => { const s = cs(el); return s.overflowX !== 'visible' || s.overflowY !== 'visible'; };
+  const bordered = el => { const s = cs(el); return ['Top', 'Right', 'Bottom', 'Left'].some(k => parseFloat(s['border' + k + 'Width']) > 0 && s['border' + k + 'Style'] !== 'none' && s['border' + k + 'Style'] !== 'hidden'); };
+  const inner = el => { const r = el.getBoundingClientRect(), s = cs(el); return { left: r.left + parseFloat(s.borderLeftWidth), right: r.right - parseFloat(s.borderRightWidth), top: r.top + parseFloat(s.borderTopWidth), bottom: r.bottom - parseFloat(s.borderBottomWidth) }; };
+  const beyond = (r, b) => Math.max(b.left - r.left, r.right - b.right, b.top - r.top, r.bottom - b.bottom);
+  const overlaps = (r, b) => r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top;
+  const overlay = el => { const s = cs(el); return s.position === 'fixed' && s.zIndex === '2147483647'; };
+  const all = [...document.body.querySelectorAll('*')].filter(el => !el.closest('script,style,template,noscript') && !overlay(el));
+  const shown = el => { const s = cs(el); return s.display !== 'none' && s.visibility !== 'hidden'; };
+  const frames = all.filter(el => bordered(el) && !/\\S/.test(el.textContent || '') && el.getBoundingClientRect().width > 40 && el.getBoundingClientRect().height > 30);
+  const sized = pageW ? [document.body, ...all].filter(el => { const r = el.getBoundingClientRect(); return Math.abs(r.width - pageW) < 3 && Math.abs(r.height - pageH) < 3; }) : [];
+  const pageBoxes = sized.filter(el => !sized.some(o => o !== el && o.contains(el)));
+  const clipped = [], frameHits = [], safe = [], small = [], seen = new Set();
+  let minPx = null;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!/\\S/.test(n.data)) continue;
+    const el = n.parentElement;
+    if (!el || el.closest('script,style,template,noscript') || overlay(el)) continue;
+    const st = cs(el);
+    if (st.visibility === 'hidden' || parseFloat(st.opacity) === 0) continue;
+    const range = document.createRange(); range.selectNodeContents(n);
+    const rects = [...range.getClientRects()].filter(r => r.width > 0.5 && r.height > 0.5);
+    if (!rects.length) continue;
+    const text = n.data.trim().replace(/\\s+/g, ' ').slice(0, 60);
+    const px = parseFloat(st.fontSize);
+    if (minPx === null || px < minPx) minPx = px;
+    if (px < 7 * 96 / 72 - 0.05) small.push({ hint: hint(el), text, pt: Math.round(px * 72 / 96 * 10) / 10 });
+    const key = hint(el) + '|' + text;
+    if (seen.has(key)) continue; seen.add(key);
+    let done = { clip: false, frame: false, safe: false };
+    for (const r of rects) {
+      if (!done.clip) for (let a = el; a && a !== document.documentElement; a = a.parentElement) {
+        if (a !== document.body && clips(a)) { const d = beyond(r, inner(a)); if (d > 1) { clipped.push({ hint: hint(el), text, by: hint(a), px: Math.round(d) }); done.clip = true; break; } }
+      }
+      if (!done.frame) for (const f of frames) {
+        if (f.contains(el) || el.contains(f)) continue;
+        if (overlaps(r, f.getBoundingClientRect()) && beyond(r, inner(f)) > 1) { frameHits.push({ hint: hint(el), text, frame: hint(f) }); done.frame = true; break; }
+      }
+      if (!done.safe) for (const root of pageBoxes) {
+        if (!root.contains(el)) continue;
+        const b = root.getBoundingClientRect();
+        const inset = Math.min(r.left - b.left, b.right - r.right, r.top - b.top, b.bottom - r.bottom) / MM;
+        if (inset < 3) { safe.push({ hint: hint(el), text, mm: Math.round(inset * 10) / 10 }); done.safe = true; }
+        break;
+      }
+    }
+  }
+  const boxes = [];
+  for (const el of all) {
+    if (!clips(el) || !shown(el) || !/\\S/.test(el.textContent || '')) continue;
+    const s = cs(el);
+    const dy = el.scrollHeight - el.clientHeight, dx = el.scrollWidth - el.clientWidth;
+    const d = Math.max(s.overflowY !== 'visible' ? dy : 0, s.overflowX !== 'visible' ? dx : 0);
+    if (d > 1) boxes.push({ hint: hint(el), px: d });
+  }
+  return { pageBoxes: pageBoxes.length, clipped: clipped.slice(0, 12), boxes: boxes.slice(0, 12), frames: frameHits.slice(0, 12), safe: safe.slice(0, 40), safeCount: safe.length, small: small.slice(0, 12), smallCount: small.length, minPt: minPx === null ? null : Math.round(minPx * 72 / 96 * 10) / 10 };
+})`;
+type PrintScan = {
+  pageBoxes: number; clipped: { hint: string; text: string; by: string; px: number }[]; boxes: { hint: string; px: number }[];
+  frames: { hint: string; text: string; frame: string }[]; safe: { hint: string; text: string; mm: number }[]; safeCount: number;
+  small: { hint: string; text: string; pt: number }[]; smallCount: number; minPt: number | null;
+};
+
+/** Page text quoted in measurements: short, letters, digits and plain punctuation only (it comes from an untrusted page). */
+const quote = (t: string) => `"${t.replace(/[^\p{L}\p{N} .,&@/:'+#-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40)}"`;
+
+/** Page count and page size of a PDF from Chromium's print engine (Skia writes one uncompressed /Type /Page per page). */
+export function pdfPages(pdf: Buffer): { pages: number; size_mm: [number, number] | null } {
+  const text = pdf.toString('latin1');
+  const pages = (text.match(/\/Type\s*\/Page(?![s\w])/g) ?? []).length;
+  const box = /\/MediaBox\s*\[\s*([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s*\]/.exec(text);
+  const mm = (pt: number) => round1(pt * 25.4 / 72);
+  return { pages, size_mm: box ? [mm(Number(box[3]) - Number(box[1])), mm(Number(box[4]) - Number(box[2]))] : null };
+}
+
+export const PRINT_BUDGET_MS = 5_000;
+
+/**
+ * The print pass, on an already-loaded page: confirms print CSS from the document's stylesheets, then switches to
+ * print media at the declared @page size, scans the layout (PRINT_SCAN) and prints to PDF (page.pdf with the CSS page
+ * size; headless Chromium only) for the page count. Without print CSS: `{ checked: false }`, nothing else is done.
+ */
+export async function measurePrint(page: Page): Promise<PrintMeasurement> {
+  const css = await page.evaluate(PRINT_CSS_PROBE) as { print: boolean; size: string | null };
+  if (!css.print) return { checked: false };
+  const size = parsePageSize(css.size);
+  // The preview watermark (html.ts: a fixed overlay at the top z-index, last in <body>) is ours, not the entry's, and in
+  // print it can push an extra page: measure the entry without it. This page is the print pass's own load.
+  await page.evaluate(`for (const el of document.querySelectorAll('body > div[aria-hidden="true"]')) { const s = getComputedStyle(el); if (s.position === 'fixed' && s.zIndex === '2147483647') el.remove(); }`);
+  const px = (mm: number) => Math.max(1, Math.round(mm * 96 / 25.4));
+  await page.emulateMedia({ media: 'print' });
+  if (size) await page.setViewportSize({ width: px(size[0]), height: px(size[1]) });
+  const scan = await page.evaluate(`${PRINT_SCAN}(${JSON.stringify(size ? { pageW: px(size[0]), pageH: px(size[1]) } : { pageW: 0, pageH: 0 })})`) as PrintScan;
+  let pages: number | null = null, printed: [number, number] | null = null, source: PrintMeasurement['pages_source'];
+  try {
+    const pdf = pdfPages(await page.pdf({ preferCSSPageSize: true, printBackground: false }));
+    if (pdf.pages > 0) { pages = pdf.pages; printed = pdf.size_mm; source = 'pdf'; }
+  } catch { /* printing to PDF needs headless Chromium: fall back to the page-sized boxes */ }
+  if (pages === null && scan.pageBoxes > 0) { pages = scan.pageBoxes; source = 'page_boxes'; }
+
+  const issues: string[] = [];
+  const expected = scan.pageBoxes > 0 ? scan.pageBoxes : undefined;
+  if (expected !== undefined && source === 'pdf' && pages !== expected) issues.push(`prints as ${pages} page(s), but the page draws ${expected} page-sized box(es), so ${expected} page(s) are expected`);
+  if (size && printed && (Math.abs(printed[0] - size[0]) > 1 || Math.abs(printed[1] - size[1]) > 1)) issues.push(`prints at ${printed[0]} x ${printed[1]} mm, not the declared ${size[0]} x ${size[1]} mm`);
+  for (const c of scan.clipped) issues.push(`text ${quote(c.text)} (${c.hint}) is cut off by ${c.by}: ${c.px}px of it is outside the box`);
+  for (const b of scan.boxes) if (!scan.clipped.some(c => c.by === b.hint)) issues.push(`${b.hint} clips its content: the content is ${b.px}px bigger than the box`);
+  for (const s of scan.safe.slice(0, 3)) issues.push(s.mm < 0 ? `text ${quote(s.text)} (${s.hint}) runs ${Math.abs(s.mm)} mm past the edge of the page` : `text ${quote(s.text)} (${s.hint}) is ${s.mm} mm from the page edge (inside the 3 mm safe area)`);
+  if (scan.safeCount > 3) issues.push(`${scan.safeCount - 3} more text run(s) within 3 mm of the page edge`);
+  for (const f of scan.frames.slice(0, 2)) issues.push(`text ${quote(f.text)} (${f.hint}) crosses the drawn frame ${f.frame}`);
+  if (scan.smallCount) issues.push(`${scan.smallCount} text run(s) under 7 pt in print (smallest ${scan.minPt} pt, e.g. ${scan.small.slice(0, 2).map(x => `${quote(x.text)} at ${x.pt} pt`).join(', ')})`);
+  const overflow = [
+    ...scan.clipped.map(c => ({ selector_hint: c.hint, px: c.px, text: quote(c.text).slice(1, -1) })),
+    ...scan.boxes.map(b => ({ selector_hint: b.hint, px: b.px })),
+  ].slice(0, 10);
+  return {
+    checked: true, page_size_mm: size, pages, ...(source ? { pages_source: source } : {}), printed_size_mm: printed,
+    ...(expected !== undefined ? { expected_pages: expected } : {}),
+    overflow, safe_area_violations: scan.safeCount, min_font_pt: scan.minPt, issues: issues.slice(0, 10),
+  };
+}
+
+/** measurePrint within PRINT_BUDGET_MS. Never rejects: a failure or timeout is `{ checked: false, error }`. */
+export function boundedPrint(page: Page, budgetMs = PRINT_BUDGET_MS): Promise<PrintMeasurement> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const measured = measurePrint(page).catch((e: Error) => ({ checked: false, error: `print measurement failed: ${(e?.message ?? String(e)).split('\n')[0].slice(0, 160)}` }));
+  const late = new Promise<PrintMeasurement>(resolve => { timer = setTimeout(() => resolve({ checked: false, error: `print measurement took over ${budgetMs} ms` }), budgetMs); });
+  return Promise.race([measured, late]).finally(() => clearTimeout(timer));
 }
 
 export interface RenderOptions {
@@ -194,14 +391,22 @@ export async function renderInBrowser(browser: Browser, html: string, { sequenti
     return { jpeg, height, layout };
   });
 
+  // 4. Print, only when the markup has print CSS: its own load at desktop size, then print media (see measurePrint).
+  //    Bounded and never fatal: a failure is recorded as `checked: false` and the render goes on.
+  const printPass = async (): Promise<PrintMeasurement> => {
+    if (!mayHavePrintCss(html)) return { checked: false };
+    try { return await pass(DESKTOP, page => boundedPrint(page))(); }
+    catch (e) { return { checked: false, error: `print measurement failed: ${((e as Error)?.message ?? String(e)).split('\n')[0].slice(0, 160)}` }; }
+  };
+
   try {
-    const [desktop, focus, phone] = sequential
-      ? [await desktopPass(), await focusPass(), await phonePass()]
-      : await Promise.all([desktopPass(), focusPass(), phonePass()]);
+    const [desktop, focus, phone, print] = sequential
+      ? [await desktopPass(), await focusPass(), await phonePass(), await printPass()]
+      : await Promise.all([desktopPass(), focusPass(), phonePass(), printPass()]);
     return {
       desktop: desktop.jpeg, phone: phone.jpeg, desktopHeight: desktop.height, phoneHeight: phone.height,
       phoneOverflowPx: Math.max(0, Math.max(phone.layout.layoutWidth, phone.layout.contentWidth) - PHONE_WIDTH),
-      phoneLayout: phone.layout, consoleErrors, blockedRequests, focus, loadMs: desktop.loadMs,
+      phoneLayout: phone.layout, consoleErrors, blockedRequests, focus, print, loadMs: desktop.loadMs,
     };
   } finally {
     await Promise.all(contexts.map(c => c.close().catch(() => {})));
