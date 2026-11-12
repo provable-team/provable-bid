@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type {
   Agent,
@@ -45,6 +45,19 @@ type Snapshot = {
   gallery: Submission[];
   purchases: Purchase[];
   payments: Record<string, Payment>;
+  /** Which load produced this snapshot (counted from when the load started). */
+  load: number;
+};
+/** Back from PayPal: what is being verified, kept in state so the URL can be tidied straight away. */
+type PaypalReturn = {
+  competitionId: string;
+  kind: "authorize" | "purchase";
+  paymentId: string | null;
+  phase: "confirming" | "settled";
+  /** The verification's error, or null once confirmed. */
+  error: string | null;
+  /** The confirming view stays until a snapshot from a load started after this one shows the result. */
+  afterLoad: number;
 };
 type Settlement = components["responses"]["Settlement"]["content"]["application/json"];
 type Checkout = components["schemas"]["Checkout"];
@@ -109,6 +122,25 @@ function payoutText(allocation: Allocation): string {
   }
 }
 
+/** Shown in place of the approve panel while the API verifies the buyer's return from PayPal. */
+function PaypalConfirming({ kind }: { kind: PaypalReturn["kind"] }) {
+  return (
+    <div className="payment-status pending paypal-confirming" role="status" aria-live="polite">
+      <span className="payment-state-icon">
+        <Icon name="clock" size={18} />
+      </span>
+      <div>
+        <strong>{kind === "authorize" ? "Confirming your PayPal approval…" : "Confirming your PayPal payment…"}</strong>
+        <p>
+          {kind === "authorize"
+            ? "Checking the hold with PayPal. Your brief opens as soon as it is confirmed."
+            : "Checking the payment with PayPal. The original unlocks once it is confirmed."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function CompetitionPage({
   params,
 }: {
@@ -135,6 +167,7 @@ export default function CompetitionPage({
   const dialog = useRef<HTMLDialogElement>(null);
   const currentApi = useRef(api);
   const reload = useRef<(() => Promise<void>) | null>(null);
+  const loads = useRef(0);
   const retryAction = useRef<{
     name: string;
     operation: () => Promise<unknown>;
@@ -184,9 +217,12 @@ export default function CompetitionPage({
       reload.current = null;
       return () => controller.abort();
     }
+    // An explicit reload asked for while a load is in flight runs once more afterwards, so it sees the change.
+    let again = false;
     async function load() {
       if (running) return;
       running = true;
+      const started = ++loads.current;
       try {
         const next = await withRequestTimeout(
           async (signal) => {
@@ -283,6 +319,7 @@ export default function CompetitionPage({
               gallery,
               purchases: canonicalPurchases,
               payments,
+              load: started,
             };
           },
           { signal: controller.signal, timeoutMs: requestTimeoutMs },
@@ -303,15 +340,23 @@ export default function CompetitionPage({
         }
       } finally {
         running = false;
+        if (again && !controller.signal.aborted) {
+          again = false;
+          void load();
+        }
       }
     }
-    reload.current = load;
+    const requestLoad = () => {
+      if (running) again = true;
+      return load();
+    };
+    reload.current = requestLoad;
     void load();
     const timer = setInterval(() => void load(), 2500);
     return () => {
       controller.abort();
       clearInterval(timer);
-      if (reload.current === load) reload.current = null;
+      if (reload.current === requestLoad) reload.current = null;
     };
   }, [api, id, config, requestTimeoutMs]);
 
@@ -391,42 +436,106 @@ export default function CompetitionPage({
     });
   }
 
-  // Back from PayPal (?paypal=return&kind=authorize|purchase&payment_id=…): verify once, then tidy the URL.
-  const returned = useRef(false);
-  useEffect(() => {
-    if (returned.current || !snapshot?.owner || !config || stale || busy) return;
+  // Back from PayPal (?paypal=return&kind=authorize|purchase&payment_id=…). Read the return before the first paint
+  // (a layout effect, so server and client markup still match) and keep it in state, so tidying the URL loses nothing.
+  // Until the API answers, the page shows "Confirming…" in place of the approve panel the buyer just used.
+  const [paypalReturn, setPaypalReturn] = useState<PaypalReturn | null>(null);
+  const returnStarted = useRef(false);
+  useLayoutEffect(() => {
     const query = new URLSearchParams(window.location.search);
     if (query.get("paypal") !== "return") return;
-    returned.current = true;
-    window.history.replaceState(null, "", window.location.pathname);
     const kind = query.get("kind");
-    const paymentId = query.get("payment_id");
-    if (kind === "authorize" && ["draft", "awaiting_authorization"].includes(snapshot.competition.state)) void verifyAuthorization();
-    if (kind === "purchase") {
-      const purchase = snapshot.purchases.find((p) => p.payment_id === paymentId);
-      if (purchase && purchase.status === "awaiting_approval") void verifyPurchase(purchase.id);
-    }
+    if (kind !== "authorize" && kind !== "purchase") return;
+    window.history.replaceState(null, "", window.location.pathname);
+    setPaypalReturn({ competitionId: id, kind, paymentId: query.get("payment_id"), phase: "confirming", error: null, afterLoad: 0 });
+  }, [id]);
+
+  // Verify as soon as the API is known to be compatible, in parallel with the first snapshot load rather than after it.
+  // The command key is stable, so a repeat is safe, and the server re-checks state: an already open brief or an already
+  // captured purchase answers 202, which counts as confirmed. Only the brief's owner can verify (anyone else gets 404).
+  useEffect(() => {
+    if (!paypalReturn || paypalReturn.competitionId !== id || paypalReturn.phase !== "confirming") return;
+    if (!config || returnStarted.current) return;
+    returnStarted.current = true;
+    const startedApi = api;
+    const paymentId = paypalReturn.paymentId;
+    const verify = async () => {
+      if (paypalReturn.kind === "authorize") return void (await authorizeCommand());
+      const page = unwrap(
+        await withRequestTimeout(
+          (signal) =>
+            api.GET("/v1/competitions/{competition_id}/purchases", {
+              params: { path: { competition_id: id }, query: { limit: 100 } },
+              signal,
+            }),
+          { timeoutMs: requestTimeoutMs },
+        ),
+      );
+      const purchase = page.items.find((p) => p.payment_id === paymentId);
+      if (purchase?.status === "awaiting_approval") await captureCommand(purchase.id);
+    };
+    const settle = (error: string | null) => {
+      if (currentApi.current !== startedApi) return;
+      // Any load already running may have read the old state; wait for one started after this point.
+      const afterLoad = loads.current;
+      setPaypalReturn((prev) => (prev ? { ...prev, phase: "settled", error, afterLoad } : prev));
+      setStale(true);
+      void reload.current?.();
+    };
+    verify().then(
+      () => settle(null),
+      (err: unknown) =>
+        settle(err instanceof Error ? err.message : "PayPal could not confirm the approval. Try again."),
+    );
   });
 
-  function verifyAuthorization() {
-    return act("authorize", () =>
-      command(`authorize:${id}`, null, (key, signal) =>
-        api.POST("/v1/competitions/{competition_id}/authorize", {
-          signal,
-          params: { path: { competition_id: id }, header: { "Idempotency-Key": key } },
-        }),
-      ),
+  // Once a fresh snapshot reflects the answer, drop the confirming view. On failure, show the error and bring the
+  // approve panel back for a retry, but only to the owner and only while the approval is still outstanding.
+  useEffect(() => {
+    if (paypalReturn?.phase !== "settled" || !snapshot || snapshot.load <= paypalReturn.afterLoad) return;
+    setPaypalReturn(null);
+    const message = paypalReturn.error;
+    if (!message || !snapshot.owner) return;
+    const outstanding =
+      paypalReturn.kind === "authorize"
+        ? ["draft", "awaiting_authorization"].includes(snapshot.competition.state)
+        : snapshot.purchases.some((p) => p.payment_id === paypalReturn.paymentId && p.status === "awaiting_approval");
+    if (!outstanding) return;
+    const purchase = snapshot.purchases.find((p) => p.payment_id === paypalReturn.paymentId);
+    retryAction.current =
+      paypalReturn.kind === "authorize"
+        ? { name: "authorize", operation: authorizeCommand }
+        : { name: `capture:${purchase!.id}`, operation: () => captureCommand(purchase!.id) };
+    setActionError(message);
+  });
+  /** True while the return from PayPal is being verified: the approve panel it came from stays hidden. */
+  const confirmingReturn = (kind: PaypalReturn["kind"], paymentId?: string) =>
+    !!paypalReturn &&
+    paypalReturn.competitionId === id &&
+    paypalReturn.kind === kind &&
+    (kind === "authorize" || paypalReturn.paymentId === paymentId);
+
+  function authorizeCommand() {
+    return command(`authorize:${id}`, null, (key, signal) =>
+      api.POST("/v1/competitions/{competition_id}/authorize", {
+        signal,
+        params: { path: { competition_id: id }, header: { "Idempotency-Key": key } },
+      }),
     );
   }
-  function verifyPurchase(purchaseId: string) {
-    return act(`capture:${purchaseId}`, () =>
-      command(`capture:${purchaseId}`, null, (key, signal) =>
-        api.POST("/v1/purchases/{purchase_id}/capture", {
-          signal,
-          params: { path: { purchase_id: purchaseId }, header: { "Idempotency-Key": key } },
-        }),
-      ),
+  function captureCommand(purchaseId: string) {
+    return command(`capture:${purchaseId}`, null, (key, signal) =>
+      api.POST("/v1/purchases/{purchase_id}/capture", {
+        signal,
+        params: { path: { purchase_id: purchaseId }, header: { "Idempotency-Key": key } },
+      }),
     );
+  }
+  function verifyAuthorization() {
+    return act("authorize", authorizeCommand);
+  }
+  function verifyPurchase(purchaseId: string) {
+    return act(`capture:${purchaseId}`, () => captureCommand(purchaseId));
   }
 
   async function confirmDecision() {
@@ -490,6 +599,7 @@ export default function CompetitionPage({
           />
         ) : (
           <>
+            {paypalReturn?.competitionId === id && <PaypalConfirming kind={paypalReturn.kind} />}
             <div className="skeleton loading-block" />
             <p className="muted">
               Loading the brief and qualified work…
@@ -849,6 +959,11 @@ export default function CompetitionPage({
                                     mock={config ? mock : null}
                                   />
                                   {purchase.status === "awaiting_approval" &&
+                                    confirmingReturn("purchase", purchase.payment_id) && (
+                                      <PaypalConfirming kind="purchase" />
+                                    )}
+                                  {purchase.status === "awaiting_approval" &&
+                                    !confirmingReturn("purchase", purchase.payment_id) &&
                                     purchase.checkout &&
                                     config && (
                                       <CheckoutActions
@@ -969,7 +1084,9 @@ export default function CompetitionPage({
                       </div>
                       <h3>
                         {comp.state === "draft" || comp.state === "awaiting_authorization"
-                          ? "Put the price on hold to open your brief."
+                          ? confirmingReturn("authorize")
+                            ? "Confirming your hold with PayPal."
+                            : "Put the price on hold to open your brief."
                           : ["closed", "cancelled"].includes(comp.state)
                             ? "No qualified entries to show."
                             : "Agents are building. Entries appear as they pass."}
@@ -1151,7 +1268,10 @@ export default function CompetitionPage({
                     Put {money(comp.total.amount_minor)} on hold with PayPal to open your brief. Nothing is charged until you pick.
                   </p>
                 )}
-                {["draft", "awaiting_authorization"].includes(comp.state) && (
+                {["draft", "awaiting_authorization"].includes(comp.state) && confirmingReturn("authorize") && (
+                  <PaypalConfirming kind="authorize" />
+                )}
+                {["draft", "awaiting_authorization"].includes(comp.state) && !confirmingReturn("authorize") && (
                   <>
                     {!checkout || now >= Date.parse(checkout.expires_at) ? (
                       <button
