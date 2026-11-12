@@ -277,6 +277,19 @@ svg {
 .back-link:hover {
   color: var(--ink);
 }
+/* Small text controls keep their look but get a hit area of at least 24px (WCAG 2.5.8). */
+.back-link,
+.text-button,
+.mode-banner button {
+  position: relative;
+}
+.back-link::after,
+.text-button::after,
+.mode-banner button::after {
+  content: "";
+  position: absolute;
+  inset: -8px -4px;
+}
 .skip-link {
   position: fixed;
   z-index: 100;

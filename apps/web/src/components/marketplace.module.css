@@ -227,6 +227,13 @@
   align-items: center;
   white-space: nowrap;
   text-decoration: none;
+  position: relative;
+}
+/* At least a 24px hit area without changing the link's look. */
+.textLink::after {
+  content: "";
+  position: absolute;
+  inset: -6px -4px;
 }
 .textLink:hover {
   text-decoration: underline;
