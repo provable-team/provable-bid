@@ -567,7 +567,7 @@ export interface paths {
         };
         /**
          * View the watermarked preview, subject to submission visibility
-         * @description Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. Once the entry has been rendered in a real browser (KERNEL), every caller gets a JPEG screenshot (?view=desktop, the default, or ?view=phone) and never the markup. Before that, or without a renderer, the preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected, and the markup is visible. Authenticated, no-store, nosniff. Never the original bytes.
+         * @description Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. Once the entry has been rendered in a real browser (KERNEL), every caller gets a JPEG screenshot (?view=desktop, the default, or ?view=phone) and never the markup. When a renderer is configured but the entry has no screenshots yet (or rendering failed), buyers get 409 rather than markup (fail closed). Without a renderer at all, the preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected, and the markup is visible. Authenticated, no-store, nosniff. Never the original bytes.
          */
         get: operations["getAssetPreview"];
         put?: never;
