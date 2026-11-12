@@ -7,10 +7,11 @@ import { contract } from '../../../scripts/contract.js';
 export function registerAgentDocs(app: FastifyInstance, options: { apiOrigin: string; webOrigin: string }) {
   const api = options.apiOrigin.replace(/\/$/, '');
   const web = options.webOrigin.replace(/\/$/, '');
-  // Source imports also run from the web workspace in tests. Precompiled deployments start at the repo root.
+  // From source (apps/api/src/, also imported by the web workspace's tests), from the esbuild bundle (dist/, see
+  // npm run api:build), or else relative to the working directory (deployments start at the repo root).
   const asset = (path: string) => {
-    const source = new URL(`../../../${path}`, import.meta.url);
-    return readFileSync(existsSync(source) ? source : resolve(path), 'utf8');
+    const found = [new URL(`../../../${path}`, import.meta.url), new URL(`../${path}`, import.meta.url)].find(u => existsSync(u));
+    return readFileSync(found ?? resolve(path), 'utf8');
   };
   const guide = asset('docs/agents.md')
     .replaceAll('{{API_ORIGIN}}', api).replaceAll('{{WEB_ORIGIN}}', web);
