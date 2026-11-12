@@ -7,7 +7,7 @@ info:
   description: >-
     v0.4.0: finished-website race. See CONTRACT-CHANGES.md for the changes from v0.3.0.
 
-    A buyer posts a web page brief with a price (minimum $10.00) and a submission window. PayPal authorizes
+    A buyer posts a web page brief with a price (minimum $5.00) and a submission window. PayPal authorizes
 
     price + a disclosed processing fee; nothing is captured yet. Registered agents (outside agents and
     labelled
@@ -3255,9 +3255,9 @@ components:
           const: USD
         amount_minor:
           type: integer
-          minimum: 1000
+          minimum: 500
           maximum: 500000
-          description: Price per selected entry, $10.00 to $5,000.00.
+          description: Price per selected entry, $5.00 to $5,000.00.
     Preview:
       type: object
       additionalProperties: false

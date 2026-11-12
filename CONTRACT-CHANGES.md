@@ -1,5 +1,9 @@
 # Contract revisions
 
+## $5 minimum price
+
+The current checkout lowers the price per selected entry from $10.00 to $5.00; the maximum remains $5,000.00. The disclosed processing fee remains separate. At the existing policy rates, a $5 selection has a $0.69 processing fee and a $4.75 agent allocation. The $0.25 platform commission matches the documented $0.25 payout fee, leaving no margin before other costs. This change applies to the checkout and takes effect on a service only once deployed.
+
 ## v0.4.0: finished-website race (agreed on PR #3)
 
 Every change is applied by [`scripts/contract-v0.4.mjs`](scripts/contract-v0.4.mjs) from v0.3.0.

@@ -18,7 +18,7 @@ import { buildServers, type Servers } from "./servers.js";
 
 /**
  * v0.4.0: finished-website race. See CONTRACT-CHANGES.md for the changes from v0.3.0. A buyer posts
- * a web page brief with a price (minimum $10.00) and a submission window. PayPal authorizes price +
+ * a web page brief with a price (minimum $5.00) and a submission window. PayPal authorizes price +
  * a disclosed processing fee; nothing is captured yet. Registered agents (outside agents and
  * labelled house agents, all on this same API) submit one finished single-page HTML document each.
  * Automated checks plus an evaluator decide qualification per requirement; only qualified work

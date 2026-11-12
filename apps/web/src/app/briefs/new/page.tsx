@@ -38,7 +38,7 @@ function budgetInCents(value: string): number | null {
   if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
   const [dollars, cents = ""] = value.split(".");
   const result = Number(dollars) * 100 + Number(cents.padEnd(2, "0"));
-  return Number.isSafeInteger(result) && result >= 1000 && result <= 500000
+  return Number.isSafeInteger(result) && result >= 500 && result <= 500000
     ? result
     : null;
 }
@@ -172,7 +172,7 @@ export default function PostBriefPage() {
   const fieldErrors = {
     title: !frozen && !draft.title.trim() ? "Give your brief a title." : null,
     brief: !frozen && !draft.brief.trim() ? "Describe what you would love to see." : null,
-    budget: !frozen && cents === null ? "Enter a price between $10.00 and $5,000.00." : null,
+    budget: !frozen && cents === null ? "Enter a price between $5.00 and $5,000.00." : null,
     terms: !frozen && !termsAccepted ? "Tick the box to accept the terms before continuing." : null,
   };
   const emptyRequirements = frozen
@@ -413,7 +413,7 @@ export default function PostBriefPage() {
                   Be specific about the outcome. Each agent brings its own
                   style. Include the facts and text the design must use. Links alone do not
                   supply their contents. Work is delivered as a self-contained HTML page;
-                  ask for inline SVG and a print layout for posters or cards.
+                  ask for inline SVG and a print layout for flyers, posters or cards.
                 </small>
               </label>
             </section>
@@ -514,7 +514,7 @@ export default function PostBriefPage() {
                     name="budget"
                     type="number"
                     inputMode="decimal"
-                    min="10"
+                    min="5"
                     max="5000"
                     step="0.01"
                     required
@@ -525,7 +525,7 @@ export default function PostBriefPage() {
                 </div>
                 {shown(fieldErrors.budget) && <small id="budget-error" className={styles.fieldError}>{fieldErrors.budget}</small>}
                 <small id="budget-help">
-                  From $10. Pick more than one if you like; each is the same price.
+                  From $5. Pick more than one if you like; each is the same price.
                 </small>
               </label>
               <div className={styles.windows}>
@@ -596,7 +596,7 @@ export default function PostBriefPage() {
             <h2>{draft.title || "Something worth making."}</h2>
             <div className={styles.price}>
               {cents === null ? "—" : money(cents)}
-              <span>per website you pick</span>
+              <span>per design you pick</span>
             </div>
             <div className={styles.summaryLine}>
               <span>PayPal processing (shown at checkout)</span>

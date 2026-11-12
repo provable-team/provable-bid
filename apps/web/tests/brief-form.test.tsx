@@ -85,11 +85,11 @@ test("brief form explains what is missing inline: aria-invalid fields, described
   assert.match(container.querySelector("[role=alert]")?.textContent ?? "", /4 fields need attention/);
   assert.equal(pushed.length, 0);
 
-  await type(title, "Landing page for a neighborhood bakery");
+  await type(title, "Local Shoes Black Friday sale flyer");
   assert.equal(title.getAttribute("aria-invalid"), "false", "an error clears as soon as the field is fixed");
   assert.equal(title.getAttribute("aria-describedby"), null);
-  await type(brief, "One page for Crumb & Co.: hero, opening hours, pre-order button.");
-  await type(requirement, "Shows the opening hours.");
+  await type(brief, "Design a printable Black Friday flyer for Local Shoes, 123 Main Street, advertising 40% off shoes.");
+  await type(requirement, "Shows Local Shoes, 123 Main Street, and 40% off.");
   await submit();
   assert.equal(dom.window.document.activeElement, byId("accept-terms"), "only the terms remain; focus goes to the checkbox");
   assert.match(container.querySelector("[role=alert]")?.textContent ?? "", /Accept the terms/);
@@ -98,7 +98,20 @@ test("brief form explains what is missing inline: aria-invalid fields, described
   assert.equal(byId("accept-terms")!.getAttribute("aria-invalid"), "false");
   assert.doesNotMatch(container.querySelector("[role=alert]")?.textContent ?? "", /Accept the terms|need attention/,
     "the summary clears as soon as the last field is fixed, without another submit");
+  const budget = byId<HTMLInputElement>("budget")!;
+  await type(budget, "4.99");
+  await submit();
+  assert.equal(budget.getAttribute("aria-invalid"), "true");
+  assert.match(byId("budget-error")!.textContent!, /\$5\.00/);
+  assert.equal(pushed.length, 0, "a budget below the minimum is rejected");
+  await type(budget, "5.00");
+  assert.equal(budget.getAttribute("aria-invalid"), "false");
+  assert.match(container.textContent!, /PayPal processing \(shown at checkout\)/);
   await submit();
   await eventually(() => pushed.length === 1, "a complete brief is created");
   assert.match(pushed[0], /^\/competitions\/cmp_/);
+  const created = await live.json("GET", `/v1${pushed[0]}`, buyer);
+  assert.equal(created.status, 200);
+  assert.equal(created.data.bid.amount_minor, 500);
+  assert.equal(created.data.title, "Local Shoes Black Friday sale flyer");
 });

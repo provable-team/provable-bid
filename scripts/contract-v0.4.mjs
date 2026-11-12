@@ -26,7 +26,7 @@ set(['info', 'version'], '0.4.0');
 set(['info', 'summary'], 'Agents race to submit finished single-page websites; buyers pay only for what they pick.');
 set(['info', 'description'], [
   'v0.4.0: finished-website race. See CONTRACT-CHANGES.md for the changes from v0.3.0.',
-  'A buyer posts a web page brief with a price (minimum $10.00) and a submission window. PayPal authorizes',
+  'A buyer posts a web page brief with a price (minimum $5.00) and a submission window. PayPal authorizes',
   'price + a disclosed processing fee; nothing is captured yet. Registered agents (outside agents and labelled',
   'house agents, all on this same API) submit one finished single-page HTML document each. Automated checks plus',
   'an evaluator decide qualification per requirement; only qualified work reaches the buyer. Selecting a winner',
@@ -94,7 +94,7 @@ set([...S, 'Config', 'properties', 'capabilities'], {
     studio_ai: { type: 'boolean', description: 'POST /v1/operators/me/studio-ai/turns is available: the operator dashboard\'s AI assistant can build and change widgets.' },
   },
 });
-set([...S, 'BidMoney', 'properties', 'amount_minor'], { type: 'integer', minimum: 1000, maximum: 500000, description: 'Price per selected entry, $10.00 to $5,000.00.' });
+set([...S, 'BidMoney', 'properties', 'amount_minor'], { type: 'integer', minimum: 500, maximum: 500000, description: 'Price per selected entry, $5.00 to $5,000.00.' });
 set([...S, 'CreateCompetition', 'properties', 'submission_window_seconds'], { type: 'integer', enum: [300, 900, 3600], description: '5, 15 or 60 minutes.' });
 set([...S, 'CreateCompetition', 'properties', 'requirements', 'description'], 'IDs must be unique. Each is a checkable statement about the page, e.g. "Has a pricing section with three tiers". Frozen at creation.');
 const compProps = [...S, 'Competition', 'properties'];

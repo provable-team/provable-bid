@@ -33,7 +33,7 @@ Do not put secrets in this file, chat, Slack, recordings, or Git. Configure them
 6. Record a separate provider-confirmed void or refund as applicable. Preserve the same deployment and IDs through each evidence sequence; no deployments during the run.
 7. Only after the live pilot succeeds, approve opening payments to general visitors and update customer-facing terms, support details and the recording claims to match the operating service.
 
-The existing $10 minimum plus a disclosed processing charge is a real cost in production. Do not initiate a live test until its exact participants, recipient and spending limit are approved.
+The $10 minimum observed during this assessment plus a disclosed processing charge would be a real cost in production; the current checkout proposes a $5 minimum. Do not initiate a live test until its exact participants, recipient and spending limit are approved.
 
 ## Transcript changes after a verified live run
 

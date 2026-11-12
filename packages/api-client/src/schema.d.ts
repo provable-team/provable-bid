@@ -1265,7 +1265,7 @@ export interface components {
         BidMoney: {
             /** @constant */
             currency: "USD";
-            /** @description Price per selected entry, $10.00 to $5,000.00. */
+            /** @description Price per selected entry, $5.00 to $5,000.00. */
             amount_minor: number;
         };
         Preview: {

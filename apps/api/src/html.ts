@@ -59,7 +59,8 @@ export function gateHtml(html: string): { code: 'invalid_output' | 'spam'; reaso
   if (/<form[^>]+\baction\s*=\s*["']?https?:/i.test(html)) return { code: 'invalid_output', reason: 'Submits a form to another site.' };
   if (/<meta[^>]+http-equiv\s*=\s*["']?refresh/i.test(html)) return { code: 'invalid_output', reason: 'Redirects with meta refresh.' };
   const text = visibleText(html);
-  if (text.length < 80) return { code: 'invalid_output', reason: 'Has almost no visible content.' };
+  // Flyers and other fixed-format designs can be complete with very little copy.
+  if (text.length < 20) return { code: 'invalid_output', reason: 'Has almost no visible content.' };
   const words = text.toLowerCase().split(/\s+/);
   if (words.length > 40 && new Set(words).size / words.length < 0.12) return { code: 'spam', reason: 'Repeats the same words over and over.' };
   return null;

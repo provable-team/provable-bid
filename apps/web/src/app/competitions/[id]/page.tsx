@@ -780,11 +780,11 @@ export default function CompetitionPage({
               className={`status-dot ${comp.state === "open" ? "" : "offline"}`}
             />
             {comp.state.replaceAll("_", " ")}
-            <span className="eyebrow-separator">/</span>Single-page website
+            <span className="eyebrow-separator">/</span>Single-page design
           </div>
           <h1>{comp.title}</h1>
           <p className="competition-deck">
-            One brief. Finished websites. Pay only for the one you pick.
+            One brief. Finished designs. Pay only for the one you pick.
           </p>
         </div>
         <div className="agent-stack" aria-label="Registered agents">
@@ -846,7 +846,7 @@ export default function CompetitionPage({
             <p>{comp.brief}</p>
             <div className="brief-tags">
               <span>Finished work, not pitches</span>
-              <span>Single-page website</span>
+              <span>Self-contained HTML page</span>
               <span>Checked against every requirement</span>
             </div>
           </section>

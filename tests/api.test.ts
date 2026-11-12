@@ -12,7 +12,7 @@ import { claudeOperatorAssistant, toolkitResult, ToolkitError, type MessagesClie
 import { BUILDER_SYSTEM, claudeEvaluator, claudeGenerator, heuristicEvaluator, judgeText, JUDGE_SYSTEM, NARRATIVE, narrativeOf, plainLine, streamingHouseAgent, Verdict, verdictResult } from '../apps/api/src/claude.js';
 import { colorTracker, parseStructure, progressTracker, structureTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer, RenderOptions } from '../apps/api/src/browser.js';
-import { previewHtml } from '../apps/api/src/html.js';
+import { gateHtml, previewHtml } from '../apps/api/src/html.js';
 import { inProcessEvaluation, judgeEntry, type EvaluationJob, type RenderedPage } from '../apps/api/src/runners.js';
 import { agentPayoutFor, paypalCheckoutFee, processingFeeFor } from '../apps/api/src/money.js';
 import { fakeProvider } from '../apps/api/src/provider/fake.js';
@@ -147,14 +147,44 @@ test('OpenAPI 3.1 structure, references, examples, operation IDs, and mutation k
   }
 });
 
-test('processing fee always leaves the full price after PayPal\'s fee; commission covers the payout fee from $10', () => {
-  for (let price = 1000; price <= 500000; price += 997) {
+test('processing fee leaves the full price and commission covers the payout fee from $5', () => {
+  for (let price = 500; price <= 500000; price += 997) {
     const fee = processingFeeFor(price);
     assert.ok(price + fee - paypalCheckoutFee(price + fee) >= price, `price ${price}`);
     assert.ok(price + fee - 1 - paypalCheckoutFee(price + fee - 1) < price, `minimal fee at ${price}`);
-    assert.ok(price - agentPayoutFor(price) >= 25 + 25 || price < 1000, `commission covers payout fee at ${price}`);
+    assert.ok(price - agentPayoutFor(price) >= 25, `commission covers payout fee at ${price}`);
   }
+  assert.equal(processingFeeFor(500), 69);
+  assert.equal(agentPayoutFor(500), 475);
   assert.equal(processingFeeFor(2000), 123);
+});
+
+test('short flyer copy passes the content gate while blank submissions remain invalid', () => {
+  assert.equal(gateHtml('<html><body>Local Shoes · 123 Main Street · Black Friday · 40% off</body></html>'), null);
+  assert.equal(gateHtml('<html><body>  </body></html>')?.code, 'invalid_output');
+});
+
+test('$5 design brief authorizes, captures and pays the agent at the minimum price', async t => {
+  const f = await fixture(t); const b = await f.buyer();
+  const op = await f.operator('PAYERANN0001', 'Ann');
+  const agent = await f.agent(op, 'Flyer Studio');
+  const flyer = { ...brief, title: 'Local Shoes Black Friday sale flyer',
+    brief: 'Design a flyer for Local Shoes, 123 Main Street, announcing a Black Friday shoe sale at 40% off.',
+    bid: { currency: 'USD', amount_minor: 500 },
+    requirements: [{ id: 'req_sale', description: 'Shows Local Shoes, 123 Main Street, Black Friday and 40% off.' }] };
+  const { c, payment } = await f.open(b, flyer);
+  assert.equal(c.bid.amount_minor, 500);
+  assert.equal(c.processing_fee.amount_minor, 69);
+  assert.equal(c.total.amount_minor, 569);
+  const html = '<!doctype html><html><head><title>Local Shoes</title></head><body><h1>Local Shoes</h1><p>123 Main Street</p><p>Black Friday: 40% off</p></body></html>';
+  const entry = await f.enter(agent.token, c.id, html, 'Sale flyer'); await f.settle();
+  assert.equal((await f.get(`/v1/submissions/${entry.id}`, agent.token)).data.qualification_status, 'qualified');
+  const pick = await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: entry.id }, b);
+  assert.equal(pick.status, 202); await f.settle();
+  const paid = (await f.get(`/v1/payments/${payment.id}`, b)).data;
+  assert.equal(paid.captured_minor, 569);
+  assert.deepEqual(f.fake.controls.calls.filter(x => x.op === 'sendPayout').map(x => x.amountMinor), [475]);
+  assert.equal((await f.post(`/v1/purchases/${pick.data.id}/delivery-access`, undefined, b)).status, 201);
 });
 
 test('full race: authorize, outside agent enters, AI-checked gallery, select, capture, real payout, delivery with matching fingerprint', async t => {
@@ -605,7 +635,7 @@ test('permissions, gates and the attempts rule', async t => {
   const { c } = await f.open(b);
   assert.equal((await f.post('/v1/competitions', brief, ann.token)).status, 403, 'agents cannot post briefs');
   assert.equal((await f.post('/v1/operators/me/agents', { name: 'XY', description: '', style: '' }, b)).data.code, 'OPERATOR_REQUIRED');
-  assert.equal((await f.post('/v1/competitions', { ...brief, bid: { currency: 'USD', amount_minor: 500 } }, b)).status, 400, '$5 is below the minimum');
+  assert.equal((await f.post('/v1/competitions', { ...brief, bid: { currency: 'USD', amount_minor: 499 } }, b)).status, 400, '$4.99 is below the minimum');
 
   const external = page('<script src="https://cdn.evil.example/x.js"></script>');
   const gated = await f.enter(ann.token, c.id, external); await f.settle();
