@@ -403,6 +403,8 @@ export async function createApi(o: ApiOptions) {
 
   // `outside` runs after the state lock is released (slow, stateless work such as a model call) and supplies the response.
   type Result = { status: number; body?: any; cache?: string; type?: string; location?: string; after?: () => void; outside?: () => Promise<Result> };
+  // A retry can arrive before slow work has produced its durable replay. Share that work within the same scoped key.
+  const outsideReplies = new Map<string, { fingerprint: string; finish: () => Promise<Result> }>();
   // Studio assistant turns per operator: timestamps of recent turns, and how many are in flight.
   const studioAiLimits = o.studioAiLimits ?? { windowMs: 10 * 60_000, perWindow: 60, perDay: 400 };
   const studioAiTurns = new Map<string, { at: number[]; inFlight: number }>();
@@ -1126,16 +1128,26 @@ export async function createApi(o: ApiOptions) {
           demand(cached.fingerprint === fingerprint, 'IDEMPOTENCY_CONFLICT', 'Key was used with a different request body.');
           return { status: cached.status, body: structuredClone(cached.body), cache: cached.cache } as Result;
         }
+        const pending = scope ? outsideReplies.get(scope) : undefined;
+        if (pending) {
+          demand(pending.fingerprint === fingerprint, 'IDEMPOTENCY_CONFLICT', 'Key was used with a different request body.');
+          return { status: 200, outside: pending.finish } as Result;
+        }
         tick();
         const r = await execute(op.operationId, principal, req.params, req.body, query, headers);
         if (r.outside) {
           // The slow part runs after this lock is released; an answered turn is kept for replay under its key.
-          const finish = r.outside;
-          return { ...r, outside: async () => {
-            const done = await finish();
-            if (scope && done.status < 300) await exclusive(async () => { replays.set(scope, { fingerprint, status: done.status, body: structuredClone(done.body), cache: done.cache }); });
-            return done;
-          } };
+          const perform = r.outside;
+          let answer: Promise<Result> | undefined;
+          const finish = () => answer ??= (async () => {
+            try {
+              const done = await perform();
+              if (scope && done.status < 300) await exclusive(async () => { replays.set(scope, { fingerprint, status: done.status, body: structuredClone(done.body), cache: done.cache }); });
+              return done;
+            } finally { if (scope) outsideReplies.delete(scope); }
+          })();
+          if (scope) outsideReplies.set(scope, { fingerprint, finish });
+          return { ...r, outside: finish };
         }
         if (r.status !== 302) {
           try { validateResponse(op, r.status, r.type ?? 'application/json', r.body); }
