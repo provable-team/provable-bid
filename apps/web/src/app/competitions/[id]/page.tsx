@@ -14,7 +14,7 @@ import type {
 } from "@provable/api-client";
 import { useApi } from "@/components/api-provider";
 import { AssetPreview } from "@/components/asset-preview";
-import { ArrivalSpotlight } from "@/components/arrival-spotlight";
+import { agentPalette, ArrivalSpotlight, CardSpot } from "@/components/arrival-spotlight";
 import {
   AgentAvatar,
   Countdown,
@@ -667,14 +667,13 @@ export default function CompetitionPage({
                         id: p.agent_id,
                         step: p.step,
                         label: `${agentName(p.agent_id)} · ${p.state === "submitted" ? "submitted" : p.label}`,
-                        region: buildRegion(p),
                         announcement:
                           p.state === "submitted"
                             ? `${agentName(p.agent_id)} submitted its page. It is being checked against your ${comp.requirements.length} requirements.`
                             : undefined,
                       }))}
                   >
-                  {({ arriving, revealing, focus }) => gallery.length || building.length ? (
+                  {(phase) => gallery.length || building.length ? (
                     <div className="submission-grid">
                       {gallery.map((submission, index) => {
                         const agent = agents.find(
@@ -690,13 +689,22 @@ export default function CompetitionPage({
                         const payment = purchase
                           ? payments[purchase.payment_id]
                           : undefined;
+                        const spot = phase(submission.id);
                         return (
                           <article
-                            className={`submission-card ${purchase ? "selected-card" : ""} ${arriving.has(submission.id) ? "arriving" : ""} ${revealing.has(submission.id) ? "revealing" : ""}`}
+                            className={`submission-card ${purchase ? "selected-card" : ""} ${spot === "arriving" ? "arriving" : spot ? "revealing" : ""}`}
                             key={submission.id}
                             data-submission-id={submission.id}
                           >
                             <div className="submission-art">
+                              {(spot === "revealing" || spot === "fading") && (
+                                <CardSpot
+                                  x={0.5}
+                                  y={0.42}
+                                  fading={spot === "fading"}
+                                  label={`${agent?.name || "Registered agent"} · passed all ${submission.qualification?.checks.length ?? comp.requirements.length} checks`}
+                                />
+                              )}
                               {site && (
                                 <AssetPreview
                                   artifact={site}
@@ -834,14 +842,25 @@ export default function CompetitionPage({
                       {building.map((p) => {
                         const agent = agents.find((a) => a.id === p.agent_id);
                         const status = buildStatus(p);
+                        const region = buildRegion(p);
                         return (
                           <article
-                            className={`submission-card building-card is-${p.state} ${focus === p.agent_id ? "is-focus" : ""}`}
+                            className={`submission-card building-card is-${p.state}`}
                             key={`building-${p.agent_id}`}
                             data-building-id={p.agent_id}
                             aria-label={`${agent?.name || "House agent"}, house agent: ${status}`}
+                            style={agentPalette(p.colors, agent?.avatar_color)}
                           >
                             <div className="submission-art building-art" aria-hidden="true">
+                              {p.state !== "not_qualified" && (
+                                <CardSpot
+                                  // Where on the page this real step belongs; alternate sides so each new step visibly moves.
+                                  x={0.28 + ((region * 7) % 1) * 0.3 + (p.step % 2) * 0.1}
+                                  y={0.1 + region * 0.78}
+                                  pulse={p.step}
+                                  label={`${agent?.name || "House agent"} · ${p.state === "submitted" ? "submitted" : p.label}`}
+                                />
+                              )}
                               <div className="build-sketch">
                                 {/* One line fills in per real build step: a progress indicator, never content. */}
                                 {Array.from({ length: SKETCH_LINES }, (_, i) => {

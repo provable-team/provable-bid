@@ -3,45 +3,85 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 
 export type Arrival = { id: string; label: string; announcement: string };
 /**
- * A house agent still building: `id` matches the placeholder card's data-building-id, `step` is the API's step
- * index (a change moves the cursor there), `label` is the badge text, `region` (0 top … 1 bottom) is where on the
- * card's sketch that step belongs, and `announcement` (optional) is read out once for that step. Only for
- * milestones such as "submitted": routine steps stay silent.
+ * A house agent still building: `id` matches its placeholder card's data-building-id, `step` is the API's step
+ * index, `label` the badge text, and `announcement` (optional) is read out once for that step: only for
+ * milestones such as "submitted", so routine steps stay silent.
  */
-export type BuildMove = { id: string; step: number; label: string; region: number; announcement?: string };
-/** What the gallery should show for the spotlight right now. */
-export type SpotlightState = {
-  /** Newly arrived cards still out of focus (blurred until the cursor reaches them). */
-  arriving: ReadonlySet<string>;
-  /** Cards the cursor has just reached: accent glow, shimmer sweep, blur to sharp. */
-  revealing: ReadonlySet<string>;
-  /** The building placeholder the cursor is on. */
-  focus: string | null;
-};
+export type BuildMove = { id: string; step: number; label: string; announcement?: string };
+/** Spotlight phase of a qualified card: blurred until its turn, then revealed with its own cursor and light. */
+export type ArrivalPhase = "arriving" | "revealing" | "fading";
 
-type Move = { kind: "arrival" | "progress"; id: string; label: string; region: number };
-
-const TRAVEL = 800; // cursor travel between cards
-const ARRIVAL_DWELL = 2000; // at least 2s on each newly qualified card
-const BUILD_DWELL = 1200;
+const DWELL = 2000; // at least 2s on each newly qualified card
 const HOLD = 1500; // final state before the cursor fades
+const FADE = 400;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
 const reducedMotion = () =>
   typeof window === "undefined" ||
   typeof window.matchMedia !== "function" ||
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+const HEX = /^#[0-9a-f]{6}$/i;
+const channel = (hex: string, i: number) => {
+  const c = parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+const luminance = (hex: string) => 0.2126 * channel(hex, 0) + 0.7152 * channel(hex, 1) + 0.0722 * channel(hex, 2);
+const contrast = (a: string, b: string) => {
+  const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
+  return (x + 0.05) / (y + 0.05);
+};
+const INK = "#20221d";
+const WHITE = "#ffffff";
+
 /**
- * A labelled cursor, a spotlight (the rest of the gallery dims slightly) and an accent glow that follow real events.
- * Building: while a house agent works, the cursor moves within its placeholder card to the part of the page that
- * its latest real build step is about, following whichever agent moved most recently.
- * Arrival: when a qualified entry actually reaches the gallery, the cursor travels to its card, which sharpens with
- * a glow and a shimmer. Entries already present when the gallery mounts appear without the effect.
- * If the card is off-screen, a small pill at the bottom of the viewport says what happened and scrolls to it.
- * Off when the viewer prefers reduced motion (the cards carry the same status as static text); milestones are
- * announced politely to screen readers.
+ * CSS variables that paint a card's cursor, halo, glow and sketch in an agent's colours: colours[0] for the cursor and
+ * halo, [1] for the glow, [2] for the sketch fill and shimmer, falling back along the list and then to `fallback`
+ * (the agent's avatar colour). The badge text is ink or white, whichever contrasts more with the cursor colour.
+ */
+export function agentPalette(colors: readonly string[], fallback: string | undefined): CSSProperties {
+  const safe = colors.filter((c) => HEX.test(c));
+  const base = HEX.test(fallback ?? "") ? fallback! : "#66665e";
+  const a = safe[0] ?? base;
+  const b = safe[1] ?? a;
+  const c = safe[2] ?? safe[1] ?? a;
+  return {
+    "--spot-a": a,
+    "--spot-b": b,
+    "--spot-c": c,
+    "--spot-text": contrast(a, WHITE) >= contrast(a, INK) ? WHITE : INK,
+  } as CSSProperties;
+}
+
+/**
+ * One card's own cursor, halo, badge and light, drawn inside the card (which clips it). `x`/`y` are 0–1 within the
+ * card's canvas; changing them glides the cursor there. `pulse` replays the halo ripple (e.g. on every new step).
+ */
+export function CardSpot({ x, y, label, pulse, fading = false }: { x: number; y: number; label: string; pulse?: string | number; fading?: boolean }) {
+  const style = { "--cx": `${(x * 100).toFixed(1)}%`, "--cy": `${(y * 100).toFixed(1)}%` } as CSSProperties;
+  return (
+    <div className={`card-spot ${fading ? "fading" : ""} ${y > 0.7 ? "low" : ""}`} style={style} aria-hidden="true">
+      <div className="card-spot-dim" />
+      <div className="card-spot-light" />
+      <div className="card-spot-cursor">
+        <span className="card-spot-halo" />
+        <span className="card-spot-ripple" key={pulse} />
+        <svg width="28" height="28" viewBox="0 0 24 24">
+          <path d="M4 3l16 8.5-7.2 2.1L10.5 21 4 3z" />
+        </svg>
+      </div>
+      <span className="card-spot-badge">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * Real events only. Building: each house agent's placeholder card draws its own cursor (see CardSpot); this
+ * component announces milestones and points to cards that are off-screen. Arrival: when a qualified entry actually
+ * reaches the gallery, its card waits blurred for its turn, then sharpens with its own cursor, light and shimmer.
+ * Entries already present when the gallery mounts appear without the effect. If the cards with activity are
+ * off-screen, a pill at the bottom of the viewport names them and scrolls to the first. Reduced motion: no motion,
+ * the cards carry the same status as static text; milestones are announced politely to screen readers.
  */
 export function ArrivalSpotlight({
   items,
@@ -50,28 +90,22 @@ export function ArrivalSpotlight({
 }: {
   items: Arrival[];
   building?: BuildMove[];
-  children: (state: SpotlightState) => ReactNode;
+  children: (phase: (submissionId: string) => ArrivalPhase | null) => ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const seen = useRef<Set<string> | null>(null);
   const steps = useRef(new Map<string, number>());
-  const queue = useRef<Move[]>([]);
+  const queue = useRef<string[]>([]);
   const running = useRef(false);
   const mounted = useRef(true);
-  const active = useRef(0);
-  const resting = useRef<Move | null>(null);
-  const [arriving, setArriving] = useState<ReadonlySet<string>>(new Set());
-  const [revealing, setRevealing] = useState<ReadonlySet<string>>(new Set());
-  const [focus, setFocus] = useState<string | null>(null);
-  const [cursor, setCursor] = useState({ x: 0, y: 0, label: "", on: false });
-  const [jump, setJump] = useState(false);
-  const [away, setAway] = useState<null | "up" | "down">(null);
+  const [phases, setPhases] = useState<ReadonlyMap<string, ArrivalPhase>>(new Map());
+  const [away, setAway] = useState<{ ids: string[]; label: string; up: boolean } | null>(null);
   const [said, setSaid] = useState("");
+  const labels = useRef(new Map<string, string>());
   const key = items.map((i) => i.id).join(",");
   const buildKey = building.map((b) => `${b.id}:${b.step}:${b.label}`).join(",");
-  const latestBuild = useRef<BuildMove[]>(building);
-  latestBuild.current = building;
-  active.current = building.length;
+  for (const i of items) labels.current.set(i.id, i.label);
+  for (const b of building) labels.current.set(b.id, b.label);
 
   useLayoutEffect(() => {
     mounted.current = true;
@@ -79,6 +113,14 @@ export function ArrivalSpotlight({
       mounted.current = false;
     };
   }, []);
+
+  const setPhase = (id: string, phase: ArrivalPhase | null) =>
+    setPhases((prev) => {
+      const next = new Map(prev);
+      if (phase) next.set(id, phase);
+      else next.delete(id);
+      return next;
+    });
 
   // Layout effect so a new card is blurred before the first paint instead of flashing in.
   useLayoutEffect(() => {
@@ -91,18 +133,13 @@ export function ArrivalSpotlight({
     for (const f of fresh) seen.current.add(f.id);
     setSaid(fresh.map((f) => f.announcement).join(" "));
     if (reducedMotion()) return;
-    setArriving((prev) => new Set([...prev, ...fresh.map((f) => f.id)]));
-    // Arrivals go ahead of any pending build step.
-    queue.current = [
-      ...queue.current.filter((m) => m.kind === "arrival"),
-      ...fresh.map((f) => ({ kind: "arrival" as const, id: f.id, label: f.label, region: 0.38 })),
-      ...queue.current.filter((m) => m.kind !== "arrival"),
-    ];
+    setPhases((prev) => new Map([...prev, ...fresh.map((f) => [f.id, "arriving"] as const)]));
+    queue.current.push(...fresh.map((f) => f.id));
     if (!running.current) void run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  // Build steps: follow the agent with the most recent real step (the API order puts it last).
+  // Milestones only (e.g. "submitted"), never each step; steps already showing on first load stay silent.
   useLayoutEffect(() => {
     const first = steps.current.size === 0;
     const changed = building.filter((b) => steps.current.get(b.id) !== b.step);
@@ -110,31 +147,59 @@ export function ArrivalSpotlight({
     for (const b of changed) steps.current.set(b.id, b.step);
     const spoken = changed.filter((b) => b.announcement && !first).map((b) => b.announcement!);
     if (spoken.length) setSaid(spoken.join(" "));
-    if (reducedMotion()) return;
-    const latest = changed.at(-1);
-    if (!latest) {
-      // Cards may have moved or gone (an entry arrived, a placeholder ended): keep the resting cursor on target.
-      const fallback = building.at(-1);
-      if (!running.current && resting.current && !aim(resting.current) && fallback)
-        aim({ kind: "progress", id: fallback.id, label: fallback.label, region: fallback.region });
-      return;
-    }
-    // Only the newest step is worth showing: older build steps still waiting are dropped.
-    queue.current = [
-      ...queue.current.filter((m) => m.kind === "arrival"),
-      { kind: "progress", id: latest.id, label: latest.label, region: latest.region },
-    ];
-    if (!running.current) void run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildKey]);
 
-  // Building finished (nothing left to follow) while the cursor was resting: put it away.
-  useLayoutEffect(() => {
-    if (!building.length && !running.current && resting.current?.kind === "progress") void putAway();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [building.length]);
+  // Arrivals take turns: each revealed card holds the stage for its dwell, then the next one starts.
+  async function run() {
+    running.current = true;
+    while (queue.current.length && mounted.current) {
+      const id = queue.current.shift()!;
+      await sleep(30); // let the card mount and lay out
+      setPhase(id, "revealing");
+      void (async () => {
+        await sleep(DWELL + HOLD);
+        if (!mounted.current) return;
+        setPhase(id, "fading");
+        await sleep(FADE);
+        if (mounted.current) setPhase(id, null);
+      })();
+      await sleep(DWELL);
+    }
+    running.current = false;
+  }
 
-  // Off-screen check: the pill shows only while the cursor's card is outside the viewport.
+  // Off-screen activity: building cards and cards being revealed that the viewer can't see.
+  function checkAway() {
+    const box = host.current;
+    if (!box || reducedMotion()) return setAway(null);
+    const active = [
+      ...building.map((b) => ({ id: b.id, el: box.querySelector<HTMLElement>(`[data-building-id="${CSS.escape(b.id)}"]`) })),
+      ...[...phases.entries()]
+        .filter(([, p]) => p === "revealing")
+        .map(([id]) => ({ id, el: box.querySelector<HTMLElement>(`[data-submission-id="${CSS.escape(id)}"]`) })),
+    ].filter((x): x is { id: string; el: HTMLElement } => !!x.el);
+    const h = window.innerHeight;
+    const hidden = active.filter(({ el }) => {
+      const r = el.getBoundingClientRect();
+      return Math.min(r.bottom, h) - Math.max(r.top, 0) < Math.min(160, r.height * 0.4);
+    });
+    if (!hidden.length) return setAway(null);
+    const ids = hidden.map((x) => x.id);
+    const label =
+      hidden.length === 1
+        ? labels.current.get(ids[0]) ?? ""
+        : hidden.map((x) => (labels.current.get(x.id) ?? "").split(" · ")[0]).join(", ") + " · building";
+    setAway({ ids, label, up: hidden[0].el.getBoundingClientRect().bottom < 0 });
+  }
+  const checkRef = useRef(checkAway);
+  checkRef.current = checkAway;
+
+  useLayoutEffect(() => {
+    checkAway();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildKey, phases]);
+
   useEffect(() => {
     let pending = false;
     const onScroll = () => {
@@ -142,7 +207,7 @@ export function ArrivalSpotlight({
       pending = true;
       requestAnimationFrame(() => {
         pending = false;
-        checkVisible();
+        checkRef.current();
       });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -151,121 +216,25 @@ export function ArrivalSpotlight({
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function cardFor(move: Move) {
-    const box = host.current;
-    if (!box) return undefined;
-    const attr = move.kind === "arrival" ? "submissionId" : "buildingId";
-    return [...box.querySelectorAll<HTMLElement>(move.kind === "arrival" ? "[data-submission-id]" : "[data-building-id]")].find(
-      (el) => el.dataset[attr] === move.id,
-    );
-  }
-
-  function checkVisible() {
-    const move = resting.current;
-    const card = move ? cardFor(move) : undefined;
-    if (!move || !card) return setAway(null);
-    const r = card.getBoundingClientRect();
-    const h = window.innerHeight;
-    // "Visible" means the part the cursor points at is on screen, not just a sliver of the card.
-    const y = r.top + r.height * (move.kind === "arrival" ? 0.38 : 0.1 + move.region * 0.55);
-    setAway(y < 40 ? "up" : y > h - 90 ? "down" : null);
-  }
-
-  /** Points the cursor at a card (at the region of the current step); false if the card is not on the page. */
-  function aim(move: Move) {
-    const box = host.current;
-    const card = cardFor(move);
-    if (!box || !card) return false;
-    const h = box.getBoundingClientRect();
-    const art = (card.querySelector<HTMLElement>(".submission-art") ?? card).getBoundingClientRect();
-    const r = move.kind === "arrival" ? card.getBoundingClientRect() : art;
-    const y = move.kind === "arrival" ? r.top + r.height * 0.38 : r.top + r.height * (0.12 + move.region * 0.76);
-    // Wander a little across the sketch so successive steps visibly move, and keep the badge inside the gallery.
-    const across = move.kind === "arrival" ? 0.5 : 0.32 + ((move.region * 7) % 1) * 0.3;
-    const badge = move.label.length * 7.6 + 64;
-    const x = Math.max(r.left - h.left + 12, Math.min(r.left - h.left + r.width * across, h.width - badge));
-    setCursor({ x, y: y - h.top, label: move.label, on: true });
-    resting.current = move;
-    setFocus(move.kind === "progress" ? move.id : null);
-    checkVisible();
-    return true;
-  }
-
-  async function putAway() {
-    resting.current = null;
-    setFocus(null);
-    setAway(null);
-    setCursor((c) => ({ ...c, on: false }));
-  }
-
-  async function run() {
-    running.current = true;
-    while (queue.current.length && mounted.current) {
-      const next = queue.current.shift()!;
-      await sleep(30); // let the card mount and lay out
-      if (!cardFor(next)) {
-        if (next.kind === "arrival") setArriving((prev) => without(prev, next.id));
-        continue; // its card is gone (submitted, removed)
-      }
-      if (!resting.current) {
-        // Enter from the gallery heading, so the viewer sees where the cursor comes from.
-        setJump(true);
-        setCursor((c) => ({ ...c, x: 24, y: -46, label: next.label, on: true }));
-        await frame();
-        await frame();
-        setJump(false);
-        await frame();
-      }
-      aim(next);
-      await sleep(TRAVEL);
-      if (!mounted.current) break;
-      if (next.kind === "arrival") {
-        setArriving((prev) => without(prev, next.id));
-        setRevealing((prev) => new Set([...prev, next.id]));
-        await sleep(ARRIVAL_DWELL);
-        setRevealing((prev) => without(prev, next.id));
-      } else await sleep(BUILD_DWELL);
-    }
-    running.current = false;
-    if (!mounted.current) return;
-    if (queue.current.length) return void run();
-    // While agents are still building, the cursor stays with the last one that moved.
-    if (active.current && resting.current?.kind === "progress" && cardFor(resting.current)) return;
-    if (active.current) {
-      const latest = latestBuild.current.at(-1);
-      if (latest && aim({ kind: "progress", id: latest.id, label: latest.label, region: latest.region })) return;
-    }
-    await sleep(HOLD);
-    if (mounted.current && !running.current && !queue.current.length) void putAway();
-  }
-
-  const style = { "--sx": `${cursor.x}px`, "--sy": `${cursor.y}px` } as CSSProperties;
-  const on = cursor.on ? "on" : "";
+  const phase = (id: string) => phases.get(id) ?? null;
   return (
-    <div ref={host} className={`spotlight-host ${jump ? "jump" : ""} ${cursor.on && away ? "away" : ""}`} style={style}>
-      {children({ arriving, revealing, focus })}
-      <div className={`spotlight-dim ${on}`} aria-hidden="true" />
-      <div className={`spotlight-light ${on}`} aria-hidden="true" />
-      <div className={`spotlight-cursor ${on}`} aria-hidden="true">
-        <span className="spotlight-halo" />
-        <svg width="30" height="30" viewBox="0 0 24 24">
-          <path d="M4 3l16 8.5-7.2 2.1L10.5 21 4 3z" />
-        </svg>
-        <span className="spotlight-badge">{cursor.label}</span>
-      </div>
-      {cursor.on && away && (
+    <div ref={host} className="spotlight-host">
+      {children(phase)}
+      {away && (
         <button
           type="button"
           className="spotlight-pill"
           onClick={() => {
-            const card = resting.current && cardFor(resting.current);
-            card?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
+            const id = away.ids[0];
+            const el = host.current?.querySelector<HTMLElement>(
+              `[data-building-id="${CSS.escape(id)}"], [data-submission-id="${CSS.escape(id)}"]`,
+            );
+            el?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
           }}
         >
-          {cursor.label} <span aria-hidden="true">{away === "down" ? "↓" : "↑"}</span>
+          {away.label} <span aria-hidden="true">{away.up ? "↑" : "↓"}</span>
         </button>
       )}
       <p className="visually-hidden" aria-live="polite">
@@ -273,11 +242,4 @@ export function ArrivalSpotlight({
       </p>
     </div>
   );
-}
-
-function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
-  if (!set.has(id)) return set;
-  const n = new Set(set);
-  n.delete(id);
-  return n;
 }
