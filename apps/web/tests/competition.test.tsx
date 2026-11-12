@@ -108,6 +108,11 @@ test(
       <ApiProvider><Suspense fallback={<p>Loading…</p>}><CompetitionPage params={params} /></Suspense></ApiProvider>,
     ));
     await eventually(() => cards().length === 2 && container.querySelectorAll(".site-preview iframe").length === 2, "both qualified sites render as sandboxed previews");
+    const comparisonLinks = container.querySelectorAll<HTMLAnchorElement>(".entry-comparison a");
+    assert.equal(comparisonLinks.length, 2, "the buyer can compare both qualified entries");
+    for (const link of comparisonLinks) {
+      assert.ok(cards().some((card) => `#${card.id}` === link.getAttribute("href")), "comparison links lead to the corresponding real preview");
+    }
     for (const frame of container.querySelectorAll("iframe")) {
       assert.equal(frame.getAttribute("sandbox"), "allow-scripts", "previews never get allow-same-origin");
       assert.ok(frame.getAttribute("src")?.startsWith("blob:"));

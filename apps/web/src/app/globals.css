@@ -657,6 +657,81 @@ svg {
   margin-bottom: 22px;
   font-size: 10px;
 }
+.entry-comparison {
+  margin-bottom: 24px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--white);
+  overflow: hidden;
+}
+.entry-comparison-heading {
+  padding: 18px 20px 14px;
+}
+.entry-comparison-heading h3 {
+  font-size: 20px;
+  margin-bottom: 7px;
+}
+.entry-comparison-heading p,
+.entry-comparison-footnote {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.entry-comparison-scroll {
+  overflow-x: auto;
+}
+.entry-comparison-scroll:focus-visible,
+.entry-comparison a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -3px;
+}
+.entry-comparison table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  text-align: left;
+  line-height: 1.6;
+}
+.entry-comparison th,
+.entry-comparison td {
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+  min-width: 185px;
+  overflow-wrap: anywhere;
+}
+.entry-comparison th:first-child {
+  min-width: 130px;
+}
+.entry-comparison thead th {
+  background: var(--paper);
+}
+.entry-comparison thead strong,
+.entry-comparison thead span,
+.entry-comparison thead a {
+  display: block;
+}
+.entry-comparison thead span {
+  font-weight: 400;
+  color: var(--muted);
+  margin: 3px 0 7px;
+}
+.entry-comparison thead a {
+  width: fit-content;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.entry-comparison thead a span {
+  display: inline;
+  color: inherit;
+}
+.entry-comparison-footnote {
+  border-top: 1px solid var(--line);
+  padding: 12px 20px;
+}
+.submission-card[id] {
+  scroll-margin-top: 20px;
+}
 .submission-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
