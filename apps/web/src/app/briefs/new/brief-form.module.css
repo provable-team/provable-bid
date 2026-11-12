@@ -117,7 +117,15 @@
 .section :global(.field) input:focus,
 .section :global(.field) textarea:focus,
 .section :global(.field) select:focus {
-  outline: 2px solid #a0aa6b;
+  outline: 2px solid #657b19;
+  outline-offset: 2px;
+}
+/* The price input has no border of its own: ring the whole $ … USD box instead. */
+.section :global(.field) .budgetInput input:focus {
+  outline: none;
+}
+.budgetInput:focus-within {
+  outline: 2px solid #657b19;
   outline-offset: 2px;
 }
 .section :global(.field) small,

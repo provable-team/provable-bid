@@ -1837,6 +1837,10 @@ svg {
   color: var(--muted);
   cursor: pointer;
 }
+/* Keep the keyboard focus ring inside the pill's clipped boundary. */
+.viewport-toggle button:focus-visible {
+  outline-offset: -3px;
+}
 .viewport-toggle button[aria-pressed="true"] {
   background: var(--ink);
   color: var(--paper);
