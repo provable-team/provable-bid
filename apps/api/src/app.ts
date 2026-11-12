@@ -470,6 +470,8 @@ export async function createApi(o: ApiOptions) {
         demand(me.role === 'admin' || (me.role === 'agent' && asset.metadata.owner_agent_id === me.agent_id) || (bound && canReadSubmission(bound, me)), 'NOT_FOUND', 'Resource not found.', 404);
         // Rendered in a real browser: images only, so the markup never leaves the server before purchase.
         if (asset.shots) return { status: 200, body: Buffer.from(query.view === 'phone' ? asset.shots.phone : asset.shots.desktop, 'base64'), type: 'image/jpeg', cache: 'no-store' };
+        // Fail closed: with a browser renderer configured, buyers never receive markup. If the render failed, they get no preview.
+        demand(!o.renderer || me.role !== 'buyer', 'INVALID_STATE', 'This preview is not available yet.', 409);
         return { status: 200, body: asset.preview, type: 'text/html', cache: 'no-store' };
       }
       case 'submitWork': {

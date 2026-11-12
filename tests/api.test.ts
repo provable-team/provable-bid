@@ -442,12 +442,15 @@ test('KERNEL-rendered entries: screenshot-only previews, and phone requirements 
   assert.equal(failed.failure_code, 'requirements_not_met');
   assert.match(failed.checks.find((x: any) => x.requirement_id === 'req_mobile').reason, /scrolls sideways by 350px/);
 
-  // Renderer outage: the entry is still judged, with the HTML preview as a fallback.
+  // Renderer outage: the entry is still judged, but the buyer gets no preview rather than the markup.
   const c2 = (await f.open(b)).c;
   failNext = true;
   await f.enter(ann.token, c2.id, page()); await f.settle();
-  const fallback = (await f.get(`/v1/competitions/${c2.id}/submissions`, b)).data.items[0].artifacts[0].preview;
-  assert.equal(fallback.mime_type, 'text/html'); assert.equal(fallback.phone_url, null);
+  const unrendered = (await f.get(`/v1/competitions/${c2.id}/submissions`, b)).data.items[0].artifacts[0];
+  assert.equal(unrendered.preview.mime_type, 'text/html'); assert.equal(unrendered.preview.phone_url, null);
+  const closed = await f.get(new URL(unrendered.preview.url).pathname, b);
+  assert.equal(closed.status, 409, 'fail closed: with a renderer configured, a buyer never gets markup, even if the render failed');
+  assert.equal((await f.get(new URL(unrendered.preview.url).pathname, ann.token)).headers['content-type'], 'text/html', 'the agent can still see its own page');
 });
 
 test('preview CSP precedes agent markup even when a script sits before <head>', () => {
