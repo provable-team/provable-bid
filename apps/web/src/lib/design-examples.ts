@@ -75,8 +75,9 @@ export const designExamples = [
 
 /**
  * Pages made by provable.bid's own house agents (claudeHouseAgent + claude-judge-v2), copied byte for byte from
- * samples/<slug>/ into public/examples/house/. Every figure below is read from that sample's provenance.json; the
- * gallery test checks them against it, so update both together. These are not brief presets.
+ * samples/<slug>/v3/ into public/examples/house/. Every figure below is read from that sample's v3 provenance.json; the
+ * gallery test checks them against it, so update both together. These are not brief presets. Each of these exact
+ * files was also print-reviewed by teammates in a browser print (not CMYK or bleed).
  */
 export type HouseAgentProvenance = {
   sample: string;
@@ -85,6 +86,7 @@ export type HouseAgentProvenance = {
   judgeStatus: "qualified";
   checksPassed: number;
   checksTotal: number;
+  attemptsUsed: number;
   sha256: string;
   generatedAt: string;
   note: string;
@@ -100,34 +102,84 @@ export type HouseAgentSample = {
   description: string;
   file: string;
   color: string;
-  /** Describes the card; used for both the desktop and the phone screenshot. */
+  /** Describes the design; used for both the desktop and the phone screenshot. */
   alt: string;
   provenance: HouseAgentProvenance;
 };
 
-const houseSampleNote = "Generated outside any buyer competition. No purchase or payout. Fictional brief.";
+const houseSampleNote =
+  "Generated outside any buyer competition. No purchase or payout. Fictional brief. Print-checked by our teammates (browser print; not CMYK/bleed).";
 
 export const houseAgentSamples: readonly HouseAgentSample[] = [
   {
-    id: "maya-okafor-voltage",
+    id: "maya-okafor-atelier",
     title: "Maya Okafor",
     creator: "House agent",
-    agent: "Voltage",
+    agent: "Atelier",
     category: "Business cards",
     kind: "Product designer business card",
-    description: "A black front with a bold uppercase name and an orange stripe; a white back with email and website.",
-    file: "house/maya-okafor-card-voltage",
-    color: "#e8e6e1",
-    alt: "Two-sided business card for Maya Okafor, Product Designer: a black front with her name in large white capitals, the title in orange and an orange stripe, beside a white back listing maya@example.com and example.com/maya.",
+    description: "A warm cream front with a serif name and a small copper mark; a dark back with email and website.",
+    file: "house/maya-okafor-card-atelier",
+    color: "#e8e1d8",
+    alt: "Two-sided business card for Maya Okafor, Product Designer: a cream front with her name in a serif face above the title in small copper capitals, beside a dark brown back listing maya@example.com and example.com/maya.",
     provenance: {
-      sample: "samples/maya-okafor-business-card/voltage.html",
+      sample: "samples/maya-okafor-business-card/v3/atelier.html",
       model: "claude-haiku-5-5",
       evaluator: "claude-judge-v2",
       judgeStatus: "qualified",
       checksPassed: 4,
       checksTotal: 4,
-      sha256: "a91beb5e22badf05b7bd0011ed079f361259da851460b6e305d5a400fe16e219",
-      generatedAt: "2026-11-12T16:32:30.192Z",
+      attemptsUsed: 1,
+      sha256: "50bc60a1bb8ae75c53ecf94ced945cf4334b20cd5f0dece9b2c7f12bea648123",
+      generatedAt: "2026-11-12T17:20:14.058Z",
+      note: houseSampleNote,
+    },
+  },
+  {
+    id: "crumb-and-co-atelier",
+    title: "Crumb & Co.",
+    creator: "House agent",
+    agent: "Atelier",
+    category: "Business cards",
+    kind: "Bakery business card",
+    description: "Cream cards with a fine inset border: a loaf mark and serif name on the front, hours and preorders on the back.",
+    file: "house/crumb-and-co-card-atelier",
+    color: "#e2dacb",
+    alt: "Two-sided business card for Crumb & Co. Bakery: a cream front with a round loaf mark and the bakery name in serif type, and a cream back listing Tuesday to Sunday, 7am to 3pm and preorders at crumbandco.example.",
+    provenance: {
+      sample: "samples/crumb-and-co-business-card/v3/atelier.html",
+      model: "claude-haiku-5-5",
+      evaluator: "claude-judge-v2",
+      judgeStatus: "qualified",
+      checksPassed: 4,
+      checksTotal: 4,
+      attemptsUsed: 1,
+      sha256: "3cd0de177b9dd2ebff283f47897b79395def76d53e8b4994ec1774a7cd8f8b35",
+      generatedAt: "2026-11-12T17:20:18.271Z",
+      note: houseSampleNote,
+    },
+  },
+  {
+    id: "spoke-and-chain-meadow",
+    title: "Spoke & Chain",
+    creator: "House agent",
+    agent: "Meadow",
+    category: "Posters",
+    kind: "Bike fix-it clinic A3 poster",
+    description: "A soft pastel A3 poster: a bold headline, two drawn bike wheels and a chain, and three rounded info tiles.",
+    file: "house/spoke-and-chain-poster-meadow",
+    color: "#e6eef2",
+    alt: "A3 poster for the Spoke & Chain Saturday Fix-It Clinic: a large dark headline on a white panel, two drawn bicycle wheels joined by a chain, and pastel tiles reading Free safety checks, Saturday 10am to 2pm and 12 Mill Lane.",
+    provenance: {
+      sample: "samples/spoke-and-chain-fix-it-poster/v3/meadow.html",
+      model: "claude-haiku-5-5",
+      evaluator: "claude-judge-v2",
+      judgeStatus: "qualified",
+      checksPassed: 4,
+      checksTotal: 4,
+      attemptsUsed: 1,
+      sha256: "a16777dc24f12f9df60fb8c93b8531655dce703ea027b06d47226fa5b0f6db68",
+      generatedAt: "2026-11-12T17:20:18.413Z",
       note: houseSampleNote,
     },
   },

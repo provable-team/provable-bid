@@ -3,282 +3,258 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crumb & Co. Bakery | Business Card</title>
+<title>Crumb & Co. Bakery · Business Card (3.5 x 2 in)</title>
 <style>
   :root {
     --paper: #f6efe4;
-    --paper-deep: #efe4d3;
+    --paper-deep: #ebdfcc;
     --ink: #2e2219;
-    --muted: #7a6553;
-    --rule: #c9b49a;
-    --accent: #8a4b2a;
+    --muted: #7a6654;
+    --accent: #9a5b2e;
+    --rule: #cdb99c;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
-    background: #e7ddcd;
+    background: #e4dacb;
     color: var(--ink);
-    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
-    -webkit-font-smoothing: antialiased;
+    font-family: "Iowan Old Style", Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
     overflow-x: hidden;
   }
-  .wrap {
-    min-height: 100vh;
-    padding: 32px 16px;
+  .stage {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 16px 48px;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 28px;
   }
   .note {
-    max-width: 560px;
     width: 100%;
+    max-width: 560px;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.5;
-    color: #4d3d2f;
-    background: #fbf7f0;
+    color: #4a3b2e;
+    background: #f1e9db;
     border: 1px solid var(--rule);
-    border-radius: 6px;
-    padding: 14px 16px;
+    border-radius: 8px;
+    padding: 16px 18px;
   }
   .note h1 {
+    font-family: inherit;
     font-size: 16px;
     margin: 0 0 6px;
-    font-weight: 600;
   }
   .note p { margin: 0 0 6px; }
   .note p:last-child { margin-bottom: 0; }
-
-  .sheet {
+  .label-screen {
     width: 100%;
     max-width: 560px;
-    display: flex;
-    flex-direction: column;
-    gap: 22px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
   }
+
+  /* ---------- Card (screen: fluid, keeps 3.5:2 ratio) ---------- */
   .card {
-    container-type: inline-size;
+    position: relative;
     width: 100%;
+    max-width: 560px;
     aspect-ratio: 3.5 / 2;
     background: var(--paper);
-    border-radius: 4px;
+    border-radius: 6px;
     box-shadow: 0 1px 2px rgba(46,34,25,.12), 0 8px 24px rgba(46,34,25,.10);
-    position: relative;
-    overflow: hidden;
-    padding: 7.5cqw 8cqw;
+    padding: 7%;
     display: flex;
     flex-direction: column;
+    justify-content: space-between;
+    overflow: visible;
   }
   .card::before {
     content: "";
     position: absolute;
-    inset: 3.2cqw;
-    border: 0.25cqw solid var(--rule);
-    border-radius: 2px;
+    inset: 3.2%;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
     pointer-events: none;
   }
-  .label {
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    font-size: 2.6cqw;
-    color: var(--muted);
-    font-weight: 600;
-  }
+  .card > * { position: relative; z-index: 1; }
 
-  /* FRONT */
-  .front {
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    background:
-      radial-gradient(120% 90% at 50% 0%, #fbf6ec 0%, var(--paper) 55%, var(--paper-deep) 100%);
-  }
-  .front .mark {
-    width: 13cqw;
-    height: 13cqw;
-    color: var(--accent);
-    margin-bottom: 3cqw;
-  }
-  .front .name {
-    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
-    font-weight: 400;
-    font-size: 11.5cqw;
-    line-height: 0.95;
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-  .front .name .amp { font-style: italic; color: var(--accent); }
-  .front .sub {
-    margin-top: 3.4cqw;
+  /* Front */
+  .front .brand-row {
     display: flex;
     align-items: center;
-    gap: 3cqw;
-    font-size: 3.1cqw;
-    letter-spacing: 0.32em;
-    text-transform: uppercase;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color: var(--muted);
+    justify-content: space-between;
+    gap: 8px;
   }
-  .front .sub::before,
-  .front .sub::after {
-    content: "";
-    width: 8cqw;
-    height: 0;
-    border-top: 0.25cqw solid var(--rule);
+  .front .mark { width: 15%; min-width: 34px; max-width: 56px; height: auto; flex: none; }
+  .front .eyebrow {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: clamp(9px, 2.6cqw, 12px);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+    text-align: right;
+  }
+  .front h2 {
+    font-weight: 700;
+    font-size: clamp(22px, 8.2%, 40px);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .front h2 .amp { color: var(--accent); font-style: italic; font-weight: 400; }
+  .front .sub {
+    font-size: clamp(11px, 3.4%, 15px);
+    color: var(--muted);
+    margin: 0;
+    font-style: italic;
   }
 
-  /* BACK */
-  .back {
-    padding: 7cqw 8cqw;
-    justify-content: space-between;
-  }
+  /* Back */
   .back .top {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    border-bottom: 0.25cqw solid var(--rule);
-    padding-bottom: 2.6cqw;
+    gap: 8px;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 4%;
   }
-  .back .brand {
-    font-size: 5.6cqw;
+  .back .top .name {
+    font-weight: 700;
+    font-size: clamp(13px, 4.4%, 18px);
     margin: 0;
-    font-weight: 400;
-    line-height: 1;
   }
-  .back .brand .amp { font-style: italic; color: var(--accent); }
-  .back .hours { display: flex; flex-direction: column; gap: 1.6cqw; }
+  .back .top .tag {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: clamp(9px, 2.5%, 11px);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+  .back .hours-label {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: clamp(9px, 2.5%, 11px);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 2%;
+  }
   .back .days {
-    font-size: 8.4cqw;
-    line-height: 1;
+    font-weight: 700;
+    font-size: clamp(17px, 6.2%, 26px);
+    line-height: 1.15;
     margin: 0;
-    font-weight: 400;
   }
   .back .time {
-    font-size: 4.6cqw;
-    line-height: 1.1;
-    margin: 0;
-    color: #4d3d2f;
-    font-style: italic;
-  }
-  .back .tue { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 2.8cqw; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; }
-  .cta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 4cqw;
-    border-top: 0.25cqw solid var(--rule);
-    padding-top: 3cqw;
-    text-decoration: none;
-    color: var(--ink);
-  }
-  .cta .k {
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: 2.6cqw;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    color: var(--muted);
-    font-weight: 600;
-    margin-bottom: 1cqw;
-  }
-  .cta .v {
-    font-size: 4.8cqw;
+    font-size: clamp(14px, 4.8%, 20px);
+    margin: 2% 0 0;
     color: var(--accent);
-    border-bottom: 0.25cqw solid var(--accent);
-    padding-bottom: 0.4cqw;
-    white-space: nowrap;
   }
-  .cta .arrow { width: 6cqw; height: 6cqw; color: var(--accent); flex: 0 0 auto; }
+  .back .preorder {
+    display: block;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: clamp(11px, 3.4%, 14px);
+    color: var(--ink);
+    text-decoration: none;
+    border-top: 1px solid var(--rule);
+    padding-top: 4%;
+    overflow-wrap: anywhere;
+  }
+  .back .preorder strong { font-weight: 700; color: var(--accent); }
+  .back .preorder:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-  /* PRINT: exactly two pages, 3.5 x 2 in, front then back */
+  /* ---------- Print: exactly two 3.5 x 2 in pages ---------- */
   @page { size: 3.5in 2in; margin: 0; }
   @media print {
-    html, body { background: #fff; width: 3.5in; }
+    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
     body { overflow: visible; }
-    .wrap { min-height: 0; padding: 0; gap: 0; display: block; }
-    .note { display: none !important; }
-    .sheet { max-width: none; width: 3.5in; gap: 0; display: block; }
-    .card {
-      width: 3.5in;
-      height: 2in;
-      aspect-ratio: auto;
-      box-shadow: none;
-      border-radius: 0;
-      margin: 0;
-      padding: 0.27in 0.28in;
+    .stage { padding: 0 !important; margin: 0 !important; max-width: none; display: block; gap: 0; }
+    .note, .label-screen { display: none !important; }
+    .page {
+      width: 3.5in !important;
+      height: 2in !important;
+      max-width: none !important;
+      aspect-ratio: auto !important;
+      margin: 0 !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+      position: relative;
+      overflow: hidden;
+      box-sizing: border-box;
+      padding: 0.24in !important;
       break-inside: avoid;
-      page-break-inside: avoid;
     }
-    .card::before { inset: 0.12in; }
-    .front { page-break-after: always; break-after: page; }
-    .back { page-break-after: auto; break-after: auto; }
-    .front .mark { width: 0.46in; height: 0.46in; margin-bottom: 0.1in; }
-    .front .name { font-size: 0.4in; }
-    .front .sub { font-size: 0.11in; margin-top: 0.12in; gap: 0.1in; }
-    .front .sub::before, .front .sub::after { width: 0.28in; border-top-width: 0.6pt; }
-    .card::before { border-width: 0.6pt; }
-    .back .top { border-bottom-width: 0.6pt; padding-bottom: 0.08in; }
-    .back .brand { font-size: 0.2in; }
-    .back .days { font-size: 0.3in; }
-    .back .time { font-size: 0.17in; }
-    .back .tue { font-size: 0.1in; }
-    .cta { border-top-width: 0.6pt; padding-top: 0.1in; }
-    .cta .k { font-size: 0.09in; margin-bottom: 0.03in; }
-    .cta .v { font-size: 0.17in; border-bottom-width: 0.6pt; }
-    .cta .arrow { width: 0.2in; height: 0.2in; }
-    .back { padding: 0.25in 0.28in; }
+    .page.front { break-after: page; page-break-after: always; }
+    .page.back { break-after: auto; page-break-after: auto; }
+    .page::before {
+      inset: 0.08in !important;
+    }
+    .front .eyebrow { font-size: 8pt !important; }
+    .front h2 { font-size: 24pt !important; }
+    .front .sub { font-size: 9pt !important; }
+    .front .mark { width: 0.42in !important; min-width: 0 !important; max-width: none !important; }
+    .back .top .name { font-size: 10pt !important; }
+    .back .top .tag, .back .hours-label { font-size: 7.5pt !important; }
+    .back .days { font-size: 14pt !important; }
+    .back .time { font-size: 11pt !important; }
+    .back .preorder { font-size: 8.5pt !important; }
   }
 </style>
 </head>
 <body>
-<main class="wrap">
-  <section class="note" aria-label="Print notes (screen only)">
+<main class="stage">
+
+  <section class="note" aria-label="About this file">
     <h1>Crumb &amp; Co. Bakery business card</h1>
-    <p>Trim size: 3.5 × 2 in (US standard business card). Page 1 is the front, page 2 is the back.</p>
-    <p>To print: choose actual size or 100% scale with no fit-to-page, margins set to none or default, and print in two pages on card stock. These notes are hidden when printing.</p>
+    <p>Trim size: 3.5 x 2 in, US business card. The front and back are shown below at full card proportions.</p>
+    <p>To print: open the print dialog, choose your printer, set the paper size to 3.5 x 2 in (or the card stock size you use), set margins to none, and turn off headers and footers. Print two pages: page 1 is the front, page 2 is the back. Enable background graphics if your browser asks for it.</p>
   </section>
 
-  <div class="sheet">
-    <article class="card front" aria-label="Card front">
-      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-        <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-          <path d="M32 58 V14"/>
-          <path d="M32 24 C26 22 22 17 22 11 C28 12 32 17 32 24"/>
-          <path d="M32 24 C38 22 42 17 42 11 C36 12 32 17 32 24"/>
-          <path d="M32 36 C26 34 22 29 22 23 C28 24 32 29 32 36"/>
-          <path d="M32 36 C38 34 42 29 42 23 C36 24 32 29 32 36"/>
-          <path d="M32 48 C26 46 22 41 22 35 C28 36 32 41 32 48"/>
-          <path d="M32 48 C38 46 42 41 42 35 C36 36 32 41 32 48"/>
-        </g>
+  <p class="label-screen">Front</p>
+  <!-- FRONT -->
+  <section class="card page front" aria-label="Card front">
+    <div class="brand-row">
+      <svg class="mark" viewBox="0 0 60 60" role="img" aria-label="Crumb and Co. mark">
+        <circle cx="30" cy="30" r="28" fill="none" stroke="#9a5b2e" stroke-width="1.5"/>
+        <path d="M14 38 C14 26, 46 26, 46 38 Z" fill="#9a5b2e"/>
+        <path d="M17 38 Q30 33 43 38" fill="none" stroke="#f6efe4" stroke-width="1.4" stroke-linecap="round"/>
+        <circle cx="24" cy="32" r="1.3" fill="#f6efe4"/>
+        <circle cx="31" cy="30" r="1.3" fill="#f6efe4"/>
+        <circle cx="37" cy="33" r="1.3" fill="#f6efe4"/>
       </svg>
-      <h2 class="name">Crumb <span class="amp">&amp;</span> Co.</h2>
-      <div class="sub">Bakery</div>
-    </article>
+      <p class="eyebrow">Bakery</p>
+    </div>
+    <div>
+      <h2>Crumb <span class="amp">&amp;</span> Co.<br>Bakery</h2>
+      <p class="sub">Preorders open online at crumbandco.example</p>
+    </div>
+  </section>
 
-    <article class="card back" aria-label="Card back">
-      <header class="top">
-        <p class="brand">Crumb <span class="amp">&amp;</span> Co. Bakery</p>
-        <span class="label">Hours</span>
-      </header>
+  <p class="label-screen">Back</p>
+  <!-- BACK -->
+  <section class="card page back" aria-label="Card back">
+    <div class="top">
+      <p class="name">Crumb &amp; Co. Bakery</p>
+      <p class="tag">Hours</p>
+    </div>
+    <div>
+      <p class="hours-label">Tue–Sun</p>
+      <p class="days">Tuesday to Sunday</p>
+      <p class="time">7am to 3pm</p>
+    </div>
+    <a class="preorder" href="https://crumbandco.example"><strong>Preorders</strong> at crumbandco.example</a>
+  </section>
 
-      <div class="hours">
-        <p class="days">Tuesday to Sunday</p>
-        <p class="time">7am to 3pm</p>
-        <p class="tue">Tue-Sun</p>
-      </div>
-
-      <a class="cta" href="https://crumbandco.example">
-        <span>
-          <span class="k">Preorder online</span><br>
-          <span class="v">Preorders at crumbandco.example</span>
-        </span>
-        <svg class="arrow" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </a>
-    </article>
-  </div>
 </main>
 </body>
 </html>

@@ -79,7 +79,7 @@ export function DesignShowcase() {
               <p className={styles.houseLabel}>House-agent generated sample · {sample.agent}</p>
               <p className={styles.description}>{sample.description}</p>
               <p className={styles.provenance}>
-                Model <code>{provenance.model}</code> · judge: {provenance.judgeStatus} {provenance.checksPassed}/{provenance.checksTotal} on {provenance.evaluator} · sha256 <code title={provenance.sha256}>{provenance.sha256.slice(0, 12)}</code>
+                Model <code>{provenance.model}</code> · judge: {provenance.judgeStatus} {provenance.checksPassed}/{provenance.checksTotal} on {provenance.evaluator}, attempt {provenance.attemptsUsed} · sha256 <code title={provenance.sha256}>{provenance.sha256.slice(0, 12)}</code>
                 <br />
                 {provenance.note}
               </p>
@@ -97,9 +97,9 @@ export function DesignShowcase() {
       <p className={styles.note}>
         The four Codex design studies include downloadable SVG artwork and browser
         print layouts. All samples here were made for fictional projects and are
-        separate from paid competitions. The house-agent sample is the original HTML
-        page provable.bid&apos;s own agent produced and the judge qualified, shown with
-        its KERNEL preview screenshots (watermarked). Your own brief runs through
+        separate from paid competitions. The house-agent samples are the original HTML
+        pages provable.bid&apos;s own agents produced and the judge qualified, shown with
+        their KERNEL preview screenshots (watermarked). Your own brief runs through
         the live agent and qualification flow.
       </p>
     </section>
