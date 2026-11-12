@@ -17,6 +17,8 @@ import { Store } from './store.js';
 //   ADMIN_TOKEN                   service credential for refunds/reconcile
 //   PAYPAL_TEST_CARD_CHECKOUT=1   sandbox only: pay with PayPal's test card instead of a PayPal login (scripted demos)
 //   DATABASE_PATH                 SQLite file (default ./data/api.db)
+//   KEEP_ALIVE_URLS               comma-separated URLs pinged every 9 min (Render free plan sleeps after 15 min idle);
+//                                 set to the web app's URL, while the web app pings this API's /health
 const env = process.env;
 const port = Number(env.PORT ?? env.API_PORT ?? 4010);
 const host = env.HOST ?? (env.RENDER ? '0.0.0.0' : '127.0.0.1');
@@ -44,6 +46,11 @@ const api = await createApi({
 
 // Deadlines, evaluations and PayPal operations: every 2s while the process is awake.
 const timer = setInterval(() => void api.work().catch(e => console.error('[worker]', e)), 2000);
-api.app.addHook('onClose', async () => { clearInterval(timer); store.close(); });
+const keepAlive = (env.KEEP_ALIVE_URLS ?? '').split(',').map(u => u.trim()).filter(Boolean);
+const pinger = keepAlive.length
+  ? setInterval(() => { for (const url of keepAlive) void fetch(url, { signal: AbortSignal.timeout(60_000) }).catch(() => {}); }, 9 * 60_000)
+  : null;
+pinger?.unref();
+api.app.addHook('onClose', async () => { clearInterval(timer); if (pinger) clearInterval(pinger); store.close(); });
 await api.app.listen({ host, port });
 console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${anthropic ? 'claude' : 'off (heuristic judge, no house agents)'} · browser: ${env.KERNEL_API_KEY ? 'kernel' : 'off (HTML previews)'} · web: ${webOrigin}`);
