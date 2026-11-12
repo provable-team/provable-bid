@@ -21,11 +21,11 @@ import { PgStore, Store, type DocStore } from './store.js';
 //   DATABASE_PATH                 SQLite file when DATABASE_URL is unset (default ./data/api.db; ephemeral on Render free)
 //   KEEP_ALIVE_URLS               comma-separated URLs pinged every 9 min (Render free plan sleeps after 15 min idle);
 //                                 set to the web app's URL, while the web app pings this API's /health
-//   RUNNER=workflows              prototype: house-agent builds and evaluations run as Render Workflows tasks
-//                                 (apps/api/src/workflows) instead of in this process. Also needs:
+//   RUNNER=workflows              house-agent builds and evaluations run as Render Workflows task runs
+//                                 (apps/api/src/workflows) instead of in this process. Unset: in-process (rollback). Needs:
 //     WORKFLOW_SLUG               the workflow service's slug (default provable-race-workflows)
-//     HOUSE_AGENT_SECRET          shared with the workflow service; house-agent tokens are derived from it
-//     RENDER_API_KEY              to start task runs (or RENDER_USE_LOCAL_DEV=true for `render workflows dev`)
+//     WORKFLOWS_SECRET            same value on the workflow service; house-agent and evaluator credentials derive from it
+//     RENDER_API_KEY              starts, reads and cancels task runs (or RENDER_USE_LOCAL_DEV=true for `render workflows dev`)
 const env = process.env;
 const port = Number(env.PORT ?? env.API_PORT ?? 4010);
 const host = env.HOST ?? (env.RENDER ? '0.0.0.0' : '127.0.0.1');
@@ -43,12 +43,17 @@ const evaluator = anthropic ? claudeEvaluator(anthropic) : heuristicEvaluator();
 
 let runners: { houseRunner: HouseRunner; evaluationRunner: EvaluationRunner } | null = null;
 if (env.RUNNER === 'workflows') {
+  // Fail at boot, not on the first brief: without these, every evaluation would wait forever.
+  if (!env.WORKFLOWS_SECRET) throw new Error('RUNNER=workflows needs WORKFLOWS_SECRET (same value as on the workflow service)');
+  if (!env.RENDER_API_KEY && !env.RENDER_USE_LOCAL_DEV && !env.RENDER_LOCAL_DEV_URL) throw new Error('RUNNER=workflows needs RENDER_API_KEY');
   const { Render } = await import('@renderinc/sdk'); // loaded only in this mode
   const client = new Render().workflows;
   const workflow = env.WORKFLOW_SLUG ?? 'provable-race-workflows';
+  const log = (m: string, x?: unknown) => console.log(`[workflows] ${m}`, x ?? '');
   runners = {
-    houseRunner: workflowsHouseRunner({ client, workflow, apiOrigin, agentIds: env.HOUSE_AGENT_SECRET ? HOUSE_AGENTS.map(h => h.id) : [] }),
-    evaluationRunner: workflowsEvaluation({ client, workflow, version: evaluator.version }),
+    // House agents only with a model key on this API too (the same key must be on the workflow service).
+    houseRunner: workflowsHouseRunner({ client, workflow, apiOrigin, log, agentIds: anthropic ? HOUSE_AGENTS.map(h => h.id) : [] }),
+    evaluationRunner: workflowsEvaluation({ client, workflow, apiOrigin, version: evaluator.version }),
   };
 }
 const store: DocStore = env.DATABASE_URL
@@ -68,7 +73,7 @@ const api = await createApi({
   renderer: env.KERNEL_API_KEY ? kernelRenderer(env.KERNEL_API_KEY) : null,
   houseAgents: anthropic ? Object.fromEntries(HOUSE_AGENTS.map(h => [h.id, claudeHouseAgent(anthropic, h)])) : null,
   strictResponses: env.NODE_ENV !== 'production',
-  ...(runners ? { ...runners, houseTokenSecret: env.HOUSE_AGENT_SECRET ?? null } : {}),
+  ...(runners ? { ...runners, workflowsSecret: env.WORKFLOWS_SECRET } : {}),
 });
 
 // Deadlines, evaluations and PayPal operations: every 2s while the process is awake.

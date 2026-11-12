@@ -21,7 +21,8 @@
     "api:fake": "PAYMENTS=fake tsx apps/api/src/server.ts",
     "api:build": "esbuild apps/api/src/server.ts --bundle --platform=node --format=esm --target=node24 --packages=external --outfile=dist/api-server.mjs",
     "api:start": "node dist/api-server.mjs",
-    "workflows:dev": "render workflows dev -- npx tsx apps/api/src/workflows/main.ts"
+    "workflows:dev": "render workflows dev -- npx tsx apps/api/src/workflows/main.ts",
+    "workflows:build": "esbuild apps/api/src/workflows/main.ts --bundle --platform=node --format=esm --target=node24 --packages=external --outfile=dist/workflows.mjs"
   },
   "devDependencies": {
     "@redocly/cli": "2.77.0",

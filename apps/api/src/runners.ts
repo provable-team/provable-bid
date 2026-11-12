@@ -39,6 +39,8 @@ export type EvaluationOutcome = { rendered: RenderedPage | null; result: Verdict
 
 export interface EvaluationRunner {
   readonly name: string;
+  /** True when evaluations run outside this process (they fetch their job from the internal route). */
+  readonly remote?: boolean;
   /** The evaluator's version label, used when the runner itself could not finish. */
   readonly version: string;
   /** Never rejects for an evaluator failure (that is an 'error' result); rejects only if the runner itself failed. */
@@ -101,8 +103,15 @@ export interface HouseRunner {
   /** True when the build runs outside this process and reaches the API over HTTP (submissions, progress). */
   readonly remote: boolean;
   has(agentId: string): boolean;
-  /** Resolves when the agent's run (all its attempts) is over. `ctx` is the in-process context; a remote runner uses only its competition and signal. */
-  run(agentId: string, ctx: AgentContext): Promise<void>;
+  /**
+   * Resolves when the agent's run (all its attempts) is over. `ctx` is the in-process context; a remote runner uses
+   * only its competition, and reports the run ID to `started` (the API persists it) before waiting.
+   */
+  run(agentId: string, ctx: AgentContext, hooks?: { started?: (runId: string) => Promise<void> }): Promise<void>;
+  /** Remote only: wait for a run an earlier API process started (re-attach after a restart). Resolves with its final status. */
+  wait?(runId: string): Promise<string>;
+  /** Remote only: stop a run (the submission deadline passed). */
+  cancel?(runId: string): Promise<void>;
 }
 
 export function inProcessHouseRunner(adapters: Record<string, AgentAdapter> | null | undefined): HouseRunner {
@@ -114,51 +123,86 @@ export function inProcessHouseRunner(adapters: Record<string, AgentAdapter> | nu
 }
 
 /**
- * A house agent's bearer token derived from a secret both the API and the workflow service hold, so a build running
- * on another instance can authenticate without the token ever appearing in task arguments (which Render retains and
- * shows in the dashboard), and keeps working across API restarts.
+ * Credentials for work running on another instance, derived from WORKFLOWS_SECRET (held by the API and the workflow
+ * service). Nothing secret ever appears in task arguments, which Render retains for 30 days and shows in the
+ * dashboard, and the tokens survive API restarts.
  */
 export const houseToken = (secret: string, agentId: string) =>
   `pba_${createHmac('sha256', secret).update(`house-agent:${agentId}`).digest('base64url')}`;
+export const evaluatorToken = (secret: string) => createHmac('sha256', secret).update('workflows-evaluator').digest('base64url');
 
 // ---------------------------------------------------------------- Render Workflows
 
+export type RunDetails = { id: string; status: string; results?: unknown[] | null; error?: string };
 /** The subset of `new Render().workflows` (@renderinc/sdk) this API uses; the local fake implements the same shape. */
 export interface WorkflowsClient {
-  startTask(slug: string, input: unknown[], options?: { idempotencyKey?: string; signal?: AbortSignal }): Promise<{
-    taskRunId: string;
-    get(): Promise<{ id: string; status: string; results?: unknown[] | null; error?: string }>;
-  }>;
+  startTask(slug: string, input: unknown[], options?: { idempotencyKey?: string; signal?: AbortSignal }): Promise<{ taskRunId: string; get(): Promise<RunDetails> }>;
+  getTaskRun(taskRunId: string): Promise<RunDetails>;
+  cancelTaskRun(taskRunId: string): Promise<void>;
 }
 export const TASKS = { evaluate: 'evaluateSubmission', render: 'renderEntry', judge: 'judgeEntry', houseBuild: 'houseAgentBuild' } as const;
 export type HouseBuildInput = { agent_id: string; competition: S['Competition']; api_origin: string };
+/** What evaluation runs receive: a reference only. Each task fetches the job (with the private original) from the API. */
+export type EvaluationRef = { submission_id: string; api_origin: string };
 
-async function runToResult<T>(client: WorkflowsClient, slug: string, input: unknown[], idempotencyKey: string, signal?: AbortSignal): Promise<T> {
-  const started = await client.startTask(slug, input, { idempotencyKey, ...(signal ? { signal } : {}) });
-  const run = await started.get();
-  if (run.status !== 'completed') throw new Error(`task run ${run.id} ${run.status}${run.error ? `: ${run.error}` : ''}`);
-  return run.results?.[0] as T;
-}
+/** The SDK reports success as `succeeded`; `completed` is the deprecated spelling (the local dev server still sends it). */
+export const succeeded = (status: string) => status === 'succeeded' || status === 'completed';
+const terminal = (status: string) => succeeded(status) || status === 'failed' || status === 'canceled';
+
+/** Render Workflows could not be reached (start or wait failed): nothing is known about the run, so try again later. */
+export class RunnerUnavailable extends Error {}
 
 /**
- * Evaluation as a Render Workflows task run. The idempotency key is the submission ID, so after an API restart the
- * worker's retry re-attaches to the run already in flight (or finished) instead of rendering and judging twice.
+ * Evaluation as a Render Workflows task run. The idempotency key is the submission ID, so a retry after an API restart
+ * (or after Render was unreachable) re-attaches to the run already in flight or finished instead of judging twice.
+ * Throws RunnerUnavailable when Render can't be reached (the API leaves the entry pending and retries with backoff); a
+ * run that failed throws a plain Error, which the API records as an 'error' verdict like an in-process evaluator failure.
  */
-export function workflowsEvaluation(o: { client: WorkflowsClient; workflow: string; version: string }): EvaluationRunner {
+export function workflowsEvaluation(o: { client: WorkflowsClient; workflow: string; version: string; apiOrigin: string }): EvaluationRunner & { remote: true } {
   return {
-    name: 'render-workflows', version: o.version,
-    evaluate: job => runToResult<EvaluationOutcome>(o.client, `${o.workflow}/${TASKS.evaluate}`, [job], `evaluate:${job.submission_id}`),
+    name: 'render-workflows', version: o.version, remote: true,
+    async evaluate(job) {
+      const ref: EvaluationRef = { submission_id: job.submission_id, api_origin: o.apiOrigin };
+      let run: RunDetails;
+      try { run = await (await o.client.startTask(`${o.workflow}/${TASKS.evaluate}`, [ref], { idempotencyKey: `evaluate:${job.submission_id}` })).get(); }
+      catch (e) { throw new RunnerUnavailable(`evaluation run for ${job.submission_id}: ${(e as Error).message}`); }
+      if (succeeded(run.status)) return run.results?.[0] as EvaluationOutcome;
+      throw new Error(`task run ${run.id} ${run.status}${run.error ? `: ${run.error}` : ''}`);
+    },
   };
 }
 
-/** House-agent builds as Render Workflows task runs, one per agent per competition. */
-export function workflowsHouseRunner(o: { client: WorkflowsClient; workflow: string; agentIds: string[]; apiOrigin: string }): HouseRunner {
+/**
+ * House-agent builds as Render Workflows task runs, one per agent per competition. The run ID goes to `started` (the API
+ * persists it), then the runner polls the run; a restarted API waits on the same run with `wait`.
+ */
+export function workflowsHouseRunner(o: { client: WorkflowsClient; workflow: string; agentIds: string[]; apiOrigin: string; pollMs?: number; log?: (m: string, x?: unknown) => void }): HouseRunner {
+  const pollMs = o.pollMs ?? 3000;
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+  async function wait(runId: string): Promise<string> {
+    for (let failures = 0; ;) {
+      try {
+        const run = await o.client.getTaskRun(runId);
+        failures = 0;
+        if (terminal(run.status)) { if (run.status === 'failed') o.log?.(`house run ${runId} failed`, run.error); return run.status; }
+      } catch (e) { if (++failures >= 20) throw e; } // unreachable for ~20 polls: stop waiting (the run carries on, the deadline still cancels it)
+      await sleep(pollMs);
+    }
+  }
   return {
     name: 'render-workflows', remote: true,
     has: id => o.agentIds.includes(id),
-    async run(agentId, ctx) {
+    async run(agentId, ctx, hooks) {
       const input: HouseBuildInput = { agent_id: agentId, competition: ctx.competition, api_origin: o.apiOrigin };
-      await runToResult(o.client, `${o.workflow}/${TASKS.houseBuild}`, [input], `house:${ctx.competition.id}:${agentId}`, ctx.signal);
+      let runId: string | null = null;
+      for (let attempt = 1; !runId; attempt++) { // a 429 or a network blip must not cost the agent its entry
+        try { runId = (await o.client.startTask(`${o.workflow}/${TASKS.houseBuild}`, [input], { idempotencyKey: `house:${ctx.competition.id}:${agentId}` })).taskRunId; }
+        catch (e) { if (attempt >= 4) throw e; await sleep(pollMs * attempt); }
+      }
+      await hooks?.started?.(runId);
+      await wait(runId);
     },
+    wait,
+    cancel: runId => o.client.cancelTaskRun(runId),
   };
 }

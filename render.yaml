@@ -44,11 +44,13 @@ services:
       - { key: ANTHROPIC_API_KEY, sync: false }
       - { key: KERNEL_API_KEY, sync: false }
       - { key: KEEP_ALIVE_URLS, sync: false }
-      # Prototype (off unless RUNNER=workflows): run house-agent builds and evaluations on the workflow below.
-      # - { key: RUNNER, value: workflows }
-      # - { key: WORKFLOW_SLUG, value: provable-race-workflows }
-      # - { key: HOUSE_AGENT_SECRET, sync: false }
-      # - { key: RENDER_API_KEY, sync: false }
+      # Durable state (PR #9): Neon Postgres. Without DATABASE_URL the API falls back to SQLite on the ephemeral disk.
+      - { key: DATABASE_URL, sync: false }
+      - { key: DATABASE_URL_UNPOOLED, sync: false }
+      # Render Workflows (provable-race-workflows below). Set RUNNER=workflows to turn it on; unset it to roll back.
+      - { key: RUNNER, sync: false }
+      - { key: WORKFLOWS_SECRET, sync: false }
+      - { key: RENDER_API_KEY, sync: false }
   - type: web
     name: provable-race-web
     runtime: node
@@ -72,23 +74,23 @@ services:
       - { key: KEEP_ALIVE_URLS, sync: false }
       - { key: NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY, sync: false }
 
-# Prototype, not created: Render Workflows for house-agent builds and submission evaluation
-# (apps/api/src/workflows). Workflows have no free tier: runs bill per second of compute (flex plan, about
-# $0.03–0.25/hour at our usage) plus $0.25/GB-month of retained run state, against the workspace's credits.
-# https://render.com/docs/workflows  https://render.com/docs/workflows-limits
-#
-#  - type: workflow
-#    name: provable-race-workflows
-#    runtime: node
-#    region: oregon
-#    branch: shiwani/proof-race
-#    buildCommand: npm ci --include=dev
-#    startCommand: npx tsx apps/api/src/workflows/main.ts
-#    buildFilter:
-#      paths: [apps/api/**, packages/**, package.json, package-lock.json]
-#      ignoredPaths: ["**/*.md"]
-#    envVars:
-#      - { key: NODE_VERSION, value: "24" }
-#      - { key: ANTHROPIC_API_KEY, sync: false }
-#      - { key: KERNEL_API_KEY, sync: false }
-#      - { key: HOUSE_AGENT_SECRET, sync: false }
+  # Render Workflows: house-agent builds and submission evaluation (apps/api/src/workflows), used when the API has
+  # RUNNER=workflows. No free tier: runs bill per second of compute (flex plan) plus $0.25/GB-month of retained run
+  # state, against the workspace's credits. https://render.com/docs/workflows  https://render.com/docs/workflows-limits
+  - type: workflow
+    name: provable-race-workflows
+    runtime: node
+    region: oregon
+    branch: shiwani/proof-race
+    autoDeployTrigger: "off" # deploy it deliberately; runs in flight keep their version
+    buildCommand: npm ci --include=dev && npm run workflows:build
+    startCommand: node dist/workflows.mjs
+    buildFilter:
+      paths: [apps/api/**, packages/**, package.json, package-lock.json]
+      ignoredPaths: ["**/*.md"]
+    envVars:
+      - { key: NODE_VERSION, value: "24" }
+      - { key: NODE_ENV, value: production }
+      - { key: ANTHROPIC_API_KEY, sync: false }
+      - { key: KERNEL_API_KEY, sync: false }
+      - { key: WORKFLOWS_SECRET, sync: false }
