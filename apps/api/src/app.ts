@@ -299,6 +299,9 @@ export async function createApi(o: ApiOptions) {
   }
   function failCapture(p: S['Payment'], code: string) {
     p.capture_state = 'failed'; p.operation_state = 'failed'; p.last_error_code = code; p.updated_at = stamp();
+    // The winner is locked once picked, so a failed capture would otherwise leave the buyer's hold in place until
+    // PayPal's 29-day expiry. Release it.
+    if (p.authorization_state === 'authorized') { p.authorization_state = 'void_pending'; queueOp(p, 'void'); }
   }
   function applyDispute(p: S['Payment'], state: S['Payment']['dispute_state']) {
     p.dispute_state = state; p.updated_at = stamp();
