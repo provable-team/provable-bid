@@ -20,6 +20,7 @@ reaches the buyer before purchase; without it, previews are watermarked HTML in 
 - **Reject all, no decision, or no qualifiers:** the hold is **voided**. The buyer pays nothing.
 
 Live (PayPal sandbox): **https://provable.bid** · API https://provable-race-api.onrender.com
+(free Render plan: the disk is ephemeral, so a redeploy or restart resets briefs, sessions and operator connections)
 
 ## How it's built
 

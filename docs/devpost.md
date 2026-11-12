@@ -55,7 +55,8 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 - **Contract first.** An OpenAPI 3.1 contract (v0.4.0, 40 operations) defines every state, error and money field. The
   TypeScript client used by the web app is generated from it. Every mutation takes an `Idempotency-Key`.
-- **API:** Fastify on Node 24, with SQLite on disk. Money is kept in integer cents.
+- **API:** Fastify on Node 24, with SQLite on disk. Money is kept in integer cents. The live demo runs on Render's
+  free plan, whose disk is ephemeral: a redeploy resets data, including buyer sessions and operator connections.
 - **Web:** Next.js App Router with React and TypeScript.
 
 ### PayPal
@@ -71,16 +72,21 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 - **Log in with PayPal:** operators connect their PayPal account, and its payer ID becomes the payout destination.
 - **Idempotency:** order, authorization, capture, void and refund calls carry a `PayPal-Request-Id` that is saved
   before the call is made, and payouts use a stable `sender_batch_id`. Reads and webhook verification need neither.
-  This is designed so a retry after a crash or timeout repeats the same PayPal operation instead of creating a second
-  charge or payout.
-- **SDK (TODO-verify):** orders and payments calls use the APIMatic-generated PayPal Server SDK.
+  This is designed so a retry after a timeout or failed call repeats the same PayPal operation instead of creating a
+  second charge or payout. The journal is SQLite on disk; on the free Render demo the disk is ephemeral, so a restart
+  or redeploy clears it along with sessions and briefs. Durable retries across restarts need a persistent disk.
+- **SDK:** Orders v2 and Payments v2 calls (create, read, authorize, capture, void, refund) go through the
+  APIMatic-generated PayPal Server SDK (`@paypal/paypal-server-sdk` 2.5.0). Payouts, webhook verification and Log in
+  with PayPal aren't in that SDK, so they stay on REST. Verified on real sandbox payments: authorize then void, and
+  authorize, capture and a $9.50 payout marked paid.
 
 ### Sponsor tools
 
 - **Render:** API and web are separate Render web services. provable.bid is the web service's custom domain.
 - **KERNEL:** cloud browsers render every entry for screenshots and phone-fit measurements.
-- **APIMatic:** we used the PayPal Server SDK Context Plugin in Claude Code to work against the generated PayPal
-  Server SDK. **TODO-verify:** describe exactly what moved once the migration lands.
+- **APIMatic:** we used the PayPal Server SDK Context Plugin's TypeScript guides in Claude Code to move our
+  hand-written Orders and Payments REST calls onto the APIMatic-generated PayPal Server SDK. The plugin's notes caught
+  two generated defaults that would have hurt us (no request timeout, and retries off) and the error-payload shape.
 - **AG Grid and AG Studio:** operator and buyer ledgers are AG Grid tables. Signed-in operators get an AG Studio
   allocation dashboard.
 - **Postman:** `postman/` has a collection generated from the contract, covering all 40 operations, plus a local
@@ -88,10 +94,10 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 ### AI
 
-- **AI judge and house agents:** the qualification judge (structured output, one verdict per requirement, with the
-  screenshots and browser measurements) and the three house agents. They run on Claude when an Anthropic key is set,
-  or on OpenAI when only an OpenAI key is set. Both are off on the live site until a key is set; until then a
-  labelled keyword check judges. **TODO-verify:** name the provider once the key is live.
+- **Claude (`claude-haiku-5-5`):** the qualification judge (structured output, one verdict per requirement, with the
+  screenshots and browser measurements) and the three house agents. Both need an Anthropic key; without one a
+  labelled keyword check judges and no house agents run. **TODO-verify:** confirm `ai_evaluation` and `house_agents`
+  are true on `/v1/config` before submitting.
 
 ## Challenges we ran into
 
