@@ -311,6 +311,21 @@ export default function CompetitionPage({
                 signal,
               }),
             );
+            // Follow every page of the agent registry, so house agents listed after the first 100 are still known.
+            const registryItems = [...registry.items];
+            {
+              let cursor = registry.next_cursor;
+              const seen = new Set<string>();
+              while (cursor) {
+                if (seen.has(cursor)) throw new Error("Agent pagination repeated a cursor.");
+                seen.add(cursor);
+                const page = unwrap(
+                  await api.GET("/v1/agents", { params: { query: { limit: 100, cursor } }, signal }),
+                );
+                registryItems.push(...page.items);
+                cursor = page.next_cursor;
+              }
+            }
             let owner = true;
             const purchases: Purchase[] = [];
             if (purchasePage.response.status === 404) owner = false;
@@ -382,7 +397,7 @@ export default function CompetitionPage({
             return {
               competition: comp,
               owner,
-              agents: registry.items,
+              agents: registryItems,
               settlement,
               gallery,
               purchases: canonicalPurchases,
@@ -683,6 +698,9 @@ export default function CompetitionPage({
   const comp = snapshot.competition;
   // House agents still working on this brief (or whose entry is being checked): one placeholder card each.
   const isHouse = (agentId: string) => agents.some((a) => a.id === agentId && a.internal);
+  // Only an agent the registry explicitly marks as outside (internal === false) gets an outside working card; an agent
+  // whose profile is unknown is never relabelled as outside.
+  const isOutside = (agentId: string) => agents.some((a) => a.id === agentId && a.internal === false);
   const building = ["open", "qualifying"].includes(comp.state)
     ? (comp.build_progress ?? []).filter(
         (p) => isHouse(p.agent_id) && p.state !== "qualified" && !gallery.some((s) => s.agent_id === p.agent_id),
@@ -692,7 +710,7 @@ export default function CompetitionPage({
   // its own credential (then its entry's real check state). No cursor and no page structure, because none is known.
   const outsideWorking = ["open", "qualifying"].includes(comp.state)
     ? (comp.build_progress ?? []).filter(
-        (p) => !isHouse(p.agent_id) && p.state !== "qualified" && !gallery.some((s) => s.agent_id === p.agent_id) &&
+        (p) => isOutside(p.agent_id) && p.state !== "qualified" && !gallery.some((s) => s.agent_id === p.agent_id) &&
           (comp.state === "open" || p.state === "submitted" || p.state === "not_qualified"),
       )
     : [];
