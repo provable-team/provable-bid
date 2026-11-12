@@ -21,6 +21,8 @@ import { StudioAiFailure, type StudioAiRelay } from './studio-ai.js';
 import { registerAgentDocs } from './agent-docs.js';
 import { createDeviceFlow, type DeviceGrant } from './device-flow.js';
 import { registerMcp } from './mcp.js';
+import { canonicalJson, loadReceiptKey, RECEIPT_FORMAT, registerReceiptKey, sha256Hex, signReceipt, type ReceiptKey } from './receipts.js';
+import { liveStats, type LiveStats } from './stats.js';
 
 type S = components['schemas'];
 
@@ -176,6 +178,8 @@ export interface ApiOptions {
   studioAi?: StudioAiRelay | null;
   /** Per-operator assistant limits: turns per rolling window, and per day. */
   studioAiLimits?: { windowMs: number; perWindow: number; perDay: number };
+  /** Ed25519 key for signed purchase receipts (receipts.ts). Default: a fresh key per process. */
+  receiptKey?: ReceiptKey;
 }
 
 /** Operations that only read and may take seconds (a model and PayPal round trips): they run outside the command queue. */
@@ -1654,6 +1658,39 @@ export async function createApi(o: ApiOptions) {
       if (result.type === 'text/html') reply.header('Content-Security-Policy', "sandbox allow-scripts; default-src 'none'; img-src data: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; font-src data: https:");
       return reply.type(result.type ?? 'application/json').status(result.status).send(result.body);
     },
+  });
+
+  // Proof routes, outside the contract: the receipt key, signed delivery receipts for the purchase's buyer, and aggregate stats.
+  const receiptKey = o.receiptKey ?? loadReceiptKey({});
+  registerReceiptKey(app, receiptKey, o.apiOrigin);
+  app.get('/v1/purchases/:purchase_id/receipt', async (req, reply) => {
+    reply.header('X-Request-Id', req.id).header('Cache-Control', 'no-store');
+    const bearer = /^Bearer ([A-Za-z0-9_-]+)$/.exec(String(req.headers.authorization ?? ''));
+    const p = resolvePrincipal(bearer?.[1], credentials, o.adminToken ?? null);
+    demand(p, 'UNAUTHENTICATED', 'Valid bearer credential required.', 401);
+    const purchase = fetchOne(purchases, (req.params as { purchase_id: string }).purchase_id);
+    const c = fetchOne(competitions, purchase.competition_id); owner(c, p);
+    const pay = fetchOne(payments, purchase.payment_id);
+    demand(entitled(pay), 'DELIVERY_LOCKED', 'A receipt is issued once the payment is captured and not refunded, reversed or disputed.');
+    const s = fetchOne(submissions, purchase.submission_id);
+    const profile = agentProfile(s.agent_id);
+    return reply.send(signReceipt({
+      format: RECEIPT_FORMAT, issuer: o.apiOrigin.replace(/\/$/, ''), issued_at: stamp(), purchase_id: purchase.id, competition_id: c.id,
+      brief: { title: c.title, requirements_sha256: sha256Hex(canonicalJson(c.requirements)) },
+      entry: { submission_id: s.id, agent_id: s.agent_id, agent_name: profile?.name ?? null, internal: profile?.internal ?? null },
+      evaluation: { evaluator_version: s.qualification?.evaluator_version ?? null, status: s.qualification?.status ?? s.qualification_status,
+        checks: (s.qualification?.checks ?? []).map(x => ({ requirement_id: x.requirement_id, passed: x.passed })) },
+      artifacts: s.artifacts.map(a => ({ asset_id: a.asset_id, sha256: a.sha256, size_bytes: a.size_bytes, mime_type: a.mime_type })),
+      payment: { mode: o.provider.mode, amount: money(pay.captured_minor), captured: true, provider_capture_id: pay.provider_capture_id ?? null },
+    }, receiptKey));
+  });
+  let statsCache: { at: number; body: LiveStats } | null = null;
+  app.get('/stats.json', async (req, reply) => {
+    if (!statsCache || time() - statsCache.at >= 30_000) statsCache = { at: time(), body: liveStats({
+      mode: o.provider.mode, now: stamp(), competitions: competitions.values(), submissions: submissions.values(), payments,
+      purchases: purchases.values(), allocations: allocations.values(), agents: agents.values(),
+    }) };
+    return reply.header('Cache-Control', 'public, max-age=30').header('X-Content-Type-Options', 'nosniff').header('X-Request-Id', req.id).send(statsCache.body);
   });
 
   // A house agent building on another instance (Render Workflows) reports its coarse build steps here. Not part of the

@@ -10,6 +10,7 @@ import {
   unwrap,
 } from "@/lib/api";
 import { useApi } from "./api-provider";
+import { ReceiptDownload } from "./receipt-download";
 import { Icon } from "./ui";
 
 type DeliveryAccess =
@@ -372,6 +373,7 @@ export function PurchaseDelivery({
           {error}
         </p>
       )}
+      <ReceiptDownload purchaseId={purchase.id} disabled={disabled} />
     </div>
   );
 }

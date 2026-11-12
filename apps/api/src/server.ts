@@ -9,6 +9,7 @@ import { paypalProvider } from './provider/paypal.js';
 import { workflowsEvaluation, workflowsHouseRunner, type EvaluationRunner, type HouseRunner } from './runners.js';
 import { PgStore, Store, type DocStore } from './store.js';
 import { claudeStudioAi } from './studio-ai.js';
+import { loadReceiptKey } from './receipts.js';
 
 // Configuration (all optional for local dev with the fake provider):
 //   PAYMENTS=paypal|fake          real PayPal sandbox or the in-memory fake (default: paypal if keys are set)
@@ -30,6 +31,8 @@ import { claudeStudioAi } from './studio-ai.js';
 //     WORKFLOW_SLUG               the workflow service's slug (default provable-race-workflows)
 //     WORKFLOWS_SECRET            same value on the workflow service; house-agent and evaluator credentials derive from it
 //     RENDER_API_KEY              starts, reads and cancels task runs (or RENDER_USE_LOCAL_DEV=true for `render workflows dev`)
+//   RECEIPT_SIGNING_KEY           Ed25519 key for signed purchase receipts (PKCS#8 PEM or base64 32-byte seed). Unset: derived
+//                                 via HKDF from ADMIN_TOKEN (else WORKFLOWS_SECRET), else a fresh key per boot. See docs/receipts.md.
 const env = process.env;
 const port = Number(env.PORT ?? env.API_PORT ?? 4010);
 const host = env.HOST ?? (env.RENDER ? '0.0.0.0' : '127.0.0.1');
@@ -48,6 +51,7 @@ const operatorAssistant = anthropic && usePayPal
   ? claudeOperatorAssistant({ client: anthropic, toolkit: paypalAgentToolkit({ clientId: clientId!, clientSecret: env.PAYPAL_CLIENT_SECRET!, sandbox: true }), provider,
       log: (m, x) => console.log(`[assistant] ${m}`, x ?? '') })
   : null;
+const receiptKey = loadReceiptKey(env);
 const evaluator = anthropic ? claudeEvaluator(anthropic) : heuristicEvaluator();
 
 let runners: { houseRunner: HouseRunner; evaluationRunner: EvaluationRunner } | null = null;
@@ -86,6 +90,7 @@ const api = await createApi({
   strictResponses: env.NODE_ENV !== 'production',
   operatorAssistant,
   studioAi: anthropic ? claudeStudioAi(anthropic) : null,
+  receiptKey,
   ...(runners ? { ...runners, workflowsSecret: env.WORKFLOWS_SECRET } : {}),
 });
 
@@ -98,4 +103,4 @@ const pinger = keepAlive.length
 pinger?.unref();
 api.app.addHook('onClose', async () => { clearInterval(timer); if (pinger) clearInterval(pinger); await store.close(); });
 await api.app.listen({ host, port });
-console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? `kernel${env.KERNEL_REPLAYS === '1' ? ' + replays' : ''}` : 'off (HTML previews)'} · operator assistant: ${operatorAssistant ? 'on' : 'off'} · store: ${env.DATABASE_URL ? 'postgres' : 'sqlite'} · runner: ${runners ? 'render-workflows' : 'in-process'} · web: ${webOrigin}`);
+console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? `kernel${env.KERNEL_REPLAYS === '1' ? ' + replays' : ''}` : 'off (HTML previews)'} · operator assistant: ${operatorAssistant ? 'on' : 'off'} · store: ${env.DATABASE_URL ? 'postgres' : 'sqlite'} · runner: ${runners ? 'render-workflows' : 'in-process'} · receipts: ${receiptKey.keyId} (${receiptKey.source}) · web: ${webOrigin}`);
