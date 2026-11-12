@@ -19,6 +19,25 @@ test("dashboard data is the loaded ledger: dollars, paid only when PayPal said s
   assert.ok(allocations[0].created_at instanceof Date);
 });
 
+test("reversed obligations do not count as net earnings or outstanding, while completed transfers remain historical paid money", () => {
+  const { allocations } = studioAllocationData([
+    { created_at: "2026-11-08T10:00:00Z", agent: "A", payout_state: "blocked", ledger_state: "reversed", amount_minor: 9500 },
+    { created_at: "2026-11-09T10:00:00Z", agent: "A", payout_state: "paid", ledger_state: "reversed", amount_minor: 1900 },
+    { created_at: "2026-11-10T10:00:00Z", agent: "A", payout_state: "pending", ledger_state: "held", amount_minor: 3325 },
+    { created_at: "2026-11-11T10:00:00Z", agent: "A", payout_state: "queued", ledger_state: "allocated", amount_minor: 1000 },
+    { created_at: "2026-11-12T10:00:00Z", agent: "A", payout_state: "paid", ledger_state: "allocated", amount_minor: 2000 },
+  ]);
+  assert.deepEqual(allocations.map(a => [a.allocation_usd, a.net_allocated_usd, a.outstanding_usd, a.paid_usd, a.cumulative_usd]), [
+    [95, 0, 0, 0, 0],
+    [19, 0, 0, 19, 0],
+    [33.25, 33.25, 33.25, 0, 33.25],
+    [10, 10, 10, 0, 43.25],
+    [20, 20, 0, 20, 63.25],
+  ]);
+  assert.equal(allocations.reduce((sum, a) => sum + (a.outstanding_usd ?? 0), 0), 43.25);
+  assert.equal(allocations.reduce((sum, a) => sum + a.paid_usd, 0), 39, "historical paid transfers are preserved");
+});
+
 test("phone layout pairs small tiles, stacks the rest full width, and returns layouts in the order given", () => {
   const c = (xTrack: number, yTrack: number, xSpan: number, ySpan: number, min = 2) => ({ layout: { xTrack, yTrack, xSpan, ySpan }, minSize: { xSpan: min, ySpan: 4 } });
   const out = phoneLayout([c(12, 18, 12, 17), c(0, 0, 6, 8), c(6, 0, 6, 8), c(0, 8, 24, 10), c(12, 0, 6, 8, 20)], 24);
