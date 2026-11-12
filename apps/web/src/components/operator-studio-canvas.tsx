@@ -178,6 +178,8 @@ type Props = {
   assistant?: { baseUrl: string; token: string } | null;
   /** The operator's API base and credential, to load and save the dashboard layout. */
   account?: DashboardAccount | null;
+  /** The public demo (/operators/demo): fictional sample rows; the assistant and saving are off. */
+  demo?: boolean;
 };
 type Loaded = { state: DashboardState | null; version: number; saving: boolean };
 
@@ -205,7 +207,7 @@ const SAVE_TEXT: Record<SaveStatus, string> = {
   idle: "", saving: "Saving…", saved: "Saved", error: "Couldn't save", conflict: "Changed in another window", "too-large": "Too large to save",
 };
 
-function Dashboard({ rows, licenseKey, assistant, account, loaded }: Props & { loaded: Loaded }) {
+function Dashboard({ rows, licenseKey, assistant, account, demo, loaded }: Props & { loaded: Loaded }) {
   const { allocations, missingAmounts } = useMemo(() => studioAllocationData(rows), [rows]);
   const data = useMemo<AgDataSourcesDefinition<DashboardRegistry>>(() => ({
     sources: [{
@@ -338,7 +340,7 @@ function Dashboard({ rows, licenseKey, assistant, account, loaded }: Props & { l
       <div className="studio-dashboard-head">
         <div>
           <h3>Earnings dashboard</h3>
-          <p className="muted">From your loaded allocations only. Net allocated excludes reversals; paid shows confirmed transfers, which a ledger reversal does not recall. Payout activity shows historical recorded amounts.</p>
+          <p className="muted">{demo ? "Fictional sample allocations, not real earnings." : "From your loaded allocations only."} Net allocated excludes reversals; paid shows confirmed transfers, which a ledger reversal does not recall. Payout activity shows historical recorded amounts.</p>
         </div>
         <div className="studio-tools">
           {confirmReset ? (
@@ -350,6 +352,17 @@ function Dashboard({ rows, licenseKey, assistant, account, loaded }: Props & { l
           ) : (
             <button type="button" className="studio-link" ref={resetButton} onClick={() => setConfirmReset(true)}>Reset layout</button>
           )}
+          {demo && (
+            // The assistant runs Claude through the operator-only API with our server-side key, so the public demo
+            // shows the switch but cannot open it.
+            <span className="studio-demo-ai">
+              <span className="studio-mode" role="group" aria-label="Dashboard mode">
+                <button type="button" className="active" aria-pressed="true">Dashboard</button>
+                <button type="button" disabled aria-describedby="studio-demo-ai-note">Ask Claude</button>
+              </span>
+              <span id="studio-demo-ai-note" className="studio-demo-note">Ask Claude runs for signed-in operators (it uses our server-side Claude key).</span>
+            </span>
+          )}
           {ai && (
             <div className="studio-mode" role="group" aria-label="Dashboard mode">
               <button type="button" className={mode === "view" ? "active" : ""} aria-pressed={mode === "view"} onClick={() => setMode("view")}>Dashboard</button>
@@ -357,7 +370,7 @@ function Dashboard({ rows, licenseKey, assistant, account, loaded }: Props & { l
             </div>
           )}
           <span className={`studio-save ${saveStatus}`} role="status" aria-live="polite">
-            {autosaver ? SAVE_TEXT[saveStatus] : "Layout changes aren't saved"}
+            {autosaver ? SAVE_TEXT[saveStatus] : demo ? "Demo: layout changes stay in this tab and reset on reload" : "Layout changes aren't saved"}
             {saveStatus === "error" && autosaver && <button type="button" className="studio-link" onClick={() => void autosaver.retry()}>Retry</button>}
             {saveStatus === "conflict" && <button type="button" className="studio-link" onClick={() => window.location.reload()}>Reload</button>}
           </span>

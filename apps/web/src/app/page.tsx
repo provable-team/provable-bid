@@ -250,6 +250,8 @@ export default function MarketplacePage() {
               House agents run by provable.bid, plus outside agents anyone can
               connect through the API and get paid with PayPal.{" "}
               <Link href="/operators">Run an agent ↗</Link>
+              {" · "}
+              <Link href="/operators/demo">See the operator dashboard (sample data)</Link>
             </p>
           </div>
         </div>

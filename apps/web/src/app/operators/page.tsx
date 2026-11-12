@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createApiClient, type AgentCredential, type Allocation, type Operator } from "@provable/api-client";
 import { useApi } from "@/components/api-provider";
@@ -9,16 +10,7 @@ import { OperatorStudio } from "@/components/operator-studio";
 import { OperatorAssistant } from "@/components/operator-assistant";
 import { ApiError, unwrap, withRequestTimeout } from "@/lib/api";
 import { takeOperatorReturn } from "@/lib/operator-return";
-
-const LEDGER_COLUMNS = [
-  { field: "created", headerName: "Created", valueType: "date" as const },
-  { field: "agent", headerName: "Agent" },
-  { field: "competition", headerName: "Competition ID" },
-  { field: "payment", headerName: "Payment ID" },
-  { field: "amount", headerName: "Allocation", valueType: "currency" as const },
-  { field: "ledger", headerName: "Ledger status", valueType: "status" as const },
-  { field: "payout", headerName: "Payout status", valueType: "status" as const },
-];
+import { OPERATOR_LEDGER_COLUMNS, operatorLedgerRow, operatorStudioRow } from "@/lib/operator-ledger";
 
 /**
  * Agent operators: connect a PayPal account (Log in with PayPal), register agents, get their API tokens.
@@ -157,23 +149,8 @@ export default function OperatorsPage() {
   const agentNames = useMemo(() => new Map(operator?.agents.map(({ agent }) => [agent.id, agent.name]) ?? []), [operator]);
   const agentOf = useMemo(() => (allocation: Allocation) =>
     allocation.agent_shares.map((share) => agentNames.get(share.agent_id) ?? share.agent_id).join(", "), [agentNames]);
-  const ledgerRows = useMemo(() => allocations.map((allocation) => ({
-    id: allocation.id,
-    created: allocation.created_at,
-    agent: agentOf(allocation),
-    competition: allocation.competition_id,
-    payment: allocation.payment_id,
-    amount: allocation.amount.amount_minor,
-    ledger: allocation.ledger_state.replaceAll("_", " "),
-    payout: allocation.payout_state === "paid" ? "Paid (test)" : allocation.payout_state.replaceAll("_", " "),
-  })), [allocations, agentOf]);
-  const studioRows = useMemo(() => allocations.map((allocation) => ({
-    created_at: allocation.created_at,
-    agent: agentOf(allocation),
-    payout_state: allocation.payout_state,
-    ledger_state: allocation.ledger_state,
-    amount_minor: allocation.amount.amount_minor,
-  })), [allocations, agentOf]);
+  const ledgerRows = useMemo(() => allocations.map((allocation) => operatorLedgerRow(allocation, agentOf(allocation))), [allocations, agentOf]);
+  const studioRows = useMemo(() => allocations.map((allocation) => operatorStudioRow(allocation, agentOf(allocation))), [allocations, agentOf]);
   const assistant = useMemo(() => (token && config?.capabilities.studio_ai ? { baseUrl: settings.baseUrl, token } : null),
     [token, config?.capabilities.studio_ai, settings.baseUrl]);
   const dashboardAccount = useMemo(() => (token ? { baseUrl: settings.baseUrl, token } : null), [token, settings.baseUrl]);
@@ -203,6 +180,9 @@ export default function OperatorsPage() {
           </a>
           <p className="field-help">We receive only your PayPal account ID, name and email.</p>
           {config?.mode === "paypal_sandbox" && <p className="field-help">Use a PayPal sandbox personal account from developer.paypal.com. A real PayPal account cannot sign in here; payments use test money.</p>}
+          <p className="operator-demo-link">
+            <Link href="/operators/demo">See the earnings dashboard with sample data</Link>: fictional allocations, no sign-in needed.
+          </p>
         </section>
       ) : !operator ? (
         error ? <button className="button secondary small" onClick={signOut}>Sign out</button> : <div className="skeleton loading-block" />
@@ -261,7 +241,7 @@ export default function OperatorsPage() {
             ) : (
               <LedgerGrid
                 label="Operator allocations"
-                columns={LEDGER_COLUMNS}
+                columns={OPERATOR_LEDGER_COLUMNS}
                 rows={ledgerRows}
                 emptyMessage="No allocations yet. Allocations appear after a buyer's payment is confirmed."
               />
