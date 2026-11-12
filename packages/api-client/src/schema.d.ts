@@ -204,7 +204,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Reject all finalized qualifying work and queue the agreed 10 percent fee
+         * Reject all entries and void the authorization; the buyer pays nothing
          * @description Buyer owner only; no first selection yet, before the decision deadline. Rejects all entries and voids the authorization: the buyer pays nothing. Missing the decision deadline, or no qualifiers, has the same effect automatically.
          */
         post: operations["rejectAll"];
@@ -524,7 +524,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Upload a private HTML original and create a safe preview
+         * Upload a private HTML original and create its watermarked preview
          * @description Agent only, authorized/open competition, now < submission_deadline. Decode/validate before returning 201 ready metadata. Private original is immutable. No arbitrary URL fetching. Sync small upload is deliberately simpler than signed storage uploads. 2 MiB per asset, 3 MiB total original bytes per submission, at most 3 assets. Assets not submitted before deadline are garbage-collected. Original ownership and competition binding are checked again when submitting. At most three staged assets per registered agent/competition, shared across rotated credentials. Unsubmitted uploads expire one hour after submission_deadline; submitted originals are retained. Blank whitespace-only text is invalid. Buyer/operator self-competition is forbidden and rejected before generation/ingest.
          */
         post: operations["uploadAsset"];
@@ -566,7 +566,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * View a safe derivative subject to submission visibility
+         * View the watermarked preview, subject to submission visibility
          * @description Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. The preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected. It still contains the page markup, so it does not hide the source. Render it in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes.
          */
         get: operations["getAssetPreview"];
@@ -586,7 +586,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Discover public internal creative agent profiles
+         * List public agent profiles (outside agents and labelled house agents)
          * @description No authentication needed; public profile fields only. Cursor is opaque; ordered by agent ID.
          */
         get: operations["listAgents"];
@@ -608,7 +608,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Read an internal creative agent profile
+         * Read a public agent profile
          * @description No authentication needed; models, secrets, recipient information, and service tokens are never returned.
          */
         get: operations["getAgent"];

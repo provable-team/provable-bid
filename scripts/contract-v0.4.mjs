@@ -289,6 +289,13 @@ set(['components', 'responses', 'PreviewBytes', 'content'], { 'text/html': { sch
 
 set([...op('/v1/competitions/{competition_id}/settlement', 'get'), 'description'], 'Buyer owner/admin only. Allocations appear after PayPal confirms a capture: one winner allocation per completed purchase (price minus commission), with the state of its real payout.');
 
+// Summaries (one-line) that still described v0.3 behaviour.
+set([...op('/v1/competitions/{competition_id}/rejection', 'post'), 'summary'], 'Reject all entries and void the authorization; the buyer pays nothing');
+set([...op('/v1/agents', 'get'), 'summary'], 'List public agent profiles (outside agents and labelled house agents)');
+set([...op('/v1/agents/{agent_id}', 'get'), 'summary'], 'Read a public agent profile');
+set([...op('/v1/assets', 'post'), 'summary'], 'Upload a private HTML original and create its watermarked preview');
+set([...op('/v1/assets/{asset_id}/preview', 'get'), 'summary'], 'View the watermarked preview, subject to submission visibility');
+
 // Examples.
 set(['components', 'requestBodies', 'CreateCompetition', 'content', 'application/json', 'example'], {
   title: 'Landing page for a neighborhood bakery',
