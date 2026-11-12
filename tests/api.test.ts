@@ -259,6 +259,50 @@ test('an unknown capture outcome is retried with the same request ID and capture
   assert.equal(f.fake.controls.calls.filter(x => x.op === 'captureAuthorization').length, 1);
 });
 
+test('exhausted unknown capture responses stay unknown without voiding; a canonical webhook settles once', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer(); const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const { c } = await f.open(b);
+  const s = await f.enter(ann.token, c.id); await f.settle();
+  const capture = f.fake.provider.captureAuthorization;
+  const requestIds: string[] = [];
+  f.fake.provider.captureAuthorization = async (...args) => {
+    requestIds.push(args[2]);
+    await capture(...args); // PayPal captures once and replays its result, but every response is lost.
+    throw new ProviderError('capture response lost', 'unknown');
+  };
+  const pick = await f.post(`/v1/competitions/${c.id}/selection`, { submission_id: s.id }, b);
+  await f.settle();
+  for (let i = 1; i < 12; i++) await f.advance(65);
+  const pay = (await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data;
+  assert.deepEqual([pay.capture_state, pay.operation_state, pay.last_error_code],
+    ['pending', 'unknown', 'CAPTURE_OUTCOME_REQUIRES_RECONCILIATION']);
+  assert.equal(pay.authorization_state, 'authorized', 'a timeout is not proof that the authorization can be voided');
+  const journal = f.store.collection<any>('operation');
+  const op = [...journal.values()].find(x => x.kind === 'capture_authorization');
+  assert.deepEqual([op.state, op.attempts, op.next_at], ['unknown', 12, Number.MAX_SAFE_INTEGER]);
+  assert.equal(requestIds.length, 12); assert.equal(new Set(requestIds).size, 1);
+  assert.equal(f.fake.captures.size, 1, 'only one actual capture at PayPal');
+  assert.equal([...journal.values()].some(x => x.kind === 'void'), false, 'no void is queued for a possibly captured payment');
+  assert.equal((await f.get(`/v1/purchases/${pick.data.id}`, b)).data.status, 'payment_pending');
+  assert.equal((await f.post(`/v1/purchases/${pick.data.id}/delivery-access`, undefined, b)).data.code, 'DELIVERY_LOCKED');
+  await f.advance(3600);
+  assert.equal(requestIds.length, 12, 'automatic mutation retries stop at the cap');
+
+  const captureId = [...f.fake.captures.keys()][0];
+  const event = { id: 'WH-CAPTURE-RECOVERED', event_type: 'PAYMENT.CAPTURE.COMPLETED', resource: {
+    id: captureId, supplementary_data: { related_ids: { order_id: pay.provider_order_id } },
+  } };
+  await f.hook(event); await f.settle(); await f.advance(10);
+  const recovered = (await f.get(`/v1/payments/${pay.id}`, b)).data;
+  assert.deepEqual([recovered.capture_state, recovered.operation_state, recovered.last_error_code], ['completed', 'succeeded', null]);
+  assert.equal(f.store.collection<any>('operation').get(op.id).state, 'succeeded', 'the canonical result also settles the exhausted journal entry');
+  assert.equal((await f.post(`/v1/purchases/${pick.data.id}/delivery-access`, undefined, b)).status, 201);
+  await f.hook(event); await f.settle();
+  assert.equal(f.fake.controls.calls.filter(x => x.op === 'sendPayout').length, 1, 'one payout after canonical confirmation');
+  assert.equal(f.fake.controls.calls.filter(x => x.op === 'voidAuthorization').length, 0);
+});
+
 test('reject all, no qualifiers, and a missed decision deadline each void the hold: the buyer pays nothing', async t => {
   const f = await fixture(t);
   const b = await f.buyer(); const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
