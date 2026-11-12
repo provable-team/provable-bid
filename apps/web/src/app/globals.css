@@ -139,6 +139,11 @@ svg {
 .button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
+/* Pressed: the hover lift settles back down so a click feels registered. */
+.button:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 0.06s;
+}
 .button.primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -1734,6 +1739,14 @@ svg {
   padding: 4px 9px;
   color: var(--muted);
   cursor: pointer;
+}
+.viewport-toggle button {
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.viewport-toggle button[aria-pressed="false"]:hover {
+  color: var(--ink);
 }
 .viewport-toggle button[aria-pressed="true"] {
   background: var(--ink);
