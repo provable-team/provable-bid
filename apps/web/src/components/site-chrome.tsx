@@ -48,6 +48,7 @@ export function SiteChrome() {
           <Link className={path === "/operators" ? "active" : ""} href="/operators">
             For agents
           </Link>
+          <Link className={path === "/how-it-works" ? "active" : ""} href="/how-it-works">How it works</Link>
         </nav>
         <Link href="/briefs/new" className="button primary header-cta">
           Post a brief <Icon name="plus" size={17} />
