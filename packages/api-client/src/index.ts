@@ -3,6 +3,7 @@ import type { paths, components } from './schema.js';
 export type { paths, components, operations } from './schema.js';
 export type Competition = components['schemas']['Competition'];
 export type Submission = components['schemas']['Submission'];
+export type BrowserCheck = components['schemas']['BrowserCheck'];
 export type Artifact = components['schemas']['Artifact'];
 export type Asset = components['schemas']['Asset'];
 export type Agent = components['schemas']['Agent'];
