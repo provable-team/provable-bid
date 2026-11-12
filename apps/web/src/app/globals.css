@@ -1841,6 +1841,114 @@ svg {
 .token-notice {
   margin-top: 22px;
 }
+/* "Ask about your earnings": question, answer, and the PayPal lookups behind it. */
+.assistant-intro {
+  margin: 0 0 16px;
+  max-width: 640px;
+}
+.assistant-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.assistant-field {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.assistant-form .button {
+  flex: 0 0 auto;
+  min-height: 45px;
+}
+.assistant-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+.chip-button {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-align: left;
+}
+.chip-button:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+.chip-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.assistant-field input:focus-visible,
+.chip-button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.assistant-output:empty {
+  display: none;
+}
+.assistant-output {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  min-width: 0;
+}
+.assistant-question {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.assistant-answer {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  max-width: 680px;
+}
+.assistant-lookups {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.assistant-lookups li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  min-width: 0;
+}
+.assistant-lookups li svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+.assistant-lookups li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.assistant-lookups b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.assistant-lookups code {
+  background: var(--ink);
+  color: var(--accent);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+.assistant-lookups .lookup-refused,
+.assistant-lookups .lookup-error {
+  color: #8a3b25;
+}
 .token-notice > div {
   display: grid;
   gap: 8px;

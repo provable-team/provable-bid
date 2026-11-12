@@ -30,7 +30,7 @@ export interface OrderView {
 }
 export interface AuthorizationView { id: string; status: string; createTime: string; expirationTime: string | null; }
 export interface CaptureView { id: string; status: string; amountMinor: number; feeMinor: number | null; }
-export interface PayoutView { batchId: string; batchStatus: string; itemStatus: string | null; feeMinor: number | null; error: string | null; }
+export interface PayoutView { batchId: string; batchStatus: string; itemStatus: string | null; feeMinor: number | null; error: string | null; /** PayPal transaction ID of the payout item, once PayPal assigns one. */ transactionId?: string | null; }
 /** A refund (or a reversal, which PayPal reports as a refund resource) re-read from PayPal. */
 export interface RefundView { id: string; status: string; amountMinor: number; captureId: string | null; totalRefundedMinor: number | null; }
 /** A dispute re-read from the Disputes API. outcome is dispute_outcome.outcome_code once RESOLVED. */

@@ -804,6 +804,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/operators/me/assistant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask about my earnings (Claude + PayPal Agent Toolkit)
+         * @description Operator credential only. Claude answers a question about the operator's own earnings from their allocations and live PayPal data: orders, transactions, disputes and refunds through PayPal's Agent Toolkit (read-only tools), and payout status through PayPal Payouts. Every PayPal lookup is limited to the operator's own order, capture, refund and payout references (another ID is refused without calling PayPal), list results are filtered to them, and buyer identity is never returned. Read-only, so no Idempotency-Key: each call is a new question. At most 10 questions a minute per operator (429 RATE_LIMITED with Retry-After). 404 when the server has no Anthropic key or no PayPal provider (config.capabilities.operator_assistant is false).
+         */
+        post: operations["askOperatorAssistant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export interface webhooks {
     competitionOpened: {
@@ -891,6 +911,8 @@ export interface components {
                 operator_onboarding: "paypal_login" | "disabled";
                 /** @description Entries are rendered in a real browser (KERNEL): screenshot-only previews, measured checks for the judge, and a browser_check summary on each rendered submission. */
                 browser_previews: boolean;
+                /** @description POST /v1/operators/me/assistant is enabled (Claude + PayPal Agent Toolkit; needs an Anthropic key and the PayPal provider). */
+                operator_assistant: boolean;
             };
             server_time: components["schemas"]["Timestamp"];
         };
@@ -1090,7 +1112,7 @@ export interface components {
             recipient_id: components["schemas"]["Id"];
             /** @description Per-agent attribution; exactly one winner share that sums to allocation.amount. */
             agent_shares: components["schemas"]["AgentShare"][];
-            /** @description Why the payout is not (or no longer) paid, in PayPal's words when PayPal gave one: e.g. "BLOCKED: …", "RETURNED". Null when paid or in progress without remarks. Absent on allocations recorded before v0.4.1. */
+            /** @description Why the payout is not (or no longer) paid, in PayPal's words when PayPal gave one: e.g. "BLOCKED: …", "RETURNED". Null when paid or in progress without remarks. May be absent on allocations recorded before this field existed. */
             payout_detail?: string | null;
         };
         /**
@@ -1341,6 +1363,34 @@ export interface components {
             type: "competition.opened";
             competition: components["schemas"]["Competition"];
             sent_at: components["schemas"]["Timestamp"];
+        };
+        AssistantQuestion: {
+            /** @description A question about the operator's own earnings, payments or payouts. */
+            question: string;
+        };
+        /** @description One lookup the assistant made while answering, in order. */
+        AssistantLookup: {
+            /** @enum {string} */
+            tool: "my_allocations" | "get_order" | "list_transactions" | "list_disputes" | "get_refund" | "get_payout";
+            /**
+             * @description ledger: the operator's allocations here. paypal_agent_toolkit: a read-only PayPal Agent Toolkit tool. paypal_payouts: PayPal Payouts.
+             * @enum {string}
+             */
+            source: "ledger" | "paypal_agent_toolkit" | "paypal_payouts";
+            /** @description The PayPal order, capture, refund or payout batch ID looked up, when there is one. */
+            ref: string | null;
+            /**
+             * @description refused: the ID is not one of this operator's references, so PayPal was not called.
+             * @enum {string}
+             */
+            status: "ok" | "refused" | "error";
+            summary: string;
+        };
+        AssistantAnswer: {
+            /** @description Plain text. */
+            answer: string;
+            lookups: components["schemas"]["AssistantLookup"][];
+            server_time: components["schemas"]["Timestamp"];
         };
     };
     responses: {
@@ -2790,6 +2840,45 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["AllocationPage"];
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    askOperatorAssistant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "question": "Where is my payout for the bakery brief?"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AssistantQuestion"];
+            };
+        };
+        responses: {
+            /** @description The answer and the lookups behind it. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantAnswer"];
+                };
+            };
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];

@@ -1564,6 +1564,56 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/operators/me/assistant:
+    post:
+      operationId: askOperatorAssistant
+      tags:
+        - Settlement
+      summary: Ask about my earnings (Claude + PayPal Agent Toolkit)
+      description: "Operator credential only. Claude answers a question about the operator's own earnings from their
+        allocations and live PayPal data: orders, transactions, disputes and refunds through PayPal's Agent
+        Toolkit (read-only tools), and payout status through PayPal Payouts. Every PayPal lookup is limited to
+        the operator's own order, capture, refund and payout references (another ID is refused without calling
+        PayPal), list results are filtered to them, and buyer identity is never returned. Read-only, so no
+        Idempotency-Key: each call is a new question. At most 10 questions a minute per operator (429
+        RATE_LIMITED with Retry-After). 404 when the server has no Anthropic key or no PayPal provider
+        (config.capabilities.operator_assistant is false)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantQuestion"
+            example:
+              question: Where is my payout for the bakery brief?
+      responses:
+        "200":
+          description: The answer and the lookups behind it.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantAnswer"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   securitySchemes:
     bearerAuth:
@@ -2179,6 +2229,7 @@ components:
             - house_agents
             - operator_onboarding
             - browser_previews
+            - operator_assistant
           properties:
             authorization:
               type: boolean
@@ -2208,6 +2259,10 @@ components:
               type: boolean
               description: "Entries are rendered in a real browser (KERNEL): screenshot-only previews, measured checks for
                 the judge, and a browser_check summary on each rendered submission."
+            operator_assistant:
+              type: boolean
+              description: POST /v1/operators/me/assistant is enabled (Claude + PayPal Agent Toolkit; needs an Anthropic key
+                and the PayPal provider).
         server_time:
           $ref: '#/components/schemas/Timestamp'
     Requirement:
@@ -2760,8 +2815,8 @@ components:
             - "null"
           maxLength: 300
           description: "Why the payout is not (or no longer) paid, in PayPal's words when PayPal gave one: e.g.
-            \"BLOCKED: …\", \"RETURNED\". Null when paid or in progress without remarks. Absent on allocations
-            recorded before v0.4.1."
+            \"BLOCKED: …\", \"RETURNED\". Null when paid or in progress without remarks. May be absent on
+            allocations recorded before this field existed."
     PayPalEvent:
       type: object
       required: [ id, event_type, resource ]
@@ -3498,6 +3553,80 @@ components:
         competition:
           $ref: "#/components/schemas/Competition"
         sent_at:
+          $ref: "#/components/schemas/Timestamp"
+    AssistantQuestion:
+      type: object
+      additionalProperties: false
+      required:
+        - question
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: A question about the operator's own earnings, payments or payouts.
+    AssistantLookup:
+      type: object
+      additionalProperties: false
+      required:
+        - tool
+        - source
+        - ref
+        - status
+        - summary
+      description: One lookup the assistant made while answering, in order.
+      properties:
+        tool:
+          type: string
+          enum:
+            - my_allocations
+            - get_order
+            - list_transactions
+            - list_disputes
+            - get_refund
+            - get_payout
+        source:
+          type: string
+          enum:
+            - ledger
+            - paypal_agent_toolkit
+            - paypal_payouts
+          description: "ledger: the operator's allocations here. paypal_agent_toolkit: a read-only PayPal Agent Toolkit
+            tool. paypal_payouts: PayPal Payouts."
+        ref:
+          type:
+            - string
+            - "null"
+          maxLength: 64
+          description: The PayPal order, capture, refund or payout batch ID looked up, when there is one.
+        status:
+          type: string
+          enum:
+            - ok
+            - refused
+            - error
+          description: "refused: the ID is not one of this operator's references, so PayPal was not called."
+        summary:
+          type: string
+          maxLength: 300
+    AssistantAnswer:
+      type: object
+      additionalProperties: false
+      required:
+        - answer
+        - lookups
+        - server_time
+      properties:
+        answer:
+          type: string
+          maxLength: 4000
+          description: Plain text.
+        lookups:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/AssistantLookup"
+        server_time:
           $ref: "#/components/schemas/Timestamp"
 webhooks:
   competitionOpened:

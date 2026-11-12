@@ -263,6 +263,7 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
         batchId, batchStatus: r.batch_header?.batch_status ?? 'UNKNOWN', itemStatus: item?.transaction_status ?? null,
         feeMinor: item?.payout_item_fee?.value ? toMinor(item.payout_item_fee.value) : null,
         error: item?.errors ? `${item.errors.name}: ${item.errors.message}` : null,
+        transactionId: item?.transaction_id ?? null,
       };
     },
 

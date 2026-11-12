@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createApi } from './app.js';
+import { claudeOperatorAssistant, paypalAgentToolkit } from './assistant.js';
 import { kernelRenderer } from './browser.js';
 import { claudeEvaluator, claudeHouseAgent, heuristicEvaluator } from './claude.js';
 import { HOUSE_AGENTS } from './identity.js';
@@ -10,7 +11,7 @@ import { PgStore, Store, type DocStore } from './store.js';
 // Configuration (all optional for local dev with the fake provider):
 //   PAYMENTS=paypal|fake          real PayPal sandbox or the in-memory fake (default: paypal if keys are set)
 //   PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET / PAYPAL_WEBHOOK_ID
-//   ANTHROPIC_API_KEY             enables the AI judge and the house agents (Claude)
+//   ANTHROPIC_API_KEY             enables the AI judge, the house agents and (with PayPal) the operator assistant (Claude)
 //   KERNEL_API_KEY                renders every entry in a KERNEL cloud browser: screenshot-only previews + measured checks
 //   KERNEL_REPLAYS=1              also records a video replay of each check (headful browser, ~8x the cost of headless);
 //                                 buyers get the link while KERNEL keeps it (KERNEL_REPLAY_HOURS, default 20; Developer plan: 1 day)
@@ -35,6 +36,11 @@ const provider = usePayPal
   : fakeProvider({ webOrigin, autoApprove: true }).provider;
 const anthropic = env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 const aiLabel = anthropic ? 'claude' : 'off (heuristic judge, no house agents)';
+// "Ask about my earnings": Claude + PayPal's Agent Toolkit (read-only tools, scoped to each operator). Needs both keys.
+const operatorAssistant = anthropic && usePayPal
+  ? claudeOperatorAssistant({ client: anthropic, toolkit: paypalAgentToolkit({ clientId: clientId!, clientSecret: env.PAYPAL_CLIENT_SECRET!, sandbox: true }), provider,
+      log: (m, x) => console.log(`[assistant] ${m}`, x ?? '') })
+  : null;
 const store: DocStore = env.DATABASE_URL
   ? await PgStore.open(env.DATABASE_URL, env.DATABASE_URL_UNPOOLED, {
       holder: `${env.RENDER_INSTANCE_ID ?? 'local'}:${process.pid}`,
@@ -54,6 +60,7 @@ const api = await createApi({
     : null,
   houseAgents: anthropic ? Object.fromEntries(HOUSE_AGENTS.map(h => [h.id, claudeHouseAgent(anthropic, h)])) : null,
   strictResponses: env.NODE_ENV !== 'production',
+  operatorAssistant,
 });
 
 // Deadlines, evaluations and PayPal operations: every 2s while the process is awake.
@@ -65,4 +72,4 @@ const pinger = keepAlive.length
 pinger?.unref();
 api.app.addHook('onClose', async () => { clearInterval(timer); if (pinger) clearInterval(pinger); await store.close(); });
 await api.app.listen({ host, port });
-console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? `kernel${env.KERNEL_REPLAYS === '1' ? ' + replays' : ''}` : 'off (HTML previews)'} · store: ${env.DATABASE_URL ? 'postgres' : 'sqlite'} · web: ${webOrigin}`);
+console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? `kernel${env.KERNEL_REPLAYS === '1' ? ' + replays' : ''}` : 'off (HTML previews)'} · operator assistant: ${operatorAssistant ? 'on' : 'off'} · store: ${env.DATABASE_URL ? 'postgres' : 'sqlite'} · web: ${webOrigin}`);

@@ -15,6 +15,8 @@ export type Allocation = components['schemas']['Allocation'];
 export type Payment = components['schemas']['Payment'];
 export type Purchase = components['schemas']['Purchase'];
 export type Problem = components['schemas']['Problem'];
+export type AssistantAnswer = components['schemas']['AssistantAnswer'];
+export type AssistantLookup = components['schemas']['AssistantLookup'];
 
 /** Generated path/operation/body/response types with the openapi-fetch typed transport.
  * Callers own logical Idempotency-Key creation and must reuse it across retries.
