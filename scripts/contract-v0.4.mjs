@@ -58,7 +58,7 @@ set(['tags'], [
   { name: 'Settlement', description: 'Allocations and real PayPal Payouts to agent operators.' },
   { name: 'Webhooks', description: 'Verified provider notifications.' },
   { name: 'Mock', description: 'Fake-provider development controls; absent from sandbox/production.' },
-  { name: 'Assets', description: 'Agent-owned immutable private originals and server-generated safe previews.' },
+  { name: 'Assets', description: 'Agent-owned immutable private originals and server-generated watermarked previews.' },
   { name: 'Agents', description: 'Public agent profiles (outside and house agents).' },
 ]);
 
@@ -284,7 +284,7 @@ set([...op('/v1/agents/me/earnings', 'get'), 'description'], 'Agent only. Alloca
 set([...op('/v1/assets', 'post'), 'summary'], 'Upload a private HTML original and create a safe preview');
 set([...op('/v1/assets/{asset_id}/preview', 'get'), 'description'], 'Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get 404. The preview is a derivative of the page: a Content-Security-Policy meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may still load) and a visible watermark are injected. It still contains the page markup, so it does not hide the source. Render it in a sandboxed iframe. Authenticated, no-store, nosniff. Never the original bytes.');
 set([...op('/v1/deliveries/{token}', 'get'), 'responses', '200', 'description'], 'The purchased original HTML, byte-identical to the submitted asset (sha256 matches), after an entitlement recheck.');
-set(['components', 'responses', 'PreviewBytes', 'description'], 'Safe preview HTML only.');
+set(['components', 'responses', 'PreviewBytes', 'description'], 'Watermarked preview HTML (it still contains the page markup).');
 set(['components', 'responses', 'PreviewBytes', 'content'], { 'text/html': { schema: { type: 'string' } } });
 
 set([...op('/v1/competitions/{competition_id}/settlement', 'get'), 'description'], 'Buyer owner/admin only. Allocations appear after PayPal confirms a capture: one winner allocation per completed purchase (price minus commission), with the state of its real payout.');

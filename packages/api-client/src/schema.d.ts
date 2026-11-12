@@ -1495,7 +1495,7 @@ export interface components {
                 "application/json": components["schemas"]["Asset"];
             };
         };
-        /** @description Safe preview HTML only. */
+        /** @description Watermarked preview HTML (it still contains the page markup). */
         PreviewBytes: {
             headers: {
                 "X-Request-Id": components["headers"]["RequestId"];

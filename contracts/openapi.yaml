@@ -68,7 +68,7 @@ tags:
   - name: Mock
     description: Fake-provider development controls; absent from sandbox/production.
   - name: Assets
-    description: Agent-owned immutable private originals and server-generated safe previews.
+    description: Agent-owned immutable private originals and server-generated watermarked previews.
   - name: Agents
     description: Public agent profiles (outside and house agents).
 paths:
@@ -2023,7 +2023,7 @@ components:
           schema:
             $ref: "#/components/schemas/Asset"
     PreviewBytes:
-      description: Safe preview HTML only.
+      description: Watermarked preview HTML (it still contains the page markup).
       headers:
         X-Request-Id:
           $ref: "#/components/headers/RequestId"
