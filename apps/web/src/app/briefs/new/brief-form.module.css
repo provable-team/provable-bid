@@ -426,3 +426,11 @@
     padding: 23px;
   }
 }
+@media (max-width: 600px) {
+  /* iOS Safari zooms the page when a focused field is under 16px. */
+  .section :global(.field) input,
+  .section :global(.field) textarea,
+  .section :global(.field) select {
+    font-size: 16px;
+  }
+}
