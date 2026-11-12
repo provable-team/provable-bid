@@ -16,9 +16,13 @@ export function studioAllocationData(rows: OperatorStudioRow[]) {
     if (!validAmount) missingAmounts++;
     const usd = validAmount ? (row.amount_minor as number) / 100 : null;
     const state = typeof row.payout_state === "string" && row.payout_state.trim() ? row.payout_state : "unknown";
+    // Reversing an obligation does not recall an already-paid transfer. Keep the original amount and payment
+    // history separate from current allocations and outstanding obligations.
+    const net = row.ledger_state === "reversed" ? 0 : usd;
+    const paid = state === "paid" || state === "simulated";
     const created = typeof row.created_at === "string" ? new Date(row.created_at) : null;
     const createdAt = created && !Number.isNaN(created.getTime()) ? created : null;
-    running += usd ?? 0;
+    running += net ?? 0;
     return {
       created_at: createdAt,
       created_on: createdAt ? new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate()) : null,
@@ -26,8 +30,10 @@ export function studioAllocationData(rows: OperatorStudioRow[]) {
       payout_state: state,
       ledger_state: typeof row.ledger_state === "string" ? row.ledger_state : "unknown",
       allocation_usd: usd,
+      net_allocated_usd: net,
+      outstanding_usd: paid ? 0 : net,
       // Only what PayPal reported as paid (or the fake provider recorded as simulated); never pending or queued money.
-      paid_usd: usd !== null && (state === "paid" || state === "simulated") ? usd : 0,
+      paid_usd: usd !== null && paid ? usd : 0,
       cumulative_usd: Math.round(running * 100) / 100,
       allocation_count: 1,
     };
