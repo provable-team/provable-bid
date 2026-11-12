@@ -1,0 +1,61 @@
+{
+  "note": "Fictional briefs written for the provable.bid examples gallery. No buyer, competition, purchase or payout exists for any of them.",
+  "briefs": [
+    {
+      "slug": "spoke-and-chain-fix-it-poster",
+      "fictional": true,
+      "kind": "poster",
+      "print": { "label": "A3 portrait", "width_mm": 297, "height_mm": 420, "pages": 1 },
+      "title": "A3 poster: Spoke & Chain Saturday Fix-It Clinic",
+      "brief": "Design an A3 portrait poster (297 x 420 mm) for the Spoke & Chain Saturday Fix-It Clinic, run by Spoke & Chain, a neighborhood bike repair shop. The clinic offers free safety checks on Saturdays from 10am to 2pm at 12 Mill Lane. Those are the only facts: do not add attendance numbers, prices, dates, sponsors or other figures.\n\nDeliver the poster as one self-contained HTML document (inline CSS and inline SVG only). On screen, show the poster as a fluid layout that fits a phone and a desktop without sideways scrolling. For print, add an @media print block with @page { size: A3 portrait; margin: 0 } (297 x 420 mm) so it prints as exactly one A3 page with the artwork filling the page and nothing else printed.",
+      "requirements": [
+        { "id": "req_headline", "description": "A clear, prominent headline naming the Spoke & Chain Saturday Fix-It Clinic." },
+        { "id": "req_offer_time", "description": "States that safety checks are free and that the clinic runs Saturday 10am to 2pm." },
+        { "id": "req_address", "description": "Shows the address line \"12 Mill Lane\"." },
+        { "id": "req_no_invented", "description": "Contains no invented attendance numbers, statistics, prices or other facts beyond the brief." }
+      ]
+    },
+    {
+      "slug": "riverside-night-market-poster",
+      "fictional": true,
+      "kind": "poster",
+      "print": { "label": "A3 portrait", "width_mm": 297, "height_mm": 420, "pages": 1 },
+      "title": "A3 poster: Riverside Night Market",
+      "brief": "Design an A3 portrait poster (297 x 420 mm) for the Riverside Night Market, held on Fridays from 6pm to 11pm in June. Entry is free. The poster needs a QR-code-like placeholder box labelled \"Scan for vendors\" (a drawn placeholder, not a real or fake scannable code). The number of stalls, vendor names and any other figures are not given, so do not state any numbers beyond the times and month in this brief.\n\nDeliver the poster as one self-contained HTML document (inline CSS and inline SVG only). On screen, show the poster as a fluid layout that fits a phone and a desktop without sideways scrolling. For print, add an @media print block with @page { size: A3 portrait; margin: 0 } (297 x 420 mm) so it prints as exactly one A3 page with the artwork filling the page and nothing else printed.",
+      "requirements": [
+        { "id": "req_headline_when", "description": "Names the Riverside Night Market prominently and states Fridays, 6pm to 11pm, in June." },
+        { "id": "req_free_entry", "description": "Includes the words \"Free entry\"." },
+        { "id": "req_qr_placeholder", "description": "Has a QR-code-like placeholder box labelled \"Scan for vendors\"." },
+        { "id": "req_no_numbers", "description": "States no numbers or facts beyond the brief (no stall counts, vendor names, prices or attendance figures)." }
+      ]
+    },
+    {
+      "slug": "maya-okafor-business-card",
+      "fictional": true,
+      "kind": "business-card",
+      "print": { "label": "US business card 3.5 x 2 in, front + back", "width_mm": 88.9, "height_mm": 50.8, "pages": 2 },
+      "title": "Business card: Maya Okafor, Product Designer",
+      "brief": "Design a two-sided US business card (3.5 x 2 in) for Maya Okafor, Product Designer. Front: her name and title. Back: her contact details, email maya@example.com and website example.com/maya. Those are the only facts: do not add a phone number, address, company, social handles or anything else.\n\nDeliver both sides as one self-contained HTML document (inline CSS and inline SVG only). On screen, show the front and the back as cards that scale fluidly to fit a phone and a desktop without sideways scrolling; you may add a short screen-only note beside the cards (not on them) stating the trim size and how to print. For print, add an @media print block with @page { size: 3.5in 2in; margin: 0 } so it prints as exactly two pages, page 1 the front and page 2 the back, each filling its page, with any screen-only notes hidden.",
+      "requirements": [
+        { "id": "req_front", "description": "The front of the card shows the name \"Maya Okafor\" and the title \"Product Designer\"." },
+        { "id": "req_back", "description": "The back of the card shows the email maya@example.com and the website example.com/maya." },
+        { "id": "req_two_sides", "description": "Presents the card as two distinct sides, a front and a back." },
+        { "id": "req_no_invented", "description": "Contains no invented contact details or facts: no phone number, address, company or social handles." }
+      ]
+    },
+    {
+      "slug": "crumb-and-co-business-card",
+      "fictional": true,
+      "kind": "business-card",
+      "print": { "label": "US business card 3.5 x 2 in, front + back", "width_mm": 88.9, "height_mm": 50.8, "pages": 2 },
+      "title": "Business card: Crumb & Co. Bakery",
+      "brief": "Design a two-sided US business card (3.5 x 2 in) for Crumb & Co. Bakery. It is open Tuesday to Sunday, 7am to 3pm, and takes preorders at crumbandco.example. Those are the only facts: do not add reviews, ratings, awards, a phone number, an address or anything else.\n\nDeliver both sides as one self-contained HTML document (inline CSS and inline SVG only). On screen, show the front and the back as cards that scale fluidly to fit a phone and a desktop without sideways scrolling; you may add a short screen-only note beside the cards (not on them) stating the trim size and how to print. For print, add an @media print block with @page { size: 3.5in 2in; margin: 0 } so it prints as exactly two pages, page 1 the front and page 2 the back, each filling its page, with any screen-only notes hidden.",
+      "requirements": [
+        { "id": "req_name", "description": "Shows the bakery name \"Crumb & Co. Bakery\" on the card." },
+        { "id": "req_hours", "description": "States the hours: Tuesday to Sunday (Tue-Sun), 7am to 3pm." },
+        { "id": "req_preorders", "description": "Includes \"Preorders at crumbandco.example\"." },
+        { "id": "req_no_reviews", "description": "Contains no invented reviews, ratings, awards or other facts beyond the brief, and presents a front and a back side." }
+      ]
+    }
+  ]
+}
