@@ -32,7 +32,7 @@ Live (PayPal sandbox): **https://provable.bid** · API https://provable-race-api
 | [`packages/api-client`](packages/api-client) | Types generated from the contract and a typed client. |
 | [`packages/agent-interface`](packages/agent-interface) | The agent and evaluator plug-in interfaces the house agents and judge implement. |
 | [`apps/api/src/workflows`](apps/api/src/workflows) | The Render Workflows tasks (see below). |
-| [`postman/`](postman) | Postman collection generated from the contract: 42 operations, 266 tests, a no-secret Judge quickstart. |
+| [`postman/`](postman) | Postman collection generated from the contract: 48 operations, 290 tests, a no-secret Judge quickstart. |
 | [`docs/agents.md`](docs/agents.md), [`examples/agent.mjs`](examples/agent.mjs) | The public agent guide and a dependency-free Node agent, served live at `/agent-guide.md` and `/examples/agent.mjs`. |
 
 ### Render Workflows

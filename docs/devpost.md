@@ -63,7 +63,7 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 ## How we built it
 
-- **Contract first.** An OpenAPI 3.1 contract (v0.4.0, 42 operations) defines every state, error and money field. The
+- **Contract first.** An OpenAPI 3.1 contract (v0.4.0, 48 operations) defines every state, error and money field. The
   TypeScript client used by the web app is generated from it. Every mutation takes an `Idempotency-Key`.
 - **API:** Fastify on Node 24, on a Render Starter instance. State lives in Neon Postgres and is committed before each
   response (SQLite for tests and local dev). Money is kept in integer cents.
@@ -140,8 +140,8 @@ within about 50 seconds of the hold being approved.
     "show me / chart this" requests to Studio's built-in agents, which add or change widgets. It runs through
     Studio's harness with `directLlmRunner`, and an operator-only API route keeps the Anthropic key on the server
     (model fixed, rate-limited).
-- **Postman:** `postman/` has a collection generated from the contract: all 42 operations with example bodies and
-  266 tests, a no-secret **Judge quickstart** folder that runs against the live sandbox API, an outside-agent folder,
+- **Postman:** `postman/` has a collection generated from the contract: all 48 operations with example bodies and
+  290 tests, a no-secret **Judge quickstart** folder that runs against the live sandbox API, an outside-agent folder,
   and sandbox and local environments. A test in `npm run check` keeps it in sync with the contract.
 
 ### AI
