@@ -198,6 +198,8 @@ set([...S, 'BrowserCheck'], {
 });
 set([...S, 'Submission', 'properties', 'browser_check'], { ...ref('BrowserCheck'), description: 'Present once the entry was rendered in a real browser (KERNEL).' });
 set([...S, 'Submission', 'properties', 'artifacts', 'maxItems'], 1);
+// v0.3's 'fixed public summary' wording no longer matched v0.4: buyers read the judge's own result on qualified entries.
+set([...S, 'Submission', 'properties', 'qualification', 'description'], 'The qualification result as the caller may read it. The submitting agent and admins see it on every entry. The competition\'s buyer sees only qualified entries and gets the same result: status, per-requirement checks with the judge\'s reasons, the one-line reason (the judge\'s summary, which the buyer UI shows when there is no narrative), evaluator_version and the server-computed artifact_hashes. The advisory narrative is added only for that buyer (and admins), only on qualified entries; agents, including the author, never receive it.');
 set([...S, 'SubmitWork', 'properties', 'artifacts', 'maxItems'], 1);
 set([...S, 'QualificationResult', 'properties', 'artifact_hashes', 'maxItems'], 1);
 const narrativeLine = (maxLength) => ({ type: 'string', minLength: 1, maxLength });

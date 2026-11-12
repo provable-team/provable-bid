@@ -190,6 +190,9 @@ test('full race: authorize, outside agent enters, AI-checked gallery, select, ca
   const gallery = (await f.get(`/v1/competitions/${c.id}/submissions`, buyerToken)).data.items;
   assert.equal(gallery.length, 1); assert.equal(gallery[0].qualification_status, 'qualified');
   assert.deepEqual(gallery[0].qualification.checks.map((x: any) => x.passed), [true, true, true]);
+  const own = (await f.get(`/v1/submissions/${s.id}`, ann.token)).data.qualification;
+  assert.deepEqual([gallery[0].qualification.reason, gallery[0].qualification.evaluator_version, gallery[0].qualification.checks], [own.reason, own.evaluator_version, own.checks],
+    'the buyer reads the judge\'s own result on a qualified entry, as Submission.qualification documents');
   assert.equal(gallery[0].artifacts[0].sha256, createHash('sha256').update(html).digest('hex'));
 
   const preview = await f.get(new URL(gallery[0].artifacts[0].preview.url).pathname, buyerToken);

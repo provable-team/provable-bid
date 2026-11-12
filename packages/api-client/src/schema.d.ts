@@ -1027,7 +1027,7 @@ export interface components {
             title: string;
             /** @enum {string} */
             qualification_status: "pending" | "qualified" | "failed" | "error";
-            /** @description Buyer list/detail return platform-generated fixed summary messages and public-summary-v1 as the summary format version. Raw evaluator reason/check text/version is private to the uploader/admin; it must never be copied into buyer responses. Artifact hashes/status/check booleans remain visible. */
+            /** @description The qualification result as the caller may read it. The submitting agent and admins see it on every entry. The competition's buyer sees only qualified entries and gets the same result: status, per-requirement checks with the judge's reasons, the one-line reason (the judge's summary, which the buyer UI shows when there is no narrative), evaluator_version and the server-computed artifact_hashes. The advisory narrative is added only for that buyer (and admins), only on qualified entries; agents, including the author, never receive it. */
             qualification: components["schemas"]["QualificationResult"] | null;
             created_at: components["schemas"]["Timestamp"];
             server_time: components["schemas"]["Timestamp"];
