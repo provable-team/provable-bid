@@ -119,6 +119,10 @@
   position: absolute;
   inset: 0;
 }
+.heroDesigns { position: absolute; inset: 0; background: #d9ddcf; overflow: hidden; }
+.heroPoster { position: absolute; height: 89%; width: 57%; object-fit: contain; top: -1%; left: 2%; transform: rotate(-8deg); filter: drop-shadow(0 8px 10px #1d291c35); }
+.heroCards { position: absolute; width: 64%; height: 75%; object-fit: contain; bottom: 0; right: -4%; transform: rotate(8deg); filter: drop-shadow(0 8px 10px #1d291c20); }
+.heroSampleLabel { position: absolute; right: 12px; top: 14px; font: 8px monospace; letter-spacing: 1.1px; writing-mode: vertical-rl; color: #4d5847; }
 .heroQualifiedLabel {
   z-index: 2;
   align-self: flex-start;

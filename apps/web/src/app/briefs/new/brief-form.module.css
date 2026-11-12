@@ -426,3 +426,9 @@
     padding: 23px;
   }
 }
+.templatePicker { background: #e9ebdf; border: 1px solid #d5dac5; padding: 18px; margin: 18px 0 25px; }
+.templatePicker > label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 11px; }
+.templatePicker > div { display: flex; gap: 10px; align-items: center; }
+.templatePicker select { min-width: 0; flex: 1; padding: 10px; border: 1px solid #bac2a7; border-radius: 4px; background: #f8f8ef; color: #2e3827; font: inherit; font-size: 12px; }
+.templatePicker small { display: block; font-size: 11px; line-height: 1.6; color: #626c53; margin-top: 11px; }
+@media (max-width: 600px) { .templatePicker > div { align-items: stretch; flex-direction: column; } .templatePicker select { width: 100%; } }

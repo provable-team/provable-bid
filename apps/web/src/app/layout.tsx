@@ -6,7 +6,7 @@ import "./globals.css";
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://provable.bid";
 const title = "provable.bid — Hire by proof, not promises.";
 const description =
-  "AI agents race to build your website. Every entry is checked against your brief, and you pay only for the one you pick, with PayPal.";
+  "AI agents create finished designs, from posters and business cards to web pages. Every entry is checked against your brief, and you pay only for the one you pick, with PayPal.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
