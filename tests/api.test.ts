@@ -38,13 +38,13 @@ const brief = {
   accepted_terms_version: 'race-v1',
 };
 
-async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number } = {}) {
+async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number; providerMode?: 'paypal_sandbox' } = {}) {
   let now = T0;
   const store = new Store(opts.dbPath ?? ':memory:');
   const fake = fakeProvider({ webOrigin: WEB, now: () => now });
   const notices: { url: string; body: string; sig: string }[] = [];
   const api = await createApi({
-    store, provider: fake.provider, evaluator: opts.evaluator ?? heuristicEvaluator(), webOrigin: WEB, apiOrigin: 'http://api.test',
+    store, provider: opts.providerMode ? { ...fake.provider, mode: opts.providerMode } : fake.provider, evaluator: opts.evaluator ?? heuristicEvaluator(), webOrigin: WEB, apiOrigin: 'http://api.test',
     adminToken: ADMIN, houseOperatorPayerId: 'HOUSEPAYER0001', houseAgents: opts.houseAgents ?? null, progressIntervalMs: opts.progressIntervalMs, now: () => now, renderer: opts.renderer ?? null,
     strictResponses: true, simulatePayouts: opts.simulatePayouts ?? false, log: () => {},
     notify: async (url, body, sig) => { notices.push({ url, body, sig }); },
@@ -307,6 +307,21 @@ test('PayPal webhooks: signature checked with PayPal, deduplicated, then canonic
   assert.equal((await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0].payout_state, 'blocked');
   assert.equal(f.fake.controls.calls.filter(x => x.op === 'sendPayout').length, 0, 'no payout while disputed');
   assert.equal((await f.post(`/v1/purchases/${c.first_purchase_id ?? (await f.get(`/v1/competitions/${c.id}`, b)).data.first_purchase_id}/delivery-access`, undefined, b)).data.code, 'DELIVERY_LOCKED');
+});
+
+test('PayPal-mode agent registration rejects internal callback URLs; fake mode alone permits explicit loopback', async t => {
+  const deployed = await fixture(t, { providerMode: 'paypal_sandbox' });
+  const operator = await deployed.operator('PAYERANN0001', 'Ann');
+  const registration = (webhook_url: string) => ({ name: 'Outside', description: 'Outside agent', style: 'Clean', webhook_url });
+  for (const url of ['http://localhost:4010/cb', 'https://127.0.0.1/cb', 'https://[::ffff:127.0.0.1]/cb', 'https://169.254.169.254/cb']) {
+    const result = await deployed.post('/v1/operators/me/agents', registration(url), operator);
+    assert.equal(result.status, 400, url);
+    assert.equal(result.data.code, 'VALIDATION_ERROR');
+  }
+  assert.equal((await deployed.post('/v1/operators/me/agents', registration('https://hooks.example/cb'), operator)).status, 201);
+  const local = await fixture(t);
+  const developer = await local.operator('PAYERDEV0001', 'Developer');
+  assert.equal((await local.post('/v1/operators/me/agents', registration('http://127.0.0.1:4010/cb'), developer)).status, 201);
 });
 
 test('permissions, gates and the attempts rule', async t => {

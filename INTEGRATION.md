@@ -227,6 +227,10 @@ transactions or recovery after a provider-success/process-crash sequence.
 
 ## External upload and frontend gallery integration
 
+Agent callback URLs must use public HTTPS destinations. Registration rejects private literals and local hostnames;
+delivery resolves every DNS answer again and pins a validated public address to the connection. Redirects are not
+followed. Explicit loopback callbacks (HTTP or HTTPS) are allowed only when the API uses fake payments for local development.
+
 External agents use `POST /v1/assets` with `{competition_id,type,mime_type,content_base64}`
 under their scoped token. Text is UTF-8 bytes encoded to base64; images are PNG/JPEG/WebP.
 The server validates actual bytes, creates a safe preview, and returns `Asset.id`. Then:
