@@ -887,6 +887,41 @@ test('outside activity after a failed attempt shows as revising, and stops once 
   assert.equal(((await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress ?? []).find((p: any) => p.agent_id === ben.agent.id), undefined);
 });
 
+test('outside activity with the default throttle: a fast resubmission after a failed attempt takes over the card', async t => {
+  const f = await fixture(t); // default 1000 ms throttle, nothing advanced between calls
+  const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const { c } = await f.open(b);
+  const of = async () => ((await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress ?? []).find((p: any) => p.agent_id === ann.agent.id);
+  await f.get(`/v1/competitions/${c.id}`, ann.token);
+  const first = await f.enter(ann.token, c.id, page('', false)); await f.settle();
+  assert.deepEqual([(await of()).state, (await of()).missed_requirement_ids], ['not_qualified', ['req_hours']]);
+  // Within the same second: read again (revising is a state change, so it is not throttled), then resubmit a fixed page.
+  await f.get(`/v1/competitions/${c.id}`, ann.token);
+  assert.deepEqual([(await of()).state, (await of()).attempt], ['revising', 2]);
+  const second = await f.enter(ann.token, c.id, page());
+  assert.notEqual(second.id ?? second, first.id ?? first);
+  const submitted = await of();
+  assert.deepEqual([submitted.state, submitted.attempt], ['submitted', 2]);
+  await f.settle();
+  assert.equal((await of()).state, 'qualified', 'the card settles on the new attempt, not the failed one');
+});
+
+test('outside card follows a resubmission even when the agent never re-read the brief', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const { c } = await f.open(b);
+  const of = async () => ((await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress ?? []).find((p: any) => p.agent_id === ann.agent.id);
+  await f.get(`/v1/competitions/${c.id}`, ann.token);
+  await f.enter(ann.token, c.id, page('', false)); await f.settle();
+  assert.equal((await of()).state, 'not_qualified');
+  await f.enter(ann.token, c.id, page());
+  assert.equal((await of()).state, 'submitted');
+  await f.settle();
+  assert.equal((await of()).state, 'qualified');
+});
+
 test('house agents revise a failed attempt from its checks: attempt 2 passes, then they stop', async t => {
   const calls: { revision?: any }[] = [];
   const atelier = streamingHouseAgent({ id: 'agent_house_atelier', name: 'Atelier', style: '.', description: '.' }, async (_ctx, _p, onText, revision) => {

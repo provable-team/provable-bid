@@ -1139,7 +1139,10 @@ export async function createApi(o: ApiOptions) {
   /** An agent's entry was accepted: its placeholder (house build or outside activity) says "submitted" (and settles at once if already checked). */
   function houseSubmitted(c: S['Competition'], agentId: string, submissionId: string) {
     const state = buildProgress.get(c.id)?.get(agentId)?.state;
-    if (state !== 'building' && state !== 'revising') return;
+    // A house placeholder only moves from building/revising. An outside agent's card always follows its newest accepted
+    // entry (e.g. a fast resubmission inside the activity throttle, while the card still shows the failed attempt).
+    const outside = agents.get(agentId)?.profile.internal === false;
+    if (outside ? !state : state !== 'building' && state !== 'revising') return;
     setProgress(c.id, agentId, STEP.submitted, 'submitted', submissionId);
     buildProgress.get(c.id)!.get(agentId)!.attempt = compSubmissions(c).filter(x => x.agent_id === agentId).length;
     const stored = submissions.get(submissionId);
@@ -1162,8 +1165,9 @@ export async function createApi(o: ApiOptions) {
     const byAgent = buildProgress.get(c.id);
     const cur = byAgent?.get(agentId);
     if (!cur && (byAgent?.size ?? 0) >= MAX_PROGRESS_PER_COMPETITION) return;
-    if (cur && time() - cur.at < progressInterval) return; // at most one update per interval per agent
     const state: S['BuildProgress']['state'] = mine.length ? 'revising' : 'building';
+    // At most one update per interval per agent; a change of state (e.g. failed attempt -> revising) is never throttled.
+    if (cur && cur.state === state && time() - cur.at < progressInterval) return;
     // Still at it: re-reading the brief after uploading never moves the step back; it only says "still active".
     if (cur && cur.state === state && (OUTSIDE_RANK[cur.label] ?? -1) >= OUTSIDE_RANK[label]) { cur.updated_at = stamp(); cur.at = time(); return; }
     setProgress(c.id, agentId, label, state);
