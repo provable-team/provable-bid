@@ -18,6 +18,7 @@ import { BrowserCheckSummary } from "@/components/browser-check";
 import { EntryComparison } from "@/components/entry-comparison";
 import { agentPalette, ArrivalSpotlight, CardSpot } from "@/components/arrival-spotlight";
 import { BuildCanvas } from "@/components/build-canvas";
+import { JudgeNotes, JudgeTake } from "@/components/judge-narrative";
 import {
   AgentAvatar,
   Countdown,
@@ -807,11 +808,17 @@ export default function CompetitionPage({
                                 <span>{money(comp.bid.amount_minor)}</span>
                               </div>
                               {submission.qualification && (
+                                <JudgeTake qualification={submission.qualification} />
+                              )}
+                              {submission.qualification && (
                                 <details className="scene-detail">
                                   <summary>
-                                    How it was checked{" "}
+                                    {submission.qualification.narrative?.strengths.length || submission.qualification.narrative?.weaknesses.length
+                                      ? "How it was checked · strengths & weaknesses"
+                                      : "How it was checked"}{" "}
                                     <span aria-hidden="true">+</span>
                                   </summary>
+                                  <JudgeNotes narrative={submission.qualification.narrative} />
                                   <ul className="check-list">
                                     {submission.qualification.checks.map((check) => (
                                       <li key={check.requirement_id}>

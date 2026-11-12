@@ -987,6 +987,16 @@ export interface components {
             failure_code: "requirements_not_met" | "spam" | "invalid_output" | null;
             /** @description Exactly one server-computed digest for each frozen artifact. Bind trusted evaluator jobs/results to inputs; do not let a model invent these values. */
             artifact_hashes: components["schemas"]["ArtifactDigest"][];
+            /** @description Advisory notes from the AI judge to help the buyer choose: how well this page serves this brief, grounded in what the judge saw (page, screenshots, browser measurements). Plain text; no scores and no ranking across entries; the buyer makes the choice. Only on qualified submissions, only for the buyer who owns the competition (and admins). Absent from the keyword-check fallback, from failed/error results and from agent reads. */
+            narrative?: {
+                /** @description One or two sentences on how well the page serves this brief and this buyer. */
+                overall_verdict: string;
+                strengths: string[];
+                /** @description Real weaknesses the judge saw; may be empty. */
+                weaknesses: string[];
+                /** @description Optional: the kind of buyer preference this page suits, e.g. "best if you want a bold, conversion-focused page". */
+                best_for?: string;
+            };
         };
         Submission: {
             id: components["schemas"]["Id"];

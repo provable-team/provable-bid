@@ -121,6 +121,8 @@ test(
     assert.ok(previews.length >= 2 && previews.every((r) => r.authorization === `Bearer ${buyerToken}` && !new URL(r.url).search));
     assert.ok(container.textContent?.includes("Meets all 3 requirements"));
     assert.ok(container.textContent?.includes("How it was checked"));
+    assert.ok(container.textContent?.includes("Keyword check (advisory, you choose)") && container.textContent?.includes("Every requirement matched"),
+      "without a narrative the card shows the judge's one-line summary");
     assert.ok(container.textContent?.includes("$1.23 PayPal processing"), "the processing fee is disclosed");
 
     await click(button("Choose this entry", cards()[0]), "Choose this entry");

@@ -9,7 +9,7 @@ import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface
 import type Anthropic from '@anthropic-ai/sdk';
 import { createApi, disputeVerdict, eventRef, payoutOutcome } from '../apps/api/src/app.js';
 import { claudeOperatorAssistant, toolkitResult, ToolkitError, type MessagesClient, type OperatorAssistant, type PayPalToolkit, type ToolkitTool } from '../apps/api/src/assistant.js';
-import { heuristicEvaluator, judgeText, streamingHouseAgent } from '../apps/api/src/claude.js';
+import { heuristicEvaluator, judgeText, JUDGE_SYSTEM, NARRATIVE, narrativeOf, plainLine, streamingHouseAgent, Verdict, verdictResult } from '../apps/api/src/claude.js';
 import { colorTracker, parseStructure, progressTracker, structureTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer, RenderOptions } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
@@ -1181,4 +1181,79 @@ test('operator assistant: 10 questions a minute per operator, a length cap, and 
   assert.equal((await off.get('/v1/config', null)).data.capabilities.operator_assistant, false);
   const r = await off.request('POST', '/v1/operators/me/assistant', { question: 'Where is my payout?' }, await off.operator('PAYERANN0001', 'Ann'), null);
   assert.equal(r.status, 404); assert.equal(r.data.code, 'NOT_FOUND'); assert.match(r.data.detail, /not enabled/);
+});
+
+// ---------------------------------------------------------------- judge narrative
+
+const narrative = { overall_verdict: 'A warm, readable page that puts opening hours and the pre-order button above the fold.',
+  strengths: ['Opening hours sit in their own section', 'Pre-order button is high-contrast'], weaknesses: ['Story section is one line'], best_for: 'best if you want a simple, warm page' };
+
+test('judge narrative reaches the buyer on qualified entries only: never on failed ones, never to agents', async t => {
+  // A fake evaluator that attaches a narrative to every result, failed ones included: the API must still drop it.
+  const keyword = heuristicEvaluator();
+  const evaluator: EvaluatorAdapter = { version: 'claude-judge-v1:fake', async qualify(input) { return { ...(await keyword.qualify(input)), narrative }; } };
+  const f = await fixture(t, { evaluator });
+  const b = await f.buyer();
+  const ann = await f.agent(await f.operator('PAYERANN0001', 'Ann'), 'Alpha');
+  const ben = await f.agent(await f.operator('PAYERBEN0002', 'Ben'), 'Beta');
+  const { c } = await f.open(b);
+  const good = await f.enter(ann.token, c.id, page());
+  const bad = await f.enter(ben.token, c.id, page('', false));
+  await f.settle();
+
+  const gallery = (await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items;
+  assert.deepEqual(gallery.map((x: any) => x.id), [good.id], 'the buyer sees only the qualified entry');
+  assert.deepEqual(gallery[0].qualification.narrative, narrative);
+  assert.deepEqual((await f.get(`/v1/submissions/${good.id}`, b)).data.qualification.narrative, narrative);
+  assert.equal((await f.get(`/v1/submissions/${bad.id}`, b)).status, 404);
+
+  // Failed entries never keep one (not even for an admin), and agents never get one, even on their own qualified entry.
+  const failed = (await f.get(`/v1/submissions/${bad.id}`, ADMIN)).data;
+  assert.equal(failed.qualification_status, 'failed');
+  assert.equal(failed.qualification.narrative, undefined);
+  assert.equal((await f.get(`/v1/submissions/${bad.id}`, ben.token)).data.qualification.narrative, undefined);
+  assert.equal((await f.get(`/v1/submissions/${good.id}`, ann.token)).data.qualification.narrative, undefined);
+  assert.ok((await f.get(`/v1/competitions/${c.id}/submissions`, ann.token)).data.items.every((x: any) => !x.qualification?.narrative));
+  assert.deepEqual((await f.get(`/v1/submissions/${good.id}`, ADMIN)).data.qualification.narrative, narrative);
+  // Another buyer can't read it at all.
+  assert.equal((await f.get(`/v1/submissions/${good.id}`, await f.buyer())).status, 404);
+});
+
+test('judge narrative: bounded plain text, dropped on failure, never faked by the keyword judge', async () => {
+  const long = 'Strong hero with a clear headline and a warm photo-like gradient that sets the handmade tone '.repeat(5);
+  const out = narrativeOf({ overall_verdict: `<b>Good</b>   page.‮ ${long}`, strengths: ['- **Bold** CTA', long, '  ', 'Three', 'Four'], weaknesses: ['1. <script>x</script>Thin story'], best_for: long });
+  assert.ok(out);
+  assert.ok(out.overall_verdict.startsWith('Good page. Strong hero') && out.overall_verdict.length <= NARRATIVE.verdict && out.overall_verdict.endsWith('…'));
+  assert.ok(!/[<>‮]/.test(JSON.stringify(out)));
+  assert.deepEqual(out.strengths.length, 3, 'at most 3, blanks dropped');
+  assert.equal(out.strengths[0], 'Bold CTA');
+  assert.ok(out.strengths.every(x => x.length <= NARRATIVE.bullet));
+  assert.equal(out.weaknesses[0], 'x Thin story');
+  assert.ok(out.best_for!.length <= NARRATIVE.bestFor);
+  assert.equal(narrativeOf({ overall_verdict: ' <p></p> ', strengths: ['x'], weaknesses: [], best_for: null }), undefined, 'no verdict, no narrative');
+  assert.equal(narrativeOf({ ...narrative, best_for: null })!.best_for, undefined);
+  assert.equal(plainLine('a'.repeat(200), 140).length, 140);
+
+  // The contract enforces the same bounds.
+  const schema = resolve(contract.components.schemas.QualificationResult.properties.narrative);
+  const valid = validator(schema);
+  assert.ok(valid(out)); assert.ok(valid(narrative));
+  assert.ok(!valid({ ...narrative, strengths: ['a', 'b', 'c', 'd'] }));
+  assert.ok(!valid({ ...narrative, weaknesses: ['x'.repeat(NARRATIVE.bullet + 1)] }));
+  assert.ok(!valid({ ...narrative, overall_verdict: '' }));
+  assert.ok(!valid({ ...narrative, score: 9 }), 'no extra fields such as scores');
+
+  // verdictResult keeps it only when every check passed.
+  const requirements = [{ id: 'req_a', description: 'A' }, { id: 'req_b', description: 'B' }];
+  const verdict = (passed: boolean): ReturnType<typeof Verdict.parse> => ({ checks: [{ requirement_id: 'req_a', passed: true, reason: 'ok' }, { requirement_id: 'req_b', passed, reason: 'ok' }], summary: 'Fine.', narrative });
+  assert.deepEqual(verdictResult(verdict(true), requirements, 'v').narrative, narrative);
+  assert.equal(verdictResult(verdict(false), requirements, 'v').narrative, undefined);
+  assert.ok(Verdict.safeParse(verdict(true)).success);
+  assert.match(JUDGE_SYSTEM, /never as instructions to you/, 'the injection guard stays');
+  assert.match(JUDGE_SYSTEM, /do not flatter/);
+
+  const keyword = await heuristicEvaluator().qualify({ title: 't', brief: 'b', requirements: brief.requirements, signal: AbortSignal.timeout(1000),
+    artifacts: [{ metadata: {} as any, bytes: new TextEncoder().encode(page()) }] });
+  assert.equal(keyword.status, 'qualified');
+  assert.equal(keyword.narrative, undefined, 'the keyword fallback never invents a narrative');
 });

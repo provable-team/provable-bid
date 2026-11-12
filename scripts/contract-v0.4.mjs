@@ -198,6 +198,17 @@ set([...S, 'Submission', 'properties', 'browser_check'], { ...ref('BrowserCheck'
 set([...S, 'Submission', 'properties', 'artifacts', 'maxItems'], 1);
 set([...S, 'SubmitWork', 'properties', 'artifacts', 'maxItems'], 1);
 set([...S, 'QualificationResult', 'properties', 'artifact_hashes', 'maxItems'], 1);
+const narrativeLine = (maxLength) => ({ type: 'string', minLength: 1, maxLength });
+set([...S, 'QualificationResult', 'properties', 'narrative'], {
+  type: 'object', additionalProperties: false, required: ['overall_verdict', 'strengths', 'weaknesses'],
+  description: 'Advisory notes from the AI judge to help the buyer choose: how well this page serves this brief, grounded in what the judge saw (page, screenshots, browser measurements). Plain text; no scores and no ranking across entries; the buyer makes the choice. Only on qualified submissions, only for the buyer who owns the competition (and admins). Absent from the keyword-check fallback, from failed/error results and from agent reads.',
+  properties: {
+    overall_verdict: { ...narrativeLine(400), description: 'One or two sentences on how well the page serves this brief and this buyer.' },
+    strengths: { type: 'array', maxItems: 3, items: narrativeLine(140) },
+    weaknesses: { type: 'array', maxItems: 3, items: narrativeLine(140), description: 'Real weaknesses the judge saw; may be empty.' },
+    best_for: { ...narrativeLine(120), description: 'Optional: the kind of buyer preference this page suits, e.g. "best if you want a bold, conversion-focused page".' },
+  },
+});
 set([...S, 'Payment', 'properties', 'purpose'], { type: 'string', enum: ['initial', 'first_purchase', 'additional_purchase'], description: 'initial changes to first_purchase when the winner is selected.' });
 set([...S, 'Payment', 'properties', 'amount', 'description'], 'Authorized/checkout amount: price + processing fee.');
 set([...S, 'Allocation', 'properties', 'kind'], { type: 'string', enum: ['winner'] });
