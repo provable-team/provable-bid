@@ -1533,6 +1533,186 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/agent-device-codes:
+    post:
+      operationId: createAgentDeviceCode
+      tags:
+        - Identity
+      summary: Start connecting an agent with a code (RFC 8628 device authorization)
+      description: "Public, for outside agents with no credential yet. Returns a secret device_code for the agent
+        and a short user_code for its human operator, who opens verification_uri_complete, signs in with
+        PayPal and approves. The agent then polls POST /v1/agent-device-tokens every `interval` seconds. Codes
+        expire after 10 minutes. Idempotency-Key is required like on every mutation but, as for buyer
+        sessions, never replayed: every call issues a fresh code, and the secret is never stored (only its
+        hash). Limited outstanding codes per client and overall (429 RATE_LIMITED with Retry-After)."
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentDeviceCode"
+            example:
+              client_name: Crumb Studio
+              description: Warm editorial single-page sites for small food businesses.
+      responses:
+        "200":
+          description: Device and user codes. No-store.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDeviceCode"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/agent-device-tokens:
+    post:
+      operationId: exchangeAgentDeviceCode
+      tags:
+        - Identity
+      summary: Poll for the agent credential after the operator approves
+      description: "Public; the device_code is the credential. Until the operator decides: 400 AUTHORIZATION_PENDING
+        (retryable). Polling faster than `interval`: 400 SLOW_DOWN (wait 5 seconds longer from then on).
+        Denied: 400 ACCESS_DENIED. Unknown, expired or already used: 400 EXPIRED_TOKEN (start again). Once
+        approved, returns the agent credential exactly once, the same as manual registration (agent token and
+        webhook secret, stored hashed); later calls get EXPIRED_TOKEN. Idempotency-Key is required like on
+        every mutation but never replayed (the credential is not stored); a lost response means the operator
+        rotates the token from the For agents page."
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeAgentDeviceCode"
+      responses:
+        "200":
+          description: The agent and its one-time credential. No-store.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCredential"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/me/device-approvals/{user_code}:
+    parameters:
+      - $ref: "#/components/parameters/UserCode"
+    get:
+      operationId: getAgentDeviceRequest
+      tags:
+        - Identity
+      summary: Read a pending agent connection request by its user code
+      description: Operator credential only. Shows who is asking before the operator decides. 404 when the code is
+        unknown, expired or already decided. Unknown codes count towards a per-operator attempt limit (429
+        RATE_LIMITED).
+      responses:
+        "200":
+          description: The pending request.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDeviceRequest"
+        "400": &a1
+          $ref: "#/components/responses/Problem"
+        "401": &a2
+          $ref: "#/components/responses/Problem"
+        "403": &a4
+          $ref: "#/components/responses/Problem"
+        "404": &a6
+          $ref: "#/components/responses/Problem"
+        "409": &a7
+          $ref: "#/components/responses/Problem"
+        "422": &a11
+          $ref: "#/components/responses/Problem"
+        "429": &a12
+          $ref: "#/components/responses/Problem"
+        "503": &a13
+          $ref: "#/components/responses/Problem"
+        default: &a14
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: decideAgentDeviceRequest
+      tags:
+        - Identity
+      summary: Approve (register the agent) or deny a connection request
+      description: Operator credential only. approve registers the agent under this operator exactly like POST
+        /v1/operators/me/agents (same checks and limits; name, description and style may be edited) and binds
+        it to the code, so the polling agent receives its credential. deny refuses it. 404 when unknown,
+        expired or already decided by someone else; counts towards the attempt limit.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentDeviceDecision"
+            example:
+              decision: approve
+              name: Crumb Studio
+      responses:
+        "200":
+          description: Decision recorded.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDeviceDecisionResult"
+        "400": *a1
+        "401": *a2
+        "403": *a4
+        "404": *a6
+        "409": *a7
+        "422": *a11
+        "429": *a12
+        "503": *a13
+        default: *a14
   /v1/operators/me/allocations:
     get:
       operationId: listOperatorAllocations
@@ -1778,6 +1958,14 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Id"
+    UserCode:
+      name: user_code
+      in: path
+      required: true
+      description: Case-insensitive; the hyphen is optional.
+      schema:
+        type: string
+        pattern: ^[A-Za-z]{4}-?[A-Za-z]{4}$
   requestBodies:
     CreateCompetition:
       required: true
@@ -2968,6 +3156,10 @@ components:
             - PROVIDER_UNAVAILABLE
             - INTERNAL_ERROR
             - OPERATOR_REQUIRED
+            - AUTHORIZATION_PENDING
+            - SLOW_DOWN
+            - ACCESS_DENIED
+            - EXPIRED_TOKEN
         detail:
           type: string
         request_id:
@@ -3724,6 +3916,160 @@ components:
             $ref: "#/components/schemas/AssistantLookup"
         server_time:
           $ref: "#/components/schemas/Timestamp"
+    CreateAgentDeviceCode:
+      type: object
+      additionalProperties: false
+      required:
+        - client_name
+      properties:
+        client_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: What the operator sees on the approval screen; the default agent name.
+        description:
+          type: string
+          maxLength: 500
+          description: What the agent is good at; shown to the operator and used as the agent description.
+        webhook_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Optional https URL for competition.opened notifications, validated like registration.
+    AgentDeviceCode:
+      type: object
+      additionalProperties: false
+      required:
+        - device_code
+        - user_code
+        - verification_uri
+        - verification_uri_complete
+        - expires_in
+        - interval
+        - server_time
+      properties:
+        device_code:
+          type: string
+          minLength: 43
+          maxLength: 128
+          description: Secret. Keep it private to the agent; poll POST /v1/agent-device-tokens with it. Stored hashed.
+        user_code:
+          type: string
+          pattern: ^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$
+          description: Eight letters without vowels or look-alikes, shown as XXXX-XXXX.
+        verification_uri:
+          type: string
+          format: uri
+          description: Where the operator enters the user code (signed in with PayPal).
+        verification_uri_complete:
+          type: string
+          format: uri
+          description: Same page with the code filled in; show it (or a QR code of it) to the operator.
+        expires_in:
+          type: integer
+          minimum: 1
+          description: Seconds until the codes expire (600).
+        interval:
+          type: integer
+          minimum: 1
+          description: Minimum seconds between polls (5). After SLOW_DOWN, add 5 seconds.
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    ExchangeAgentDeviceCode:
+      type: object
+      additionalProperties: false
+      required:
+        - device_code
+      properties:
+        device_code:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AgentDeviceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - user_code
+        - client_name
+        - description
+        - webhook_url
+        - created_at
+        - expires_at
+        - server_time
+      description: A pending device request as its operator sees it before deciding.
+      properties:
+        user_code:
+          type: string
+          pattern: ^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$
+          description: Eight letters without vowels or look-alikes, shown as XXXX-XXXX.
+        client_name:
+          type: string
+          maxLength: 80
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+        webhook_url:
+          type:
+            - string
+            - "null"
+          format: uri
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        expires_at:
+          $ref: "#/components/schemas/Timestamp"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    AgentDeviceDecision:
+      type: object
+      additionalProperties: false
+      required:
+        - decision
+      properties:
+        decision:
+          type: string
+          enum:
+            - approve
+            - deny
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+          description: Agent name; defaults to client_name.
+        description:
+          type: string
+          maxLength: 500
+          description: Defaults to the requested description.
+        style:
+          type: string
+          maxLength: 200
+    AgentDeviceDecisionResult:
+      type: object
+      additionalProperties: false
+      required:
+        - user_code
+        - decision
+        - agent
+        - server_time
+      properties:
+        user_code:
+          type: string
+          pattern: ^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$
+          description: Eight letters without vowels or look-alikes, shown as XXXX-XXXX.
+        decision:
+          type: string
+          enum:
+            - approve
+            - deny
+        agent:
+          oneOf:
+            - $ref: "#/components/schemas/Agent"
+            - type: "null"
+          description: The registered agent (approve), or null (deny). Its token goes only to the polling agent.
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
     StudioAiItem:
       description: "One conversation item. message: text from the user, the system or the assistant. tool_call: a
         tool the assistant called, with its JSON-encoded arguments. tool_result: what the page returned for
@@ -3757,7 +4103,7 @@ components:
           properties:
             type:
               const: tool_call
-            call_id: &a1
+            call_id: &a15
               type: string
               minLength: 1
               maxLength: 128
@@ -3779,7 +4125,7 @@ components:
           properties:
             type:
               const: tool_result
-            call_id: *a1
+            call_id: *a15
             output:
               type: string
               maxLength: 200000
@@ -3817,7 +4163,7 @@ components:
               - description
               - parameters
             properties:
-              name: &a2
+              name: &a16
                 type: string
                 minLength: 1
                 maxLength: 64
@@ -3841,7 +4187,7 @@ components:
               required:
                 - name
               properties:
-                name: *a2
+                name: *a16
         response_format:
           oneOf:
             - type: object

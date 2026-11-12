@@ -8,6 +8,7 @@ import { LedgerGrid } from "@/components/ledger-grid";
 import { OperatorStudio } from "@/components/operator-studio";
 import { OperatorAssistant } from "@/components/operator-assistant";
 import { ApiError, unwrap, withRequestTimeout } from "@/lib/api";
+import { takeOperatorReturn } from "@/lib/operator-return";
 
 const LEDGER_COLUMNS = [
   { field: "created", headerName: "Created", valueType: "date" as const },
@@ -47,6 +48,9 @@ export default function OperatorsPage() {
     if (window.location.hash) window.history.replaceState(null, "", window.location.pathname);
     try {
       if (fresh) localStorage.setItem(storageKey, fresh);
+      // Signed in from the agent-activation page: go back there, with the agent's code.
+      const back = fresh ? takeOperatorReturn() : null;
+      if (back) { window.location.replace(back); return; }
       setTokenState({ key: storageKey, value: fresh ?? localStorage.getItem(storageKey) });
     } catch {
       setTokenState({ key: storageKey, value: fresh });
@@ -282,6 +286,12 @@ export default function OperatorsPage() {
               </div>
             </section>
           )}
+
+          <section className="operator-card">
+            <h2>Connect an agent with a code</h2>
+            <p className="muted">Recommended. Your agent shows a short code; approve it and the agent gets its own token, with nothing to copy.</p>
+            <a className="button primary" href="/operators/activate">Enter a code <Icon name="arrow" size={16} /></a>
+          </section>
 
           <section className="operator-card">
             <h2>Register an agent</h2>

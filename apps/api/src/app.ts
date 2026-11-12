@@ -19,6 +19,7 @@ import { errorVerdict, evaluatorToken, houseToken, inProcessEvaluation, inProces
 import type { DocStore } from './store.js';
 import { StudioAiFailure, type StudioAiRelay } from './studio-ai.js';
 import { registerAgentDocs } from './agent-docs.js';
+import { createDeviceFlow, type DeviceGrant } from './device-flow.js';
 
 type S = components['schemas'];
 
@@ -174,6 +175,8 @@ export interface ApiOptions {
 
 /** Operations that only read and may take seconds (a model and PayPal round trips): they run outside the command queue. */
 const OUTSIDE_QUEUE = new Set(['askOperatorAssistant']);
+/** Never replayed from an Idempotency-Key: each call issues a fresh secret that must not be stored (only its hash is). */
+const NO_REPLAY = new Set(['createBuyerSession', 'createAgentDeviceCode', 'exchangeAgentDeviceCode']);
 
 export async function createApi(o: ApiOptions) {
   const log = o.log ?? ((m: string, x?: unknown) => console.log(`[api] ${m}`, x ?? ''));
@@ -216,6 +219,14 @@ export async function createApi(o: ApiOptions) {
   const oauthStates = st.collection<{ expires: number }>('oauth_state');
   /** Remote house-agent runs (Render Workflows), keyed `${competition}:${agent}`, so a restarted API can re-attach or cancel them. */
   const houseRuns = st.collection<{ competition_id: string; agent_id: string; task_run_id: string; state: 'running' | 'finished' | 'canceled'; started_at: string }>('house_run');
+  /** Agent device flow (RFC 8628): pending/approved codes keyed by the device code's hash, and failed lookups per operator. */
+  const deviceFlow = createDeviceFlow({
+    grants: st.collection<DeviceGrant>('device_grant'), lookups: st.collection<{ failures: number[] }>('device_lookup'),
+    time, stamp, webOrigin: o.webOrigin,
+    fail: (status, code, message, retryable, retryAfter) => new Fault(status, code, message, retryable, retryAfter),
+    validateWebhookUrl, registerAgent: newAgentRecord,
+    issueCredential: agentId => { const record = fetchOne(agents, agentId); return issueAgentCredential(record, fetchOne(operators, record.operator_id)); },
+  });
 
   // House operator + house agents (labelled; payouts go to the house operator's verified PayPal account).
   const houseOperator: Operator = operators.get(HOUSE_OPERATOR_ID) ?? { id: HOUSE_OPERATOR_ID, name: 'provable.bid', email: null, paypal_payer_id: null, recipient_id: 'recipient_provable', house: true, created_at: stamp() };
@@ -633,6 +644,7 @@ export async function createApi(o: ApiOptions) {
   async function execute(op: string, p: Principal | undefined, params: any, body: any, query: any, headers: any): Promise<Result> {
     const ok = (body: any, status = 200): Result => ({ status, body });
     const who = () => { demand(p, 'UNAUTHENTICATED', 'Valid bearer credential required.', 401); return p; };
+    if (deviceFlow.ops.has(op)) return deviceFlow.run(op, p, params, body, headers);
     switch (op) {
       case 'getHealth': return ok({ status: 'ok', mode: o.provider.mode, server_time: stamp() });
       case 'getConfig': return ok({
@@ -681,20 +693,7 @@ export async function createApi(o: ApiOptions) {
         }) });
       }
       case 'registerAgent': {
-        const me = who(); demand(me.role === 'operator', 'OPERATOR_REQUIRED', 'Connect PayPal as an agent operator first.', 403);
-        if (body.webhook_url) {
-          try { webhookUrl(body.webhook_url, mockMode); }
-          catch (e) { throw new Fault(400, 'VALIDATION_ERROR', (e as Error).message); }
-        }
-        demand([...agents.values()].filter(a => a.operator_id === me.operator_id).length < 10, 'INVALID_STATE', 'At most 10 agents per operator.');
-        const op = fetchOne(operators, me.operator_id);
-        const agentId = id('agent');
-        const record: AgentRecord = {
-          profile: { id: agentId, name: body.name, description: body.description, style: body.style, capabilities: ['html'], internal: false, status: 'available',
-            avatar_color: body.avatar_color ?? '#3f6ad8', operator_id: op.id, operator_name: op.name },
-          operator_id: op.id, webhook_url: body.webhook_url ?? null, webhook_secret: null, credential_hashes: [], created_at: stamp(),
-        };
-        agents.set(agentId, record);
+        const { record, op } = newAgentRecord(who(), body);
         return { status: 201, body: issueAgentCredential(record, op), cache: 'no-store' };
       }
       case 'rotateAgentCredential': {
@@ -989,6 +988,28 @@ export async function createApi(o: ApiOptions) {
       }
       default: throw new Error(`No handler for ${op}`);
     }
+  }
+
+  // Agent registration, shared by POST /v1/operators/me/agents and approved device codes (device-flow.ts).
+  function validateWebhookUrl(url: string | null | undefined) {
+    if (!url) return;
+    try { webhookUrl(url, mockMode); }
+    catch (e) { throw new Fault(400, 'VALIDATION_ERROR', (e as Error).message); }
+  }
+  function newAgentRecord(me: Principal | undefined, body: S['RegisterAgent']): { record: AgentRecord; op: Operator } {
+    demand(me, 'UNAUTHENTICATED', 'Valid bearer credential required.', 401);
+    demand(me.role === 'operator', 'OPERATOR_REQUIRED', 'Connect PayPal as an agent operator first.', 403);
+    validateWebhookUrl(body.webhook_url);
+    demand([...agents.values()].filter(a => a.operator_id === me.operator_id).length < 10, 'INVALID_STATE', 'At most 10 agents per operator.');
+    const op = fetchOne(operators, me.operator_id);
+    const agentId = id('agent');
+    const record: AgentRecord = {
+      profile: { id: agentId, name: body.name, description: body.description, style: body.style, capabilities: ['html'], internal: false, status: 'available',
+        avatar_color: body.avatar_color ?? '#3f6ad8', operator_id: op.id, operator_name: op.name },
+      operator_id: op.id, webhook_url: body.webhook_url ?? null, webhook_secret: null, credential_hashes: [], created_at: stamp(),
+    };
+    agents.set(agentId, record);
+    return { record, op };
   }
 
   function issueAgentCredential(record: AgentRecord, op: Operator): S['AgentCredential'] {
@@ -1522,7 +1543,7 @@ export async function createApi(o: ApiOptions) {
         : await exclusive(async () => {
         const key = headers['idempotency-key'];
         const subject = principal ? (principal.role === 'agent' ? `agent:${principal.agent_id}` : `${principal.role}:${principal.id}`) : 'public';
-        const scope = op.method === 'post' && key && op.operationId !== 'createBuyerSession' ? `${subject}|post|${req.url.split('?')[0]}|${key}` : null;
+        const scope = op.method === 'post' && key && !NO_REPLAY.has(op.operationId) ? `${subject}|post|${req.url.split('?')[0]}|${key}` : null;
         const fingerprint = canonical(req.body);
         const cached = scope ? replays.get(scope) : undefined;
         if (cached) {
