@@ -5,11 +5,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import { join } from 'node:path';
-import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
+import type { AgentAdapter, AgentContext, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
 import type Anthropic from '@anthropic-ai/sdk';
 import { createApi, disputeVerdict, eventRef, payoutOutcome } from '../apps/api/src/app.js';
 import { claudeOperatorAssistant, toolkitResult, ToolkitError, type MessagesClient, type OperatorAssistant, type PayPalToolkit, type ToolkitTool } from '../apps/api/src/assistant.js';
-import { heuristicEvaluator, judgeText, JUDGE_SYSTEM, NARRATIVE, narrativeOf, plainLine, streamingHouseAgent, Verdict, verdictResult } from '../apps/api/src/claude.js';
+import { claudeEvaluator, claudeGenerator, heuristicEvaluator, judgeText, JUDGE_SYSTEM, NARRATIVE, narrativeOf, plainLine, streamingHouseAgent, Verdict, verdictResult } from '../apps/api/src/claude.js';
 import { colorTracker, parseStructure, progressTracker, structureTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer, RenderOptions } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
@@ -1207,6 +1207,66 @@ test('operator assistant: 10 questions a minute per operator, a length cap, and 
 
 const narrative = { overall_verdict: 'A warm, readable page that puts opening hours and the pre-order button above the fold.',
   strengths: ['Opening hours sit in their own section', 'Pre-order button is high-contrast'], weaknesses: ['Story section is one line'], best_for: 'best if you want a simple, warm page' };
+
+test('house generation and revisions receive supplied product facts and explicit limits for unfetched guide URLs', async () => {
+  type PromptRequest = { system: string; messages: { role: string; content: unknown }[] };
+  const requests: PromptRequest[] = [];
+  const html = page();
+  const client = { beta: { messages: { stream(request: PromptRequest) {
+    requests.push(structuredClone(request));
+    return {
+      on(_event: string, callback: (delta: string, snapshot: string) => void) { callback(html, html); },
+      async finalMessage() { return { stop_reason: 'end_turn', content: [{ type: 'text', text: html }] }; },
+    };
+  } } } } as unknown as Anthropic;
+  const competition = { ...brief, id: 'cmp_facts', title: 'provable.bid agent guide',
+    brief: 'The operator registers the agent. The agent uses a pba_ token. Guide: https://example.invalid/agents.md',
+    requirements: [{ id: 'req_setup', description: 'Explain the supplied operator registration and agent authentication steps.' }] } as unknown as AgentContext['competition'];
+  const ctx = { competition, signal: AbortSignal.timeout(1000) } as AgentContext;
+  const profile = { id: 'facts', name: 'Facts', style: 'Clear', description: 'Clear pages' };
+  const generate = claudeGenerator(client);
+  await generate(ctx, profile, () => {});
+  await generate(ctx, profile, () => {}, { html, failed: [{ requirement: 'Correct agent setup', reason: 'Do not invent an API-key signup flow.' }] });
+  for (const request of requests) {
+    assert.match(request.system, /setup steps, API paths, authentication, fees and payment behavior only from the supplied brief and requirements/);
+    assert.match(request.system, /Referenced URLs have not been fetched/);
+    assert.match(request.system, /do not claim to have read them or infer their contents/);
+    assert.match(request.system, /Keep missing factual details out of the page rather than inventing them/);
+    assert.match(String(request.messages[0].content), /The operator registers the agent\. The agent uses a pba_ token/);
+    assert.match(String(request.messages[0].content), /https:\/\/example\.invalid\/agents\.md/);
+  }
+  assert.equal(requests.length, 2);
+  assert.match(String(requests[1].messages.at(-1)!.content), /Do not invent an API-key signup flow/);
+});
+
+test('judge receives factual-source limits and preserves independent checks when a URL-only setup claim cannot be verified', async () => {
+  const requirements = [{ id: 'req_setup', description: 'Accurately explain registration from the linked agent guide.' },
+    { id: 'req_phone', description: 'Fit a phone without horizontal overflow.' }];
+  let request: { system: string; messages: { content: { type: string; text?: string }[] }[] } | undefined;
+  const client = { beta: { messages: { async parse(body: typeof request) {
+    request = body;
+    return { stop_reason: 'end_turn', parsed_output: { checks: [
+      { requirement_id: 'req_setup', passed: false, reason: 'The guide contents were not supplied, so the claimed API-key setup cannot be verified.' },
+      { requirement_id: 'req_phone', passed: true, reason: 'The browser measured no phone overflow.' },
+    ], summary: 'Phone layout fits, but the registration instructions lack source evidence.', narrative } };
+  } } } } as unknown as Anthropic;
+  const evaluator = claudeEvaluator(client);
+  const result = await evaluator.qualify({ title: 'provable.bid agent guide', brief: 'Use https://example.invalid/agents.md for registration instructions.', requirements,
+    artifacts: [{ metadata: {} as any, bytes: new TextEncoder().encode(page('<p>Get an API key by creating an account.</p>')) }],
+    browser: { phoneOverflowPx: 0, consoleErrors: [], blockedRequests: [] }, signal: AbortSignal.timeout(1000) });
+  assert.ok(request);
+  assert.match(request.system, /supplied brief and requirements as the source of truth/);
+  assert.match(request.system, /Referenced URLs have not been fetched/);
+  assert.match(request.system, /Fail an affected factual requirement if the page contradicts supplied facts or verifying it requires unavailable source contents/);
+  assert.match(request.system, /Continue judging unrelated requirements from the page and browser evidence; the presence of a URL alone is not a failure/);
+  const text = request.messages[0].content.find(block => block.type === 'text')!.text!;
+  assert.match(text, /<brief[^>]*>\nUse https:\/\/example\.invalid\/agents\.md/);
+  assert.match(text, /<submission>[\s\S]*Get an API key by creating an account/);
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(result.checks.map(check => [check.requirement_id, check.passed]), [['req_setup', false], ['req_phone', true]]);
+  assert.equal(result.narrative, undefined);
+  assert.match(result.evaluator_version, /^claude-judge-v2:/);
+});
 
 test('judge narrative reaches the buyer on qualified entries only: never on failed ones, never to agents', async t => {
   // A fake evaluator that attaches a narrative to every result, failed ones included: the API must still drop it.
