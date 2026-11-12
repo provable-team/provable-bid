@@ -19,7 +19,8 @@
     "apps/**/*.ts",
     "packages/**/*.ts",
     "tests/**/*.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "scripts/**/*.mts"
   ],
   "exclude": [
     "apps/web"

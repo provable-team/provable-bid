@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spoke & Chain Saturday Fix-It Clinic: A3 Poster</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-height: 100vh;
+    background: #f3eee8;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #33405a;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+  }
+
+  /* The poster: A3 portrait, 297 x 420 mm. Fluid on screen, all type scales with the sheet width. */
+  .sheet {
+    position: relative;
+    width: min(100%, 520px);
+    aspect-ratio: 297 / 420;
+    container-type: inline-size;
+    overflow: hidden;
+    border-radius: 6cqw;
+    background: linear-gradient(170deg, #e4f5ec 0%, #f3ebfb 55%, #fff1e4 100%);
+    padding: 7cqw 7cqw 6cqw;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 30px rgba(51, 64, 90, 0.12);
+  }
+
+  /* Soft decorative blobs */
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .blob-a { width: 62cqw; height: 62cqw; background: #cdeedd; top: -18cqw; right: -20cqw; }
+  .blob-b { width: 48cqw; height: 48cqw; background: #e3d7f6; bottom: 12cqw; left: -16cqw; }
+  .blob-c { width: 26cqw; height: 26cqw; background: #ffe0c7; top: 46cqw; right: 6cqw; }
+
+  .brand {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 2.4cqw;
+    align-self: flex-start;
+    background: #ffffff;
+    border-radius: 99cqw;
+    padding: 1.8cqw 4cqw 1.8cqw 2.4cqw;
+    box-shadow: 0 2px 0 rgba(51, 64, 90, 0.08);
+  }
+  .brand-dot {
+    width: 6cqw;
+    height: 6cqw;
+    border-radius: 50%;
+    background: #8fd3b0;
+    display: inline-block;
+  }
+  .brand-name {
+    font-weight: 700;
+    font-size: 3.6cqw;
+    letter-spacing: 0.2cqw;
+  }
+
+  h1 {
+    position: relative;
+    margin: 6cqw 0 0;
+    font-size: 12.5cqw;
+    line-height: 1.02;
+    font-weight: 800;
+    letter-spacing: -0.2cqw;
+    color: #2b3a57;
+  }
+  h1 .accent {
+    color: #3c9d7a;
+  }
+
+  .lede {
+    position: relative;
+    margin: 4cqw 0 0;
+    font-size: 4.6cqw;
+    line-height: 1.4;
+    color: #4a5873;
+    max-width: 86%;
+  }
+
+  .illustration {
+    position: relative;
+    width: 58cqw;
+    height: 58cqw;
+    align-self: center;
+    margin: 5cqw 0 4cqw;
+  }
+  .illustration svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .cards {
+    position: relative;
+    display: grid;
+    gap: 3.6cqw;
+  }
+
+  .card {
+    border-radius: 6cqw;
+    padding: 4.6cqw 5cqw;
+    background: #ffffff;
+    box-shadow: 0 2px 0 rgba(51, 64, 90, 0.06);
+  }
+  .card .label {
+    display: block;
+    font-size: 3cqw;
+    font-weight: 700;
+    letter-spacing: 0.3cqw;
+    text-transform: uppercase;
+    color: #6f7d98;
+    margin-bottom: 1.4cqw;
+  }
+  .card .value {
+    display: block;
+    font-size: 7.4cqw;
+    font-weight: 800;
+    line-height: 1.15;
+    color: #2b3a57;
+  }
+  .card .detail {
+    display: block;
+    margin-top: 1.4cqw;
+    font-size: 4cqw;
+    line-height: 1.4;
+    color: #4a5873;
+  }
+
+  .card-free { background: #d7f1e4; }
+  .card-hours { background: #fff1c9; }
+  .card-where { background: #e7dcf8; }
+
+  .footer {
+    position: relative;
+    margin-top: auto;
+    padding-top: 5cqw;
+    font-size: 3.8cqw;
+    line-height: 1.45;
+    color: #4a5873;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 4cqw;
+  }
+  .footer p { margin: 0; max-width: 70%; }
+  .footer strong { color: #2b3a57; }
+
+  .wrench {
+    width: 14cqw;
+    height: 14cqw;
+    flex: none;
+  }
+
+  /* Print: exactly one A3 portrait page, artwork filling it, nothing else. */
+  @page {
+    size: A3 portrait;
+    margin: 0;
+  }
+
+  @media print {
+    html, body {
+      width: 297mm;
+      height: 420mm;
+      margin: 0;
+      padding: 0;
+      background: none;
+      display: block;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .sheet {
+      width: 297mm;
+      height: 420mm;
+      max-width: none;
+      aspect-ratio: auto;
+      border-radius: 0;
+      box-shadow: none;
+      padding: 22mm 21mm 18mm;
+      page-break-after: avoid;
+      break-after: avoid;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .sheet * {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
+</style>
+</head>
+<body>
+
+<main class="sheet" role="article" aria-label="Spoke & Chain Saturday Fix-It Clinic poster">
+  <div class="blob blob-a" aria-hidden="true"></div>
+  <div class="blob blob-b" aria-hidden="true"></div>
+  <div class="blob blob-c" aria-hidden="true"></div>
+
+  <div class="brand">
+    <span class="brand-dot" aria-hidden="true"></span>
+    <span class="brand-name">Spoke &amp; Chain</span>
+  </div>
+
+  <h1>Spoke &amp; Chain <span class="accent">Saturday Fix-It Clinic</span></h1>
+
+  <p class="lede">Bring your bike to our neighborhood repair shop for a free safety check on Saturdays.</p>
+
+  <div class="illustration" aria-hidden="true">
+    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+      <!-- soft backdrop -->
+      <circle cx="100" cy="100" r="96" fill="#ffffff" />
+      <circle cx="100" cy="100" r="84" fill="#fff1c9" />
+      <!-- tyre -->
+      <circle cx="100" cy="100" r="62" fill="none" stroke="#3f4f6e" stroke-width="12" />
+      <!-- rim -->
+      <circle cx="100" cy="100" r="54" fill="none" stroke="#8fd3b0" stroke-width="4" />
+      <!-- spokes -->
+      <g stroke="#6f7d98" stroke-width="1.6" stroke-linecap="round">
+        <line x1="100" y1="100" x2="100" y2="46" />
+        <line x1="100" y1="100" x2="154" y2="100" />
+        <line x1="100" y1="100" x2="100" y2="154" />
+        <line x1="100" y1="100" x2="46" y2="100" />
+        <line x1="100" y1="100" x2="138.2" y2="61.8" />
+        <line x1="100" y1="100" x2="138.2" y2="138.2" />
+        <line x1="100" y1="100" x2="61.8" y2="138.2" />
+        <line x1="100" y1="100" x2="61.8" y2="61.8" />
+        <line x1="100" y1="100" x2="125.5" y2="49.2" />
+        <line x1="100" y1="100" x2="150.8" y2="74.5" />
+        <line x1="100" y1="100" x2="150.8" y2="125.5" />
+        <line x1="100" y1="100" x2="125.5" y2="150.8" />
+        <line x1="100" y1="100" x2="74.5" y2="150.8" />
+        <line x1="100" y1="100" x2="49.2" y2="125.5" />
+        <line x1="100" y1="100" x2="49.2" y2="74.5" />
+        <line x1="100" y1="100" x2="74.5" y2="49.2" />
+      </g>
+      <!-- hub -->
+      <circle cx="100" cy="100" r="9" fill="#3c9d7a" />
+      <circle cx="100" cy="100" r="3.5" fill="#ffffff" />
+      <!-- little chain links -->
+      <g fill="none" stroke="#e59a6b" stroke-width="4" stroke-linecap="round">
+        <rect x="26" y="168" width="22" height="12" rx="6" />
+        <rect x="42" y="165" width="22" height="12" rx="6" />
+        <rect x="58" y="168" width="22" height="12" rx="6" />
+      </g>
+    </svg>
+  </div>
+
+  <div class="cards">
+    <div class="card card-free">
+      <span class="label">Admission</span>
+      <span class="value">Free safety checks</span>
+      <span class="detail">Bring your bike to the Saturday Fix-It Clinic and get a free safety check.</span>
+    </div>
+    <div class="card card-hours">
+      <span class="label">When</span>
+      <span class="value">Saturday, 10am to 2pm</span>
+      <span class="detail">The clinic runs every Saturday from 10am to 2pm.</span>
+    </div>
+    <div class="card card-where">
+      <span class="label">Where</span>
+      <span class="value">12 Mill Lane</span>
+      <span class="detail">Spoke &amp; Chain, your neighborhood bike repair shop.</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p><strong>Spoke &amp; Chain</strong><br>Saturday Fix-It Clinic at 12 Mill Lane. Come along, we will look your bike over.</p>
+    <svg class="wrench" viewBox="0 0 64 64" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="32" cy="32" r="30" fill="#e7dcf8" />
+      <path d="M40 14a10 10 0 0 0-9.6 13L17 40a5 5 0 0 0 7 7l13-13.4A10 10 0 0 0 50 24l-6 5-5-1-1-5 5-6a10 10 0 0 0-3-3z" fill="#3c9d7a" />
+    </svg>
+  </div>
+</main>
+
+</body>
+</html>
