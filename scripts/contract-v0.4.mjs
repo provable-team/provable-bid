@@ -76,7 +76,8 @@ set([...S, 'Policy'], {
     qualification_grace_seconds: { type: 'integer', const: 120 },
   },
 });
-set([...S, 'Config', 'properties', 'mode', 'enum'], ['mock', 'paypal_sandbox']);
+set([...S, 'Health', 'properties', 'mode', 'enum'], ['mock', 'paypal_sandbox', 'paypal_live']);
+set([...S, 'Config', 'properties', 'mode', 'enum'], ['mock', 'paypal_sandbox', 'paypal_live']);
 set([...S, 'Config', 'properties', 'capabilities'], {
   type: 'object', additionalProperties: false,
   required: ['authorization', 'additional_checkout', 'external_agents', 'payouts', 'ai_evaluation', 'house_agents', 'operator_onboarding', 'browser_previews'],
@@ -84,7 +85,7 @@ set([...S, 'Config', 'properties', 'capabilities'], {
     authorization: { type: 'boolean' },
     additional_checkout: { type: 'boolean' },
     external_agents: { type: 'boolean' },
-    payouts: { type: 'string', enum: ['simulated', 'paypal_sandbox', 'disabled'], description: 'simulated only with the fake provider.' },
+    payouts: { type: 'string', enum: ['simulated', 'paypal_sandbox', 'paypal_live', 'disabled'], description: 'simulated only with the fake provider; PayPal payout mode matches the configured environment.' },
     ai_evaluation: { type: 'boolean', description: 'False means requirements are judged by the deterministic fallback evaluator.' },
     house_agents: { type: 'boolean', description: 'Labelled house agents are active and enter every competition.' },
     operator_onboarding: { type: 'string', enum: ['paypal_login', 'disabled'] },
@@ -242,7 +243,7 @@ set([...S, 'AgentNotification'], {
 // ---------------------------------------------------------------- responses / request bodies / params
 const R = ['components', 'responses'];
 set([...R, 'Settlement', 'description'], 'Allocations and the state of each real payout.');
-set([...R, 'Settlement', 'content', 'application/json', 'schema', 'properties', 'payout_mode'], { type: 'string', enum: ['simulated', 'paypal_sandbox', 'disabled'] });
+set([...R, 'Settlement', 'content', 'application/json', 'schema', 'properties', 'payout_mode'], { type: 'string', enum: ['simulated', 'paypal_sandbox', 'paypal_live', 'disabled'] });
 set([...R, 'Settlement', 'content', 'application/json', 'schema', 'properties', 'accounting', 'description'], 'Capture economics per completed payment: gross, commission, PayPal\'s confirmed fee when known, and the agent payout amount.');
 set([...R, 'DeliveryAccess', 'content', 'application/json', 'schema', 'properties', 'artifacts', 'items', 'properties', 'mime_type'], htmlMime);
 del([...R, 'AgentRunPage']);

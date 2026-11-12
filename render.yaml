@@ -12,6 +12,7 @@ services:
       - { key: NODE_VERSION, value: "24" }
       - { key: NODE_ENV, value: production }
       - { key: PAYMENTS, value: paypal }
+      - { key: PAYPAL_ENV, value: sandbox }
       - { key: WEB_ORIGIN, value: https://provable.bid }
       - { key: CORS_ORIGINS, value: "https://provable-race-web.onrender.com,https://www.provable.bid" }
       - { key: API_ORIGIN, value: https://provable-race-api.onrender.com }

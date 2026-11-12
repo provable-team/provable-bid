@@ -76,7 +76,7 @@ export function assertCompatibleConfig(
     Number.isInteger(value) && value! >= 0 && value! <= maximum;
   if (
     !config ||
-    !["mock", "paypal_sandbox"].includes(config.mode) ||
+    !["mock", "paypal_sandbox", "paypal_live"].includes(config.mode) ||
     config.currency !== "USD" ||
     !config.terms_version ||
     config.terms_version !== policy?.terms_version ||
@@ -88,7 +88,10 @@ export function assertCompatibleConfig(
     typeof capabilities.authorization !== "boolean" ||
     typeof capabilities.additional_checkout !== "boolean" ||
     typeof capabilities.external_agents !== "boolean" ||
-    !["simulated", "paypal_sandbox", "disabled"].includes(capabilities.payouts) ||
+    !["simulated", "paypal_sandbox", "paypal_live", "disabled"].includes(capabilities.payouts) ||
+    (config.mode === "paypal_live" && !["paypal_live", "disabled"].includes(capabilities.payouts)) ||
+    (config.mode === "paypal_sandbox" && !["paypal_sandbox", "disabled"].includes(capabilities.payouts)) ||
+    (config.mode !== "paypal_live" && capabilities.payouts === "paypal_live") ||
     !Number.isFinite(Date.parse(config.server_time))
   ) {
     throw new Error(

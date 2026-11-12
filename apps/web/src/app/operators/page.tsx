@@ -172,7 +172,7 @@ export default function OperatorsPage() {
               <div>
                 <h2>{operator.name}</h2>
                 <p className="muted">
-                  {config?.mode === "mock" ? "Demo operator connected" : operator.paypal_account_verified ? "PayPal sandbox account connected" : "No PayPal account connected"}
+                  {config?.mode === "mock" ? "Demo operator connected" : operator.paypal_account_verified ? (config?.mode === "paypal_live" ? "Live PayPal account connected" : config?.mode === "paypal_sandbox" ? "PayPal sandbox account connected" : "PayPal account connected") : "No PayPal account connected"}
                 </p>
               </div>
               <button className="button secondary small" onClick={signOut}>Sign out</button>
@@ -210,7 +210,9 @@ export default function OperatorsPage() {
                       ? "Mock payouts use no real money."
                       : config?.capabilities.payouts === "paypal_sandbox"
                         ? "PayPal sandbox payouts use test money."
-                        : "Payout availability is determined by the API."} Allocation and payout statuses are separate.
+                        : config?.capabilities.payouts === "paypal_live"
+                          ? "PayPal live payouts transfer real money."
+                          : "Payout availability is determined by the API."} Allocation and payout statuses are separate.
                 </p>
               </div>
               <button className="button secondary small" onClick={() => setLedgerRevision((revision) => revision + 1)} disabled={ledgerLoading}>Refresh</button>
@@ -236,7 +238,7 @@ export default function OperatorsPage() {
                   payment: allocation.payment_id,
                   amount: allocation.amount.amount_minor,
                   ledger: allocation.ledger_state.replaceAll("_", " "),
-                  payout: allocation.payout_state === "paid" ? "Paid (test)" : allocation.payout_state.replaceAll("_", " "),
+                  payout: allocation.payout_state === "paid" ? (config?.mode === "paypal_live" && config.capabilities.payouts === "paypal_live" ? "Paid" : config?.mode === "mock" || config?.mode === "paypal_sandbox" ? "Paid (test)" : "Payout confirmed") : allocation.payout_state.replaceAll("_", " "),
                 }))}
                 emptyMessage="No allocations yet. Allocations appear after a buyer's payment is confirmed."
               />

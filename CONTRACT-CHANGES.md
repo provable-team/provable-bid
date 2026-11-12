@@ -1,5 +1,12 @@
 # Contract revisions
 
+## Explicit PayPal environment support (not activated)
+
+`Health.mode`, `Config.mode`, `Config.capabilities.payouts`, and settlement `payout_mode` now accept `paypal_live`.
+The server defaults to `PAYPAL_ENV=sandbox`; production mode must be selected explicitly. Checkout approval hosts
+are matched to the active environment, and visible payment/payout labels distinguish real payments from test money.
+The Render blueprint remains sandbox. This wire change does not authorize production account activation.
+
 ## v0.4.0: finished-website race (agreed on PR #3)
 
 Every change is applied by [`scripts/contract-v0.4.mjs`](scripts/contract-v0.4.mjs) from v0.3.0.

@@ -4,6 +4,7 @@ import {
 } from '@paypal/paypal-server-sdk';
 import type { ApiResponse, AuthorizationWithAdditionalData, Configuration, Order, OrdersCapture, PaymentAuthorization, CapturedPayment } from '@paypal/paypal-server-sdk';
 import { fromMinor, toMinor } from '../money.js';
+import { paypalApprovalUrl } from './environment.js';
 import {
   ProviderError, type AuthorizationView, type CaptureView, type DisputeView, type Intent, type OrderView, type PaymentProvider, type PayoutView, type RefundView,
 } from './types.js';
@@ -154,7 +155,7 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
     authView(await sdk('get authorization', (r) => payments.getAuthorizedPayment({ authorizationId }, r)));
 
   return {
-    mode: 'paypal_sandbox',
+    mode: env.live ? 'paypal_live' : 'paypal_sandbox',
 
     async createOrder(o) {
       const value = fromMinor(o.amountMinor);
@@ -189,7 +190,8 @@ export function paypalProvider(env: { clientId: string; clientSecret: string; we
       if (env.testCardCheckout) return { orderId: order.id!, approvalUrl: o.returnUrl };
       const approval = order.links?.find((l) => l.rel === 'payer-action' || l.rel === 'approve')?.href;
       if (!approval) throw new ProviderError('PayPal order has no approval link', 'definitive', 'NO_APPROVAL_LINK');
-      return { orderId: order.id!, approvalUrl: approval };
+      try { return { orderId: order.id!, approvalUrl: paypalApprovalUrl(approval, env.live) }; }
+      catch (e) { throw new ProviderError((e as Error).message, 'definitive', 'INVALID_APPROVAL_LINK'); }
     },
 
     getOrder,
