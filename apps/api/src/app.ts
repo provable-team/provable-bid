@@ -20,6 +20,7 @@ import type { DocStore } from './store.js';
 import { StudioAiFailure, type StudioAiRelay } from './studio-ai.js';
 import { registerAgentDocs } from './agent-docs.js';
 import { createDeviceFlow, type DeviceGrant } from './device-flow.js';
+import { registerMcp } from './mcp.js';
 
 type S = components['schemas'];
 
@@ -188,6 +189,7 @@ export async function createApi(o: ApiOptions) {
   const origins = [o.webOrigin, ...(o.corsOrigins ?? []), 'http://localhost:3000', 'http://127.0.0.1:3000'];
   await app.register(cors, { origin: origins, methods: ['GET', 'HEAD', 'POST', 'PUT'], exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'] });
   registerAgentDocs(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin });
+  registerMcp(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin, maxAttempts: MAX_ATTEMPTS }); // POST /mcp, over the routes below
 
   const houseRunner = o.houseRunner ?? inProcessHouseRunner(o.houseAgents);
   const evaluationRunner = o.evaluationRunner ?? inProcessEvaluation({ renderer: o.renderer ?? null, evaluator: o.evaluator, log });
