@@ -85,16 +85,20 @@ export function paypalAgentToolkit(o: { clientId: string; clientSecret: string; 
       let timer: NodeJS.Timeout | undefined;
       const call = toolkit().handleToolCall({ id: `call_${randomUUID()}`, type: 'function', function: { name: tool, arguments: JSON.stringify(args) } });
       const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new ToolkitError('PayPal did not answer in time', null)), PAYPAL_TIMEOUT_MS); });
-      try {
-        const message = await Promise.race([call, timeout]);
-        const data = JSON.parse(String(message.content)) as Record<string, any>;
-        // The toolkit reports failures in the result: { ok: false, status, message } or { error: { message } }.
-        if (data?.ok === false) throw new ToolkitError(String(data.message ?? 'PayPal error'), typeof data.status === 'number' ? data.status : null);
-        if (data?.error) throw new ToolkitError(String(data.error.message ?? 'PayPal error'), null);
-        return data;
-      } finally { clearTimeout(timer); }
+      try { return toolkitResult(String((await Promise.race([call, timeout])).content)); }
+      finally { clearTimeout(timer); }
     },
   };
+}
+
+/** Parses a toolkit tool result. The toolkit reports PayPal failures inside the result, not by throwing:
+ * `{ ok: false, status, message }` (HTTP errors) or `{ error: { message } }`. Those become a ToolkitError with the status. */
+export function toolkitResult(content: string): unknown {
+  let data: any;
+  try { data = JSON.parse(content); } catch { throw new ToolkitError('PayPal Agent Toolkit returned something that is not JSON', null); }
+  if (data?.ok === false) throw new ToolkitError(String(data.message ?? 'PayPal error'), typeof data.status === 'number' ? data.status : null);
+  if (data?.error) throw new ToolkitError(String(data.error.message ?? 'PayPal error'), typeof data.error.status === 'number' ? data.error.status : null);
+  return data;
 }
 
 // ---------------------------------------------------------------- the tools Claude sees
@@ -223,18 +227,32 @@ export function claudeOperatorAssistant(o: { client: MessagesClient; toolkit: Pa
             if (capture !== null && !owned(refs.captures, capture)) return refused(typeof capture === 'string' ? capture.slice(0, 64) : null, 'PayPal captures');
             const days = [1, 7, 31].includes(Number(input.days)) ? Number(input.days) : 31;
             const end = new Date(); const start = new Date(end.getTime() - days * 86_400_000);
-            const raw = await o.toolkit.run('list_transactions', capture
-              ? { transaction_id: capture, search_months: 1, page_size: 500 }
-              : { start_date: start.toISOString(), end_date: end.toISOString(), page_size: 500 }) as any;
-            const all = (raw?.transaction_details ?? []) as any[];
+            // Always the date-scoped search, for exactly the window we report. The toolkit's transaction_id mode
+            // (1.11.0) swallows HTTP errors (a 403 comes back as "not found") and ignores the window (it always searches
+            // 31-day blocks back from now), so the capture filter is applied here instead. The date-scoped mode
+            // rethrows PayPal errors, which the toolkit adapter turns into a ToolkitError with the HTTP status.
+            const raw = await o.toolkit.run('list_transactions', { start_date: start.toISOString(), end_date: end.toISOString(), page_size: 500 }) as any;
+            if (!raw || !Array.isArray(raw.transaction_details)) throw new ToolkitError('PayPal returned no transaction list', null);
+            const all = raw.transaction_details as any[];
             const allowed = new Set([...refs.captures, ...refs.refunds, ...payoutTransactions]);
-            // Only the operator's own transactions, and refunds/reversals that point at their captures.
-            const mine = all.map(projectTransaction).filter(t => allowed.has(t.transaction_id) || (t.paypal_reference_id && refs.captures.has(t.paypal_reference_id)));
-            o.log?.('assistant transaction search filtered', { returned: all.length, kept: mine.length });
-            const refreshed = raw?.last_refreshed_datetime ?? null;
+            const inWindow = (t: ReturnType<typeof projectTransaction>) => {
+              const at = Date.parse(t.initiation_date ?? '');
+              return Number.isFinite(at) && at >= start.getTime() && at <= end.getTime();
+            };
+            // Only the operator's own transactions (and refunds/reversals that point at their captures), inside the window,
+            // and for one capture when one was asked for.
+            const mine = all.map(projectTransaction)
+              .filter(t => allowed.has(t.transaction_id) || (t.paypal_reference_id && refs.captures.has(t.paypal_reference_id)))
+              .filter(inWindow)
+              .filter(t => capture === null || t.transaction_id === capture || t.paypal_reference_id === capture);
+            const morePages = Number(raw.total_pages ?? 1) > 1;
+            o.log?.('assistant transaction search filtered', { returned: all.length, kept: mine.length, more_pages: morePages });
+            const refreshed = raw.last_refreshed_datetime ?? null;
+            const span = `${days} day${days === 1 ? '' : 's'}`;
             return {
-              lookup: { ref: capture, status: 'ok', summary: `${mine.length} of your transaction${mine.length === 1 ? '' : 's'} in the last ${days} day${days === 1 ? '' : 's'}${refreshed ? ` (PayPal index refreshed ${refreshed})` : ''}` },
-              data: { window_days: days, index_last_refreshed: refreshed, transactions: mine },
+              lookup: { ref: capture, status: 'ok', summary: `${mine.length} of your transaction${mine.length === 1 ? '' : 's'} in the last ${span}${refreshed ? ` (PayPal index refreshed ${refreshed})` : ''}${morePages ? '; first 500 platform rows only' : ''}` },
+              data: { window: { start: start.toISOString(), end: end.toISOString(), days }, index_last_refreshed: refreshed, transactions: mine,
+                ...(morePages ? { note: 'PayPal returned more than one page; only the first 500 rows of the window were searched.' } : {}) },
             };
           }
           case 'list_disputes': {
@@ -282,10 +300,14 @@ export function claudeOperatorAssistant(o: { client: MessagesClient; toolkit: Pa
           try { outcome = await run(block.name, input); }
           catch (e) {
             const status = e instanceof ToolkitError ? e.status : null;
-            const reason = status === 403 ? 'PayPal says this app is not permitted to use this API' : status === 404 ? 'PayPal could not find it' : 'PayPal lookup failed';
+            const reason = status === 401 || status === 403 ? 'PayPal refused: this app is not permitted to use this API'
+              : status === 404 ? 'PayPal could not find it'
+              : status !== null && status >= 500 ? 'PayPal failed to answer'
+              : 'PayPal lookup failed';
             o.log?.('assistant lookup failed', `${block.name}: ${(e as Error).message}`);
             const ref = Object.values(input).find((v): v is string => typeof v === 'string') ?? null;
-            outcome = { lookup: { ref: ref && ID.test(ref) ? ref : null, status: 'error', summary: `${reason}.` }, data: { error: `${reason}${status ? ` (HTTP ${status})` : ''}.` } };
+            const text = `${reason}${status ? ` (HTTP ${status})` : ''}.`;
+            outcome = { lookup: { ref: ref && ID.test(ref) ? ref : null, status: 'error', summary: text }, data: { error: `${text} Nothing was looked up; do not treat this as an empty result.` } };
           }
         }
         if (ASSISTANT_TOOLS.some(t => t.name === tool)) lookups[slot] = { tool, source, ...outcome.lookup, summary: outcome.lookup.summary.slice(0, 300) };

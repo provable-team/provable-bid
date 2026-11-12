@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
 import type Anthropic from '@anthropic-ai/sdk';
 import { createApi } from '../apps/api/src/app.js';
-import { claudeOperatorAssistant, type MessagesClient, type OperatorAssistant, type PayPalToolkit, type ToolkitTool } from '../apps/api/src/assistant.js';
+import { claudeOperatorAssistant, toolkitResult, ToolkitError, type MessagesClient, type OperatorAssistant, type PayPalToolkit, type ToolkitTool } from '../apps/api/src/assistant.js';
 import { heuristicEvaluator, judgeText, streamingHouseAgent } from '../apps/api/src/claude.js';
 import { colorTracker, parseStructure, progressTracker, structureTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer } from '../apps/api/src/browser.js';
@@ -691,6 +691,10 @@ const toolResults = (req: Anthropic.MessageCreateParamsNonStreaming) => {
   return Object.fromEntries((last.content as any[]).filter(b => b.type === 'tool_result').map(b => [b.tool_use_id, { data: JSON.parse(b.content), is_error: !!b.is_error }]));
 };
 
+/** The assistant searches relative to the real clock, so fake PayPal rows are dated from it too. */
+const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+const windowDays = (args: Record<string, unknown>) => Math.round((Date.parse(String(args.end_date)) - Date.parse(String(args.start_date))) / 86_400_000);
+
 /** Two operators, each with one won, captured and paid allocation (fake PayPal). */
 async function twoWinners(f: Awaited<ReturnType<typeof fixture>>) {
   const b = await f.buyer();
@@ -721,10 +725,12 @@ test('operator assistant: Claude may only look up the operator\'s own PayPal ref
         captures: [{ id: ids.minePay.provider_capture_id, status: 'COMPLETED', amount: { currency_code: 'USD', value: '21.23' }, create_time: '2026-11-12T10:06:00Z' }] } }],
     };
     if (tool === 'list_transactions') return { last_refreshed_datetime: '2026-11-12T09:00:00Z', transaction_details: [
-      { transaction_info: { transaction_id: ids.minePay.provider_capture_id, transaction_event_code: 'T0006', transaction_status: 'S', transaction_amount: { currency_code: 'USD', value: '21.23' } }, payer_info: { email_address: 'buyer@example.com' } },
-      { transaction_info: { transaction_id: 'REFUNDOFMINE0001', paypal_reference_id: ids.minePay.provider_capture_id, transaction_event_code: 'T1107', transaction_status: 'S', transaction_amount: { currency_code: 'USD', value: '-1.00' } } },
-      { transaction_info: { transaction_id: ids.theirPay.provider_capture_id, transaction_event_code: 'T0006', transaction_status: 'S', transaction_amount: { currency_code: 'USD', value: '21.23' } } },
-      { transaction_info: { transaction_id: 'PLATFORMSALE0001', transaction_event_code: 'T0006', transaction_status: 'S', transaction_amount: { currency_code: 'USD', value: '999.00' } } },
+      { transaction_info: { transaction_id: ids.minePay.provider_capture_id, transaction_initiation_date: daysAgo(1), transaction_event_code: 'T0006', transaction_status: 'S', transaction_amount: { currency_code: 'USD', value: '21.23' } }, payer_info: { email_address: 'buyer@example.com' } },
+      { transaction_info: { transaction_id: 'REFUNDOFMINE0001', paypal_reference_id: ids.minePay.provider_capture_id, transaction_initiation_date: daysAgo(0.5), transaction_event_code: 'T1107', transaction_status: 'S', transaction_amount: { currency_code: 'USD', value: '-1.00' } } },
+      // Ann's, but older than the 31 days asked for: PayPal can return rows at the window's edge, so it is filtered here.
+      { transaction_info: { transaction_id: 'OLDREFUNDOFMINE1', paypal_reference_id: ids.minePay.provider_capture_id, transaction_initiation_date: daysAgo(45), transaction_event_code: 'T1107', transaction_status: 'S', transaction_amount: { currency_code: 'USD', value: '-2.00' } } },
+      { transaction_info: { transaction_id: ids.theirPay.provider_capture_id, transaction_initiation_date: daysAgo(1), transaction_event_code: 'T0006', transaction_status: 'S', transaction_amount: { currency_code: 'USD', value: '21.23' } } },
+      { transaction_info: { transaction_id: 'PLATFORMSALE0001', transaction_initiation_date: daysAgo(1), transaction_event_code: 'T0006', transaction_status: 'S', transaction_amount: { currency_code: 'USD', value: '999.00' } } },
     ] };
     throw new Error(`unexpected toolkit call ${tool}`);
   } };
@@ -755,6 +761,8 @@ test('operator assistant: Claude may only look up the operator\'s own PayPal ref
   // PayPal was never asked about anything that isn't Ann's.
   assert.deepEqual(toolkitCalls.map(c => c.tool), ['get_order', 'list_transactions']);
   assert.equal(toolkitCalls[0].args.id, ids.minePay.provider_order_id);
+  assert.equal(windowDays(toolkitCalls[1].args), 31, 'the window queried is the window asked for');
+  assert.equal(toolkitCalls[1].args.transaction_id, undefined, 'never the toolkit\'s transaction_id mode, which swallows PayPal errors');
 
   // The model was called with current conventions, and saw only Ann's data.
   const first = claude.requests[0];
@@ -767,13 +775,65 @@ test('operator assistant: Claude may only look up the operator\'s own PayPal ref
   assert.equal(results.t2.is_error, true); assert.equal(results.t2.data.refused, true);
   assert.equal(results.t5.is_error, true); assert.equal(results.t7.is_error, true);
   assert.equal(results.t3.data.order.purchase_units[0].captures[0].status, 'COMPLETED');
-  assert.deepEqual(results.t4.data.transactions.map((x: any) => x.transaction_id), [ids.minePay.provider_capture_id, 'REFUNDOFMINE0001'], 'only Ann\'s capture and the refund that points at it');
+  assert.deepEqual(results.t4.data.transactions.map((x: any) => x.transaction_id), [ids.minePay.provider_capture_id, 'REFUNDOFMINE0001'], 'only Ann\'s capture and the refund that points at it, inside the window');
+  assert.equal(results.t4.data.window.days, 31);
   assert.equal(results.t6.data.item_status, 'SUCCESS'); assert.equal(results.t6.data.amount, '19.00 USD');
   const seen = JSON.stringify(claude.requests.at(-1)!.messages);
   for (const leak of ['buyer@example.com', 'Bea', '4658', '1 Main St', 'PLATFORMSALE0001', ids.theirPay.provider_capture_id, 'Dentist landing page']) assert.ok(!seen.includes(leak), `model never sees ${leak}`);
   assert.ok(!JSON.stringify(r.data).includes(ids.theirPay.provider_capture_id));
 
   assert.equal((await f.request('POST', '/v1/operators/me/assistant', { question: 'hi' }, ids.b, null)).data.code, 'OPERATOR_REQUIRED', 'only operators can ask');
+});
+
+test('operator assistant: transaction search reports PayPal 403/500 as failures, never as "0 transactions", and keeps to the window asked for', async t => {
+  // What the PayPal Agent Toolkit hands back for HTTP errors (its result, not a throw), parsed by our adapter.
+  assert.throws(() => toolkitResult('{"ok":false,"status":403,"code":"PAYPAL_API_HTTP_ERROR","message":"Authorization failed due to insufficient permissions."}'), (e: any) => e instanceof ToolkitError && e.status === 403);
+  assert.throws(() => toolkitResult('{"ok":false,"status":500,"code":"PAYPAL_API_HTTP_ERROR","message":"Internal Service Error"}'), (e: any) => e instanceof ToolkitError && e.status === 500);
+  assert.throws(() => toolkitResult('{"error":{"message":"boom","type":"paypal_error"}}'), (e: any) => e instanceof ToolkitError);
+  assert.throws(() => toolkitResult('not json'), (e: any) => e instanceof ToolkitError);
+
+  let ids!: Awaited<ReturnType<typeof twoWinners>>;
+  const calls: Record<string, unknown>[] = [];
+  const replies: (() => unknown)[] = [
+    () => { throw new ToolkitError('Authorization failed due to insufficient permissions.', 403); },
+    () => { throw new ToolkitError('Internal Service Error', 500); },
+    () => ({ transaction_details: [] }), // a 200 with no rows is the only "0 transactions"
+    () => ({ last_refreshed_datetime: daysAgo(0.2), transaction_details: [
+      { transaction_info: { transaction_id: ids.minePay.provider_capture_id, transaction_initiation_date: daysAgo(10), transaction_status: 'S' } }, // older than 7 days
+      { transaction_info: { transaction_id: 'REFUNDOFMINE0002', paypal_reference_id: ids.minePay.provider_capture_id, transaction_initiation_date: daysAgo(2), transaction_status: 'S' } },
+      { transaction_info: { transaction_id: 'NOTDATED00000001', paypal_reference_id: ids.minePay.provider_capture_id, transaction_status: 'S' } }, // no date: cannot be shown as inside the window
+    ] }),
+  ];
+  const toolkit: PayPalToolkit = { async run(tool, args) { assert.equal(tool, 'list_transactions'); calls.push(args); return replies[calls.length - 1](); } };
+  const claude = scriptedClaude([
+    () => ({ content: [useTool('t1', 'list_transactions', { capture_id: ids.minePay.provider_capture_id, days: 31 })], stop_reason: 'tool_use' }),
+    () => ({ content: [useTool('t2', 'list_transactions', { capture_id: null, days: 31 })], stop_reason: 'tool_use' }),
+    () => ({ content: [useTool('t3', 'list_transactions', { capture_id: null, days: 1 })], stop_reason: 'tool_use' }),
+    () => ({ content: [useTool('t4', 'list_transactions', { capture_id: ids.minePay.provider_capture_id, days: 7 })], stop_reason: 'tool_use' }),
+    () => say('done'),
+  ]);
+  const f = await fixture(t, { operatorAssistant: provider => claudeOperatorAssistant({ client: claude.client, toolkit, provider }) });
+  ids = await twoWinners(f);
+  const r = await f.request('POST', '/v1/operators/me/assistant', { question: 'List my transactions.' }, ids.annOp, null);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+
+  assert.deepEqual(r.data.lookups.map((l: any) => l.status), ['error', 'error', 'ok', 'ok']);
+  assert.match(r.data.lookups[0].summary, /PayPal refused.*HTTP 403/);
+  assert.match(r.data.lookups[1].summary, /PayPal failed.*HTTP 500/);
+  for (const l of r.data.lookups.slice(0, 2)) assert.doesNotMatch(l.summary, /\b0\b|transaction/, 'a failure is never reported as an empty search');
+  assert.match(r.data.lookups[2].summary, /^0 of your transactions in the last 1 day$/);
+  assert.match(r.data.lookups[3].summary, /^1 of your transaction in the last 7 days/);
+
+  const seen = (i: number) => toolResults(claude.requests[i]);
+  assert.equal(seen(1).t1.is_error, true); assert.match(seen(1).t1.data.error, /HTTP 403.*not treat this as an empty result/);
+  assert.equal(seen(2).t2.is_error, true); assert.match(seen(2).t2.data.error, /HTTP 500/);
+  assert.deepEqual(seen(3).t3.data.transactions, []);
+  assert.deepEqual(seen(4).t4.data.transactions.map((x: any) => x.transaction_id), ['REFUNDOFMINE0002'], 'the 10-day-old capture and the undated row stay out of a 7-day answer');
+  assert.equal(seen(4).t4.data.window.days, 7);
+
+  // Every call was the date-scoped search for exactly the window reported; never the toolkit's transaction_id mode.
+  assert.deepEqual(calls.map(windowDays), [31, 31, 1, 7]);
+  assert.ok(calls.every(c => c.transaction_id === undefined && c.search_months === undefined));
 });
 
 test('operator assistant: a declined request (stop_reason refusal) gets a plain answer and no lookups', async t => {
