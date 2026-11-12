@@ -27,13 +27,13 @@
             <desc id="front-desc">A saturated ultramarine card with an oversized ivory FORMA wordmark. Three nested right-angle frames create an original architectural solid-and-void motif. The words Space, with intention sit at the lower left.</desc>
             <rect x="-37.5" y="-37.5" width="1125" height="675" fill="#213bdb"/>
             <g fill="#f1efdf" font-family="Arial,Helvetica,sans-serif">
-              <text x="65" y="78" font-size="18" letter-spacing="3.1">ARCHITECTURE / INTERIORS</text>
-              <text x="984" y="78" text-anchor="end" font-size="17" letter-spacing="1.2">EST. 2026</text>
+              <text x="65" y="80" font-size="30" letter-spacing="1.4">ARCHITECTURE / INTERIORS</text>
+              <text x="984" y="80" text-anchor="end" font-size="30" letter-spacing="1">EST. 2026</text>
               <text x="51" y="280" font-size="226" font-weight="900" letter-spacing="-13" textLength="930" lengthAdjust="spacingAndGlyphs">FORMA</text>
               <text x="65" y="381" font-size="39" font-weight="600" letter-spacing="-.9">SPACE,</text>
               <text x="65" y="429" font-size="39" font-weight="600" letter-spacing="-.9">WITH</text>
               <text x="65" y="477" font-size="39" font-weight="600" letter-spacing="-.9">INTENTION.</text>
-              <text x="66" y="543" font-size="15" letter-spacing="2.5">FORM FOLLOWS POSSIBILITY</text>
+              <text x="66" y="543" font-size="30" letter-spacing="1.4">FORM FOLLOWS POSSIBILITY</text>
             </g>
             <g fill="none" stroke="#f1efdf" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter">
               <path d="M648 539V345H980V539Z"/>
@@ -50,15 +50,15 @@
             <desc id="back-desc">An ivory card with bold ultramarine typography: Build what matters. A restrained plan-like geometric mark balances the contact details: New commissions, studio@example.com, example.com/forma. All brand and contact details are fictional.</desc>
             <rect x="-37.5" y="-37.5" width="1125" height="675" fill="#f1efdf"/>
             <g fill="#213bdb" font-family="Arial,Helvetica,sans-serif">
-              <text x="65" y="80" font-size="16" letter-spacing="2.7">FORMA / STUDIO CONTACT</text>
+              <text x="65" y="80" font-size="30" letter-spacing="1.4">FORMA / STUDIO CONTACT</text>
               <text x="61" y="204" font-size="94" font-weight="700" letter-spacing="-4.5">BUILD</text>
               <text x="61" y="299" font-size="94" font-weight="700" letter-spacing="-4.5">WHAT</text>
               <text x="61" y="394" font-size="94" font-weight="700" letter-spacing="-4.5">MATTERS.</text>
-              <text x="663" y="178" font-size="17" letter-spacing="1.2">NEW COMMISSIONS</text>
-              <text x="663" y="224" font-size="25">studio@example.com</text>
-              <text x="663" y="266" font-size="23">example.com/forma</text>
+              <text x="663" y="178" font-size="30" letter-spacing="1">NEW COMMISSIONS</text>
+              <text x="663" y="231" font-size="32">studio@example.com</text>
+              <text x="663" y="278" font-size="32">example.com/forma</text>
               <path d="M65 473H984" fill="none" stroke="#213bdb" stroke-width="1.2"/>
-              <text x="65" y="538" font-size="19" letter-spacing=".2">Architecture · Interiors · Objects</text>
+              <text x="65" y="538" font-size="30" letter-spacing=".2">Architecture · Interiors · Objects</text>
               <text x="984" y="540" text-anchor="end" font-size="41" font-weight="700" letter-spacing="-2">F—02</text>
             </g>
             <g fill="none" stroke="#213bdb" stroke-linecap="square">
@@ -77,7 +77,7 @@
     <section class="details" aria-label="Project brief and provenance">
       <div><h2>The direction</h2><p class="brand-note">Confident form.<br>Considered space.</p></div>
       <div><h2>Supplied creative brief</h2><p>Invent an architecture studio called Forma. Create front and back business cards in ultramarine and ivory, using bold typographic hierarchy and bespoke architectural geometry. Include fictional enquiries at studio@example.com and example.com/forma. Keep important content within a generous safety margin.</p></div>
-      <div><h2>Sample provenance</h2><p>AI-created sample by Codex. Fictional brand and contact information. This is a design example; it is not a qualified marketplace entry or evidence of a customer engagement.</p></div>
+      <div><h2>Sample provenance</h2><p>AI-created sample by Codex. Fictional brand and contact information. This is a design example; it is not a qualified marketplace entry or evidence of a customer engagement. Print-legibility revision: 12 November 2026.</p></div>
     </section>
     <footer class="footer"><p>Print at 100% / actual size for two 3.5 × 2 in proofs. SVG downloads optionally add ⅛ in bleed on every edge; the card trim remains 3.5 × 2 in. Live Arial type, RGB color. Confirm fonts, trim, stock, color conversion, and finishing with your printer; these are not certified press-ready files.</p><p>FORMA<br>Identity study / 2026</p></footer>
   </main>
@@ -92,7 +92,7 @@
       svg.setAttribute('width', bleed ? '3.75in' : '3.5in');
       svg.setAttribute('height', bleed ? '2.25in' : '2in');
       const metadata = document.createElementNS('http://www.w3.org/2000/svg', 'metadata');
-      metadata.textContent = 'AI-created fictional sample by Codex. Trim: 3.5 x 2 in. Bleed: ' + (bleed ? '0.125 in on all edges.' : 'none.') + ' RGB color; editable Arial text. Printer review required.';
+      metadata.textContent = 'AI-created fictional sample by Codex. Print-legibility revision: 2026-11-12. Trim: 3.5 x 2 in. Bleed: ' + (bleed ? '0.125 in on all edges.' : 'none.') + ' RGB color; editable Arial text. Printer review required.';
       svg.prepend(metadata);
       const blob = new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(svg)], {type:'image/svg+xml;charset=utf-8'});
       const url = URL.createObjectURL(blob);
