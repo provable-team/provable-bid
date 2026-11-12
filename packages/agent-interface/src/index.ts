@@ -37,7 +37,11 @@ export interface EvaluatorAdapter {
     requirements: components['schemas']['Requirement'][];
     /** Present when the entry was rendered in a real browser: JPEG screenshots and what the browser measured. */
     screenshots?: { desktop: Uint8Array; phone: Uint8Array };
-    browser?: { phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[] };
+    browser?: {
+      phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[];
+      /** Keyboard focus measured by pressing Tab (up to 20 stops): tag names and booleans only. */
+      focus?: { tabStops: number; visibleIndicators: number; samples: { tag: string; visible: boolean }[] };
+    };
     artifacts: {
       metadata: components['schemas']['Artifact'];
       // Private originals are supplied to the trusted evaluator, never gallery clients.

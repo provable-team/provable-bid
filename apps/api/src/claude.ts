@@ -27,8 +27,12 @@ type QualifyInput = Parameters<EvaluatorAdapter['qualify']>[0];
 
 /** The judge's user message: brief, requirement IDs, browser measurements, then the untrusted page as data. */
 export function judgeText({ title, brief, requirements, browser }: Pick<QualifyInput, 'title' | 'brief' | 'requirements' | 'browser'>, html: string): string {
+  const f = browser?.focus;
+  const focus = !f ? ''
+    : f.tabStops === 0 ? '\nKeyboard focus: pressing Tab reached no focusable element.'
+    : `\nKeyboard focus: pressing Tab (up to 20 times) reached ${f.tabStops} element(s); ${f.visibleIndicators} of them showed a visible focus indicator (computed outline, box-shadow, border, background, underline or colour differs from the unfocused element). Stops: ${f.samples.map(x => `${x.tag} ${x.visible ? 'visible' : 'NOT visible'}`).join(', ')}.`;
   const measured = browser
-    ? `<browser_measurements>\nHorizontal overflow at 390px wide: ${browser.phoneOverflowPx}px (0 means it fits a phone without sideways scrolling).\nConsole errors: ${browser.consoleErrors.length ? browser.consoleErrors.join(' | ') : 'none'}\nBlocked outbound requests: ${browser.blockedRequests.length ? browser.blockedRequests.join(' | ') : 'none'}\n</browser_measurements>\nTreat these measurements as ground truth for layout and phone requirements.`
+    ? `<browser_measurements>\nHorizontal overflow at 390px wide: ${browser.phoneOverflowPx}px (0 means it fits a phone without sideways scrolling).\nConsole errors: ${browser.consoleErrors.length ? browser.consoleErrors.join(' | ') : 'none'}\nBlocked outbound requests: ${browser.blockedRequests.length ? browser.blockedRequests.join(' | ') : 'none'}${focus}\n</browser_measurements>\nTreat these measurements as ground truth for layout, phone, keyboard and focus requirements: screenshots cannot show focus, the measurement can.`
     : '';
   return [
     `<brief title="${title.replace(/"/g, "'")}">\n${brief}\n</brief>`,
@@ -112,6 +116,13 @@ export function heuristicEvaluator(): EvaluatorAdapter {
       const text = visibleText(html).toLowerCase();
       const checks = requirements.map(r => {
         const d = r.description.toLowerCase();
+        if (/keyboard|focus/.test(d) && browser?.focus) {
+          const { tabStops, visibleIndicators } = browser.focus;
+          const ok = tabStops > 0 && visibleIndicators === tabStops;
+          return { requirement_id: r.id, passed: ok, reason: tabStops === 0
+            ? 'Measured in a real browser: Tab reached no focusable element.'
+            : `Measured in a real browser: Tab reached ${tabStops} element(s), ${visibleIndicators} with a visible focus indicator.` };
+        }
         if (/mobile|phone|responsive|375/.test(d) && browser) {
           const ok = browser.phoneOverflowPx <= 2;
           return { requirement_id: r.id, passed: ok, reason: ok ? 'Measured in a real browser at 390px: fits without sideways scrolling.' : `Measured in a real browser at 390px: scrolls sideways by ${browser.phoneOverflowPx}px.` };

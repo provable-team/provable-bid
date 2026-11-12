@@ -7,7 +7,7 @@ import Database from 'better-sqlite3';
 import { join } from 'node:path';
 import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
 import { createApi } from '../apps/api/src/app.js';
-import { heuristicEvaluator, streamingHouseAgent } from '../apps/api/src/claude.js';
+import { heuristicEvaluator, judgeText, streamingHouseAgent } from '../apps/api/src/claude.js';
 import { colorTracker, parseStructure, progressTracker, structureTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
@@ -588,6 +588,22 @@ test('KERNEL-rendered entries: screenshot-only previews, and phone requirements 
   const closed = await f.get(new URL(unrendered.preview.url).pathname, b);
   assert.equal(closed.status, 409, 'fail closed: with a renderer configured, a buyer never gets markup, even if the render failed');
   assert.equal((await f.get(new URL(unrendered.preview.url).pathname, ann.token)).headers['content-type'], 'text/html', 'the agent can still see its own page');
+});
+
+test('keyboard focus measured in the browser is ground truth for focus requirements (judge text and keyword judge)', async () => {
+  const requirements = [{ id: 'req_keys', description: 'Navigation and FAQ controls are keyboard accessible with visible focus styles.' }];
+  const base = { phoneOverflowPx: 0, consoleErrors: [], blockedRequests: [] };
+  const focus = (visible: boolean[]) => ({ tabStops: visible.length, visibleIndicators: visible.filter(Boolean).length, samples: visible.map((v, i) => ({ tag: i ? 'button' : 'a', visible: v })) });
+  const text = judgeText({ title: 't', brief: 'b', requirements, browser: { ...base, focus: focus([true, false]) } }, '<p>x</p>');
+  assert.match(text, /Tab \(up to 20 times\) reached 2 element\(s\); 1 of them showed a visible focus indicator/);
+  assert.match(text, /a visible, button NOT visible/);
+  assert.match(judgeText({ title: 't', brief: 'b', requirements, browser: { ...base, focus: focus([]) } }, ''), /reached no focusable element/);
+  const judge = heuristicEvaluator();
+  const run = (f: ReturnType<typeof focus>) => judge.qualify({ title: 't', brief: 'b', requirements, signal: AbortSignal.timeout(1000),
+    artifacts: [{ metadata: {} as any, bytes: new TextEncoder().encode(page()) }], browser: { ...base, focus: f } });
+  assert.equal((await run(focus([true, true]))).status, 'qualified');
+  assert.equal((await run(focus([true, false]))).status, 'failed');
+  assert.equal((await run(focus([]))).status, 'failed', 'nothing focusable is not keyboard accessible');
 });
 
 test('preview CSP precedes agent markup even when a script sits before <head>', () => {

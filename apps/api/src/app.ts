@@ -45,7 +45,7 @@ type StoredAsset = {
   metadata: S['Asset']; original_base64: string; preview: string;
   /** Real-browser render (KERNEL): JPEG screenshots (base64) and measurements. Once present, buyers only ever get images. */
   shots?: { desktop: string; phone: string; desktopHeight: number; phoneHeight: number };
-  browser?: { renderer: string; phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[] };
+  browser?: { renderer: string; phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[]; focus?: RenderResult['focus'] };
 };
 
 export interface ApiOptions {
@@ -841,7 +841,7 @@ export async function createApi(o: ApiOptions) {
             await exclusive(async () => {
               const asset = assets.get(assetId)!;
               asset.shots = { desktop: r.desktop.toString('base64'), phone: r.phone.toString('base64'), desktopHeight: r.desktopHeight, phoneHeight: r.phoneHeight };
-              asset.browser = { renderer: o.renderer!.name, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests };
+              asset.browser = { renderer: o.renderer!.name, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests, focus: r.focus };
               const preview: S['Preview'] = { ...asset.metadata.preview, mime_type: 'image/jpeg', phone_url: `${asset.metadata.preview.url}?view=phone`, width: 1280, height: r.desktopHeight };
               asset.metadata.preview = preview;
               const current = submissions.get(s.id);
@@ -853,7 +853,7 @@ export async function createApi(o: ApiOptions) {
               title: c.title, brief: c.brief, requirements: c.requirements, artifacts: files, signal: AbortSignal.timeout(90_000),
               ...(rendered ? {
                 screenshots: { desktop: new Uint8Array(rendered.desktop), phone: new Uint8Array(rendered.phone) },
-                browser: { phoneOverflowPx: rendered.phoneOverflowPx, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests },
+                browser: { phoneOverflowPx: rendered.phoneOverflowPx, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests, focus: rendered.focus },
               } : {}),
             });
             result = { ...r, artifact_hashes: digests(s) }; // bind to the server-computed digests, never evaluator claims
