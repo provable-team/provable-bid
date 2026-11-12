@@ -49,7 +49,12 @@ type StoredAsset = {
   metadata: S['Asset']; original_base64: string; preview: string;
   /** Real-browser render (KERNEL): JPEG screenshots (base64) and measurements. Once present, buyers only ever get images. */
   shots?: { desktop: string; phone: string; desktopHeight: number; phoneHeight: number };
-  browser?: { renderer: string; phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[]; focus?: RenderResult['focus'] };
+  browser?: {
+    renderer: string; phoneOverflowPx: number; consoleErrors: string[]; blockedRequests: string[]; focus?: RenderResult['focus'];
+    phoneLayout?: RenderResult['phoneLayout']; loadMs?: number; renderMs?: number;
+    /** KERNEL replay of the check (server-side; offered to readers of the submission only until expires_at). */
+    replay?: { id: string; url: string; expires_at: string };
+  };
 };
 
 export interface ApiOptions {
@@ -150,6 +155,24 @@ export async function createApi(o: ApiOptions) {
     const c = fetchOne(competitions, s.competition_id);
     return p.role === 'admin' || (p.role === 'agent' && s.agent_id === p.agent_id) || (p.role === 'buyer' && c.buyer_id === p.id && s.qualification_status === 'qualified');
   }
+  /**
+   * Content-free summary of the real-browser check (counts and pixel widths only, never messages or URLs from the
+   * page), for anyone who may read the submission. The replay link is offered only while KERNEL still keeps it.
+   */
+  function browserCheck(s: S['Submission']): S['BrowserCheck'] | undefined {
+    const b = assets.get(s.artifacts[0]?.asset_id)?.browser;
+    if (!b) return undefined;
+    const replay = b.replay && time() < Date.parse(b.replay.expires_at) ? b.replay : null;
+    const layout = b.phoneLayout?.layoutWidth ?? null;
+    return {
+      phone_fits: b.phoneOverflowPx <= 1, phone_overflow_px: b.phoneOverflowPx, phone_layout_width: layout,
+      console_errors: b.consoleErrors.length, blocked_requests: b.blockedRequests.length,
+      focus_stops: b.focus?.tabStops ?? null, focus_visible: b.focus?.visibleIndicators ?? null, focus_complete: b.focus?.complete ?? null,
+      load_ms: b.loadMs ?? null, render_ms: b.renderMs ?? null,
+      replay_url: replay?.url ?? null, replay_expires_at: replay?.expires_at ?? null,
+    };
+  }
+  const submissionView = (s: S['Submission']): S['Submission'] => { const check = browserCheck(s); return check ? { ...s, browser_check: check } : s; };
   function requireOpen(c: S['Competition']) {
     demand(c.state === 'open' && time() < Date.parse(c.submission_deadline!), 'DEADLINE_PASSED', 'Submission window is not open.');
   }
@@ -498,11 +521,11 @@ export async function createApi(o: ApiOptions) {
       case 'listSubmissions': {
         const me = who(); const c = fetchOne(competitions, params.competition_id);
         demand(me.id === c.buyer_id || me.role === 'agent' || me.role === 'admin', 'NOT_FOUND', 'Resource not found.', 404);
-        return ok(page(compSubmissions(c).filter(s => canReadSubmission(s, me)), query));
+        return ok(page(compSubmissions(c).filter(s => canReadSubmission(s, me)).map(submissionView), query));
       }
       case 'getSubmission': {
         const me = who(); const s = fetchOne(submissions, params.submission_id);
-        demand(canReadSubmission(s, me), 'NOT_FOUND', 'Resource not found.', 404); return ok(view(s));
+        demand(canReadSubmission(s, me), 'NOT_FOUND', 'Resource not found.', 404); return ok(view(submissionView(s)));
       }
 
       // ---------------- competitions
@@ -879,7 +902,7 @@ export async function createApi(o: ApiOptions) {
           let rendered: RenderResult | null = null;
           if (o.renderer) {
             // Render the watermarked preview (same layout as the original; the watermark is a fixed overlay).
-            try { rendered = await o.renderer.render(assets.get(assetId)!.preview, AbortSignal.timeout(75_000)); }
+            try { rendered = await o.renderer.render(assets.get(assetId)!.preview, { signal: AbortSignal.timeout(75_000), tags: { competition: c.id, submission: s.id } }); }
             catch (e) { log(`browser render failed on ${s.id}`, (e as Error).message); }
           }
           if (rendered) {
@@ -887,7 +910,9 @@ export async function createApi(o: ApiOptions) {
             await exclusive(async () => {
               const asset = assets.get(assetId)!;
               asset.shots = { desktop: r.desktop.toString('base64'), phone: r.phone.toString('base64'), desktopHeight: r.desktopHeight, phoneHeight: r.phoneHeight };
-              asset.browser = { renderer: o.renderer!.name, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests, focus: r.focus };
+              asset.browser = { renderer: o.renderer!.name, phoneOverflowPx: r.phoneOverflowPx, consoleErrors: r.consoleErrors, blockedRequests: r.blockedRequests, focus: r.focus,
+                phoneLayout: r.phoneLayout, loadMs: r.loadMs, renderMs: r.renderMs,
+                replay: r.replay ? { id: r.replay.id, url: r.replay.url, expires_at: at(time() + r.replay.retentionMs) } : undefined };
               const preview: S['Preview'] = { ...asset.metadata.preview, mime_type: 'image/jpeg', phone_url: `${asset.metadata.preview.url}?view=phone`, width: 1280, height: r.desktopHeight };
               asset.metadata.preview = preview;
               const current = submissions.get(s.id);
@@ -899,7 +924,7 @@ export async function createApi(o: ApiOptions) {
               title: c.title, brief: c.brief, requirements: c.requirements, artifacts: files, signal: AbortSignal.timeout(90_000),
               ...(rendered ? {
                 screenshots: { desktop: new Uint8Array(rendered.desktop), phone: new Uint8Array(rendered.phone) },
-                browser: { phoneOverflowPx: rendered.phoneOverflowPx, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests, focus: rendered.focus },
+                browser: { phoneOverflowPx: rendered.phoneOverflowPx, phoneLayout: rendered.phoneLayout, consoleErrors: rendered.consoleErrors, blockedRequests: rendered.blockedRequests, focus: rendered.focus },
               } : {}),
             });
             result = { ...r, artifact_hashes: digests(s) }; // bind to the server-computed digests, never evaluator claims
