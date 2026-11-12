@@ -20,3 +20,30 @@ contract, every request is validated against it, and (outside production) every 
 
 Run from the repository root: `npm run api` (reads `.env.local`) or `npm run api:fake`. See `apps/api/src/server.ts`
 for every environment variable.
+
+`npm run api:build` bundles the server into `dist/api-server.mjs` (dependencies stay in `node_modules`) and
+`npm run api:start` runs it, so a boot no longer compiles TypeScript: about half the boot CPU of `npx tsx`.
+
+## Where the slow work runs (prototype: Render Workflows)
+
+House-agent builds and submission evaluations (gates, KERNEL render, Claude judge) sit behind two seams in
+`src/runners.ts`: `HouseRunner` and `EvaluationRunner`. The default runs them in this process, as before.
+With `RUNNER=workflows` they run as [Render Workflows](https://render.com/docs/workflows) task runs instead
+(`src/workflows/tasks.ts`: `houseAgentBuild`, and `evaluateSubmission`, which chains `renderEntry` and `judgeEntry`,
+each with its own retries). A house agent on a task run reaches this API over HTTPS with a token derived from
+`HOUSE_AGENT_SECRET` (never a task argument), reports its build steps to `POST /internal/house-progress`, and
+reads its own checks with `GET /v1/submissions/{id}`. Evaluations start with the submission ID as idempotency key,
+so after a restart the worker re-attaches to the run already in flight.
+
+Locally, with Render's task server (Render CLI):
+
+```sh
+printf 'HOUSE_AGENT_SECRET=local_secret_0001\nWORKFLOWS_FIXTURE_PAGES=1\n' > .env.workflows
+render workflows dev --env-file .env.workflows -- npx tsx apps/api/src/workflows/main.ts
+# another terminal
+PAYMENTS=fake RUNNER=workflows RENDER_USE_LOCAL_DEV=true HOUSE_AGENT_SECRET=local_secret_0001 npm run api
+```
+
+`WORKFLOWS_FIXTURE_PAGES=1` makes the house agents return a canned page (no model key needed). The tests use
+`src/workflows/local.ts`, an in-process stand-in with the same JSON boundary, 4 MB argument limit, retries,
+chained runs and idempotency keys (`tests/workflows.test.ts`).

@@ -5,6 +5,7 @@ import { claudeEvaluator, claudeHouseAgent, heuristicEvaluator } from './claude.
 import { HOUSE_AGENTS } from './identity.js';
 import { fakeProvider } from './provider/fake.js';
 import { paypalProvider } from './provider/paypal.js';
+import { workflowsEvaluation, workflowsHouseRunner, type EvaluationRunner, type HouseRunner } from './runners.js';
 import { Store } from './store.js';
 
 // Configuration (all optional for local dev with the fake provider):
@@ -19,6 +20,11 @@ import { Store } from './store.js';
 //   DATABASE_PATH                 SQLite file (default ./data/api.db)
 //   KEEP_ALIVE_URLS               comma-separated URLs pinged every 9 min (Render free plan sleeps after 15 min idle);
 //                                 set to the web app's URL, while the web app pings this API's /health
+//   RUNNER=workflows              prototype: house-agent builds and evaluations run as Render Workflows tasks
+//                                 (apps/api/src/workflows) instead of in this process. Also needs:
+//     WORKFLOW_SLUG               the workflow service's slug (default provable-race-workflows)
+//     HOUSE_AGENT_SECRET          shared with the workflow service; house-agent tokens are derived from it
+//     RENDER_API_KEY              to start task runs (or RENDER_USE_LOCAL_DEV=true for `render workflows dev`)
 const env = process.env;
 const port = Number(env.PORT ?? env.API_PORT ?? 4010);
 const host = env.HOST ?? (env.RENDER ? '0.0.0.0' : '127.0.0.1');
@@ -33,16 +39,29 @@ const provider = usePayPal
 const anthropic = env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 const aiLabel = anthropic ? 'claude' : 'off (heuristic judge, no house agents)';
 const store = new Store(env.DATABASE_PATH ?? 'data/api.db');
+const evaluator = anthropic ? claudeEvaluator(anthropic) : heuristicEvaluator();
+
+let runners: { houseRunner: HouseRunner; evaluationRunner: EvaluationRunner } | null = null;
+if (env.RUNNER === 'workflows') {
+  const { Render } = await import('@renderinc/sdk'); // loaded only in this mode
+  const client = new Render().workflows;
+  const workflow = env.WORKFLOW_SLUG ?? 'provable-race-workflows';
+  runners = {
+    houseRunner: workflowsHouseRunner({ client, workflow, apiOrigin, agentIds: env.HOUSE_AGENT_SECRET ? HOUSE_AGENTS.map(h => h.id) : [] }),
+    evaluationRunner: workflowsEvaluation({ client, workflow, version: evaluator.version }),
+  };
+}
 
 const api = await createApi({
   store, provider, webOrigin, apiOrigin,
   corsOrigins: (env.CORS_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean),
   adminToken: env.ADMIN_TOKEN ?? null,
   houseOperatorPayerId: env.HOUSE_OPERATOR_PAYER_ID ?? env.DEMO_OPERATOR_PAYER_ID ?? null,
-  evaluator: anthropic ? claudeEvaluator(anthropic) : heuristicEvaluator(),
+  evaluator,
   renderer: env.KERNEL_API_KEY ? kernelRenderer(env.KERNEL_API_KEY) : null,
   houseAgents: anthropic ? Object.fromEntries(HOUSE_AGENTS.map(h => [h.id, claudeHouseAgent(anthropic, h)])) : null,
   strictResponses: env.NODE_ENV !== 'production',
+  ...(runners ? { ...runners, houseTokenSecret: env.HOUSE_AGENT_SECRET ?? null } : {}),
 });
 
 // Deadlines, evaluations and PayPal operations: every 2s while the process is awake.
@@ -54,4 +73,4 @@ const pinger = keepAlive.length
 pinger?.unref();
 api.app.addHook('onClose', async () => { clearInterval(timer); if (pinger) clearInterval(pinger); store.close(); });
 await api.app.listen({ host, port });
-console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? 'kernel' : 'off (HTML previews)'} · web: ${webOrigin}`);
+console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? 'kernel' : 'off (HTML previews)'} · runner: ${runners ? 'render-workflows' : 'in-process'} · web: ${webOrigin}`);
