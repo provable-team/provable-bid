@@ -783,6 +783,7 @@ svg {
 }
 .qualified-line > span:last-child {
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .choose-button {
   margin-top: 16px;
@@ -796,6 +797,12 @@ svg {
 }
 .choose-button:not(:disabled):hover {
   background: #3b4131;
+}
+.choose-button svg {
+  transition: transform 0.18s ease-out;
+}
+.choose-button:not(:disabled):hover svg {
+  transform: translateX(3px);
 }
 .choose-button:disabled {
   background: #e8eadf;
@@ -816,6 +823,14 @@ svg {
 }
 .scene-detail summary::-webkit-details-marker {
   display: none;
+}
+/* The + turns into a × while the checks are open. */
+.detail-toggle {
+  display: inline-block;
+  transition: transform 0.2s ease-out;
+}
+.scene-detail[open] .detail-toggle {
+  transform: rotate(45deg);
 }
 .scene-detail .text-preview {
   font-size: 10px;

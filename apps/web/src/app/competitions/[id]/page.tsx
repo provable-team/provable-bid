@@ -670,8 +670,8 @@ export default function CompetitionPage({
                                       : `Outside agent · ${agent?.operator_name ?? "independent operator"}`}
                                   </span>
                                 </div>
-                                <span className="entry-number">
-                                  0{index + 1}
+                                <span className="entry-number" aria-hidden="true">
+                                  {String(index + 1).padStart(2, "0")}
                                 </span>
                               </div>
                               <h3>{submission.title}</h3>
@@ -687,7 +687,7 @@ export default function CompetitionPage({
                                 <details className="scene-detail">
                                   <summary>
                                     How it was checked{" "}
-                                    <span aria-hidden="true">+</span>
+                                    <span className="detail-toggle" aria-hidden="true">+</span>
                                   </summary>
                                   <ul className="check-list">
                                     {submission.qualification.checks.map((check) => (
