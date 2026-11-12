@@ -4,6 +4,9 @@ Target: **2:40–2:45**, with a hard export limit below 3:00. Read the narration
 This is the preferred **AI-enabled** cut, not a claim that all recording prerequisites have passed.
 Use [recording-readiness.md](./recording-readiness.md) before recording the final take.
 
+For a real-money version, use the [live-launch assessment](./live-launch.md). Keep the sandbox narration until
+the production account, durable storage, mode handling and actual live transaction evidence are verified.
+
 Keep a small, readable **“PayPal sandbox · no real money”** label visible during payment shots.
 Shorten waiting and typing in the edit; label time jumps. Use actual results from the same recorded brief.
 
