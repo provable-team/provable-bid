@@ -1728,6 +1728,12 @@ svg {
   color: var(--muted);
   margin: 10px 0 0;
 }
+.operators-page {
+  padding-top: clamp(24px, 4vw, 38px);
+}
+.operators-page h1 {
+  margin-top: 14px;
+}
 .operators-page h1 em {
   font-style: italic;
 }
