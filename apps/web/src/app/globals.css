@@ -409,6 +409,7 @@ svg {
   color: var(--ink);
   max-height: calc(100dvh - 32px);
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .connection-dialog::backdrop,
 .decision-dialog::backdrop {
