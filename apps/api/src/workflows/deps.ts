@@ -18,7 +18,7 @@ export function envDeps(env = process.env): TaskDeps {
   const fixtures = env.WORKFLOWS_FIXTURE_PAGES === '1' && !production;
   const missingKey: EvaluatorAdapter = { version: 'unconfigured', qualify: async () => { throw new Error('ANTHROPIC_API_KEY is not set on the workflow service'); } };
   return {
-    renderer: env.KERNEL_API_KEY ? kernelRenderer(env.KERNEL_API_KEY) : null,
+    renderer: env.KERNEL_API_KEY ? kernelRenderer(env.KERNEL_API_KEY, { replays: env.KERNEL_REPLAYS === '1', replayRetentionHours: Number(env.KERNEL_REPLAY_HOURS) || undefined }) : null,
     evaluator: anthropic ? claudeEvaluator(anthropic) : production ? missingKey : heuristicEvaluator(),
     secret: env.WORKFLOWS_SECRET ?? null,
     houseAgent: id => {
