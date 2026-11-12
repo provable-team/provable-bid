@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business Card: Maya Okafor, Product Designer</title>
+<style>
+  :root {
+    --mint: #d8f3e8;
+    --peach: #ffe3d3;
+    --lilac: #e6dcf7;
+    --sky: #d6ebfb;
+    --butter: #fff3c4;
+    --ink: #3b3550;
+    --soft: #6d6685;
+    --coral: #f4a58a;
+    --plum: #9b8ad0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: ui-rounded, "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+    color: var(--ink);
+    background: linear-gradient(160deg, #fbf8ff 0%, #f3f9fd 100%);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .wrap {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 16px 48px;
+  }
+  .note {
+    max-width: 560px;
+    margin: 0 auto 24px;
+    background: #ffffffcc;
+    border: 1px dashed #c9bfe0;
+    border-radius: 18px;
+    padding: 16px 18px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--soft);
+  }
+  .note h1 {
+    font-size: 18px;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+  .note p { margin: 4px 0; }
+  .sides {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+  }
+  @media (min-width: 1000px) {
+    .sides { flex-direction: row; justify-content: center; align-items: flex-start; }
+  }
+  .side-label {
+    font-size: 13px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--soft);
+    margin: 0 0 8px;
+    text-align: center;
+  }
+  .side { width: min(100%, 560px); }
+
+  /* Card: fluid, keeps 3.5 x 2 in ratio */
+  .card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3.5 / 2;
+    border-radius: 5.5cqw;
+    overflow: hidden;
+    container-type: inline-size;
+    box-shadow: 0 10px 30px -12px rgba(59,53,80,.35);
+    font-size: 16px; /* fallback */
+    font-size: 4.2cqw;
+  }
+  .front {
+    background: linear-gradient(135deg, var(--mint) 0%, var(--sky) 55%, var(--lilac) 100%);
+  }
+  .back {
+    background: linear-gradient(135deg, var(--peach) 0%, var(--butter) 60%, #fff8ec 100%);
+  }
+
+  /* CSS-drawn illustration: a soft flower and hills */
+  .flower {
+    position: absolute;
+    width: 30%;
+    aspect-ratio: 1;
+    right: 6%;
+    top: 8%;
+  }
+  .flower .petal {
+    position: absolute;
+    width: 46%;
+    height: 46%;
+    border-radius: 50%;
+    background: #ffffffd9;
+    box-shadow: inset 0 0 0 2px #ffffff;
+  }
+  .flower .petal:nth-child(1) { left: 27%; top: 0; }
+  .flower .petal:nth-child(2) { right: 0; top: 27%; }
+  .flower .petal:nth-child(3) { left: 27%; bottom: 0; }
+  .flower .petal:nth-child(4) { left: 0; top: 27%; }
+  .flower .core {
+    position: absolute;
+    width: 30%;
+    height: 30%;
+    left: 35%;
+    top: 35%;
+    border-radius: 50%;
+    background: var(--coral);
+  }
+  .hill {
+    position: absolute;
+    border-radius: 50%;
+    bottom: -30%;
+  }
+  .hill.a { left: -15%; width: 60%; height: 55%; background: #b9e6cf; }
+  .hill.b { right: -20%; width: 70%; height: 50%; background: #c6dcf5; }
+
+  .front .text {
+    position: absolute;
+    left: 8%;
+    top: 16%;
+    right: 40%;
+  }
+  .front .name {
+    font-size: 9.2cqw;
+    font-weight: 800;
+    line-height: 1.05;
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: -.01em;
+  }
+  .front .title {
+    display: inline-block;
+    margin-top: 3.5cqw;
+    font-size: 4.6cqw;
+    font-weight: 700;
+    color: var(--ink);
+    background: #ffffffb3;
+    padding: 1.4cqw 3.4cqw;
+    border-radius: 999px;
+  }
+
+  .back .inner {
+    position: absolute;
+    inset: 0;
+    padding: 9cqw 9cqw;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5.5cqw;
+  }
+  .back .who {
+    font-size: 5.6cqw;
+    font-weight: 800;
+    margin: 0;
+    color: var(--ink);
+  }
+  .back .who span {
+    font-weight: 600;
+    color: var(--soft);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 3.5cqw;
+  }
+  .badge {
+    flex: 0 0 auto;
+    width: 9cqw;
+    height: 9cqw;
+    border-radius: 50%;
+    background: #ffffffd9;
+    display: grid;
+    place-items: center;
+  }
+  .badge svg { width: 55%; height: 55%; }
+  .row .k {
+    display: block;
+    font-size: 2.6cqw;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--soft);
+    font-weight: 700;
+  }
+  .row .v {
+    display: block;
+    font-size: 5.2cqw;
+    font-weight: 700;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+  .back .dots {
+    position: absolute;
+    right: 6%;
+    bottom: 7%;
+    display: flex;
+    gap: 1.6cqw;
+  }
+  .back .dots i {
+    width: 2.6cqw;
+    height: 2.6cqw;
+    border-radius: 50%;
+    display: block;
+  }
+
+  /* Print: exactly two pages, each card fills its page */
+  @page {
+    size: 3.5in 2in;
+    margin: 0;
+  }
+  @media print {
+    html, body {
+      background: none !important;
+      min-height: 0;
+      width: 3.5in;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .wrap { padding: 0; max-width: none; margin: 0; }
+    .note, .side-label { display: none !important; }
+    .sides {
+      display: block;
+      gap: 0;
+    }
+    .side {
+      width: 3.5in;
+      height: 2in;
+      page-break-after: always;
+      break-after: page;
+      margin: 0;
+    }
+    .side:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .card {
+      width: 3.5in;
+      height: 2in;
+      aspect-ratio: auto;
+      border-radius: 0;
+      box-shadow: none;
+      font-size: 0.13in;
+    }
+    .card .front, .card.front, .card.back { font-size: 0.13in; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <section class="note" aria-label="About this print file">
+    <h1>Maya Okafor, business card</h1>
+    <p>Trim size: 3.5 x 2 in (US standard business card). Front and back are shown below as two separate sides.</p>
+    <p>To print: open the print dialog, choose actual size or 100% scale, set margins to none, turn off headers and footers, and print on card stock. Print gives two pages, front first, then back.</p>
+  </section>
+
+  <div class="sides">
+
+    <div class="side">
+      <p class="side-label">Front</p>
+      <article class="card front" aria-label="Front of card: Maya Okafor, Product Designer">
+        <div class="hill a"></div>
+        <div class="hill b"></div>
+        <div class="flower" aria-hidden="true">
+          <span class="petal"></span>
+          <span class="petal"></span>
+          <span class="petal"></span>
+          <span class="petal"></span>
+          <span class="core"></span>
+        </div>
+        <div class="text">
+          <h2 class="name">Maya Okafor</h2>
+          <span class="title">Product Designer</span>
+        </div>
+      </article>
+    </div>
+
+    <div class="side">
+      <p class="side-label">Back</p>
+      <article class="card back" aria-label="Back of card: email and website">
+        <div class="inner">
+          <p class="who">Maya Okafor <span>· Product Designer</span></p>
+          <div class="row">
+            <span class="badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#9b8ad0" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+                <rect x="3" y="5" width="18" height="14" rx="3"/>
+                <path d="M4 7l8 6 8-6"/>
+              </svg>
+            </span>
+            <div>
+              <span class="k">Email</span>
+              <span class="v">maya@example.com</span>
+            </div>
+          </div>
+          <div class="row">
+            <span class="badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#f4a58a" stroke-width="2.2" stroke-linecap="round">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/>
+              </svg>
+            </span>
+            <div>
+              <span class="k">Website</span>
+              <span class="v">example.com/maya</span>
+            </div>
+          </div>
+        </div>
+        <div class="dots" aria-hidden="true">
+          <i style="background:#d8f3e8"></i>
+          <i style="background:#d6ebfb"></i>
+          <i style="background:#e6dcf7"></i>
+        </div>
+      </article>
+    </div>
+
+  </div>
+</main>
+</body>
+</html>

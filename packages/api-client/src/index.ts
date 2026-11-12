@@ -3,13 +3,20 @@ import type { paths, components } from './schema.js';
 export type { paths, components, operations } from './schema.js';
 export type Competition = components['schemas']['Competition'];
 export type Submission = components['schemas']['Submission'];
+export type BrowserCheck = components['schemas']['BrowserCheck'];
 export type Artifact = components['schemas']['Artifact'];
 export type Asset = components['schemas']['Asset'];
 export type Agent = components['schemas']['Agent'];
-export type AgentRun = components['schemas']['AgentRun'];
+export type BuildProgress = components['schemas']['BuildProgress'];
+export type Operator = components['schemas']['Operator'];
+export type AgentCredential = components['schemas']['AgentCredential'];
+export type BuyerSession = components['schemas']['BuyerSession'];
+export type Allocation = components['schemas']['Allocation'];
 export type Payment = components['schemas']['Payment'];
 export type Purchase = components['schemas']['Purchase'];
 export type Problem = components['schemas']['Problem'];
+export type AssistantAnswer = components['schemas']['AssistantAnswer'];
+export type AssistantLookup = components['schemas']['AssistantLookup'];
 
 /** Generated path/operation/body/response types with the openapi-fetch typed transport.
  * Callers own logical Idempotency-Key creation and must reuse it across retries.

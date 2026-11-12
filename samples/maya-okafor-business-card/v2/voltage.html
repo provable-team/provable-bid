@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business Card: Maya Okafor, Product Designer</title>
+<style>
+  :root {
+    --accent: #ff4d1f;
+    --ink: #0d0d0d;
+    --paper: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", "Segoe UI", system-ui, sans-serif;
+    background: #f2f2f0;
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .wrap {
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
+  }
+
+  .note {
+    max-width: 560px;
+    margin: 0 0 24px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: #333;
+  }
+  .note strong { color: var(--ink); }
+
+  .pair {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    align-items: flex-start;
+  }
+  @media (min-width: 900px) {
+    .pair { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+  }
+
+  .slot { width: 100%; max-width: 560px; }
+  .slot-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #555;
+    margin: 0 0 8px;
+  }
+
+  /* Card: 3.5 x 2 in, scales fluidly. Text sized in container units. */
+  .card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3.5 / 2;
+    container-type: inline-size;
+    box-shadow: 0 10px 30px rgba(0,0,0,.18);
+  }
+
+  /* FRONT */
+  .front {
+    background: var(--accent);
+    color: var(--ink);
+    padding: 7cqi 8cqi;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .front .bar {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 9cqi;
+    background: var(--ink);
+  }
+  .front .corner {
+    position: absolute;
+    right: 8cqi;
+    top: 7cqi;
+    width: 14cqi;
+    height: 14cqi;
+  }
+  .front .name {
+    position: relative;
+    margin: 0;
+    font-size: 11cqi;
+    font-weight: 900;
+    line-height: .95;
+    letter-spacing: -.02em;
+    white-space: nowrap;
+    margin-top: 14cqi;
+  }
+  .front .title {
+    position: absolute;
+    left: 8cqi;
+    bottom: 2.6cqi;
+    margin: 0;
+    font-size: 5cqi;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #fff;
+    white-space: nowrap;
+  }
+
+  /* BACK */
+  .back {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 9cqi 8cqi;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .back .accent-rule {
+    position: absolute;
+    left: 8cqi;
+    top: 9cqi;
+    width: 12cqi;
+    height: 2.2cqi;
+    background: var(--accent);
+  }
+  .back .block { margin-top: 5cqi; }
+  .back .block:first-of-type { margin-top: 6cqi; }
+  .back .lbl {
+    display: block;
+    font-size: 3.2cqi;
+    font-weight: 800;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1.2cqi;
+  }
+  .back .val {
+    display: block;
+    font-size: 6.4cqi;
+    font-weight: 800;
+    letter-spacing: -.01em;
+    color: #fff;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .back a.val:hover, .back a.val:focus { color: var(--accent); }
+
+  /* PRINT: two pages, exactly 3.5 x 2 in, no margins */
+  @page { size: 3.5in 2in; margin: 0; }
+  @media print {
+    html, body { background: #fff !important; min-height: 0; overflow: visible; }
+    .no-print, .note, .slot-label { display: none !important; }
+    .wrap { max-width: none; padding: 0; margin: 0; }
+    .pair { display: block; gap: 0; }
+    .slot { max-width: none; width: 3.5in; margin: 0; padding: 0; }
+    .card {
+      width: 3.5in;
+      height: 2in;
+      aspect-ratio: auto;
+      box-shadow: none;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      page-break-after: always;
+      break-after: page;
+      page-break-inside: avoid;
+    }
+    .slot:last-child .card { page-break-after: auto; break-after: auto; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <p class="note no-print">
+    <strong>Business card, US trim size 3.5 x 2 in.</strong>
+    Front and back are shown below as two separate sides. To print, use your browser's Print command: the page is set to 3.5 x 2 in with zero margins, so it prints as two pages (front, then back). Turn off "Headers and footers" and use actual size or 100% scale.
+  </p>
+
+  <div class="pair">
+
+    <section class="slot" aria-labelledby="front-label">
+      <p class="slot-label no-print" id="front-label">Front</p>
+      <div class="card front" role="img" aria-label="Front: Maya Okafor, Product Designer">
+        <svg class="corner" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+          <circle cx="50" cy="50" r="50" fill="#0d0d0d"></circle>
+          <circle cx="50" cy="50" r="22" fill="#ff4d1f"></circle>
+        </svg>
+        <h1 class="name">Maya Okafor</h1>
+        <p class="title">Product Designer</p>
+        <div class="bar" aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <section class="slot" aria-labelledby="back-label">
+      <p class="slot-label no-print" id="back-label">Back</p>
+      <div class="card back">
+        <span class="accent-rule" aria-hidden="true"></span>
+        <div class="block">
+          <span class="lbl">Email</span>
+          <a class="val" href="mailto:maya@example.com">maya@example.com</a>
+        </div>
+        <div class="block">
+          <span class="lbl">Website</span>
+          <a class="val" href="https://example.com/maya">example.com/maya</a>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+</body>
+</html>

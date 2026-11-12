@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crumb & Co. Bakery - Business Card</title>
+<style>
+  :root {
+    --cream: #fdf6ee;
+    --pink: #f8d7d4;
+    --butter: #fbe9b5;
+    --mint: #d3efe2;
+    --ink: #5a3e36;
+    --ink-soft: #7d5f55;
+    --crust: #c98a57;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: ui-rounded, "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+    background: #f4ece4;
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .wrap {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px 40px;
+  }
+  .note {
+    background: #fffdf9;
+    border: 1px solid #e8dccd;
+    border-radius: 18px;
+    padding: 14px 18px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin: 0 auto 24px;
+    max-width: 560px;
+  }
+  .note strong { color: var(--ink); }
+  .sheet {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+  }
+  .side {
+    container-type: inline-size;
+    width: min(100%, 560px);
+    aspect-ratio: 3.5 / 2;
+    border-radius: 4.5cqw;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 10px 30px rgba(90, 62, 54, 0.12);
+    background: var(--cream);
+  }
+  .label {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: 0 0 8px;
+    text-align: center;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  /* FRONT */
+  .front {
+    background: var(--pink);
+  }
+  .front::before, .front::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    background: var(--butter);
+  }
+  .front::before { width: 60cqw; height: 60cqw; right: -18cqw; top: -22cqw; opacity: .8; }
+  .front::after { width: 38cqw; height: 38cqw; left: -12cqw; bottom: -14cqw; background: var(--mint); }
+  .front-inner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6cqw 8cqw;
+    text-align: center;
+    z-index: 1;
+  }
+  .loaf { width: 30cqw; height: auto; margin-bottom: 2cqw; }
+  .front h1 {
+    margin: 0;
+    font-size: 9.5cqw;
+    line-height: 1.05;
+    font-weight: 800;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .front .rule {
+    width: 14cqw;
+    height: 0.9cqw;
+    border-radius: 1cqw;
+    background: var(--crust);
+    margin: 2.6cqw auto 0;
+  }
+
+  /* BACK */
+  .back {
+    background: var(--cream);
+    border: 0.6cqw dashed var(--pink);
+  }
+  .back-inner {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3cqw;
+    padding: 6cqw;
+  }
+  .panel {
+    border-radius: 5cqw;
+    padding: 4.5cqw 4.5cqw;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .hours { background: var(--mint); }
+  .preorder { background: var(--butter); }
+  .kicker {
+    font-size: 3.2cqw;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-soft);
+    margin: 0 0 1.8cqw;
+  }
+  .big {
+    font-size: 6.2cqw;
+    font-weight: 800;
+    line-height: 1.15;
+    margin: 0;
+    color: var(--ink);
+  }
+  .small {
+    font-size: 3.9cqw;
+    line-height: 1.35;
+    margin: 1.6cqw 0 0;
+    color: var(--ink);
+  }
+  .url {
+    font-size: 5cqw;
+    font-weight: 800;
+    line-height: 1.2;
+    margin: 0;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  .brand-foot {
+    font-size: 3.2cqw;
+    color: var(--ink-soft);
+    margin: 2.4cqw 0 0;
+    font-weight: 700;
+  }
+  .spoon {
+    width: 9cqw;
+    height: auto;
+    margin-bottom: 2cqw;
+  }
+
+  @page { size: 3.5in 2in; margin: 0; }
+  @media print {
+    html, body {
+      background: #fff !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .note, .label, .wrap > h2 { display: none !important; }
+    .wrap { max-width: none; padding: 0; margin: 0; }
+    .sheet { display: block; gap: 0; }
+    .side {
+      width: 3.5in !important;
+      height: 2in !important;
+      aspect-ratio: auto;
+      border-radius: 0;
+      box-shadow: none;
+      page-break-after: always;
+      break-after: page;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      overflow: hidden;
+    }
+    .side:last-child { page-break-after: auto; break-after: auto; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <div class="note" role="note">
+    <strong>Print notes (screen only, hidden when printing):</strong>
+    Trim size is 3.5 × 2 in (US standard business card). The front and back are two pages. Print at 100% / actual size with no scaling, fit-to-page or margins, on card stock, and cut along the card edges.
+  </div>
+
+  <div class="sheet">
+    <section class="side front" aria-label="Business card front">
+      <div class="front-inner">
+        <svg class="loaf" viewBox="0 0 120 80" aria-hidden="true">
+          <path d="M14 58 C10 34 30 16 60 16 C90 16 110 34 106 58 Z" fill="#c98a57"/>
+          <path d="M14 58 C10 34 30 16 60 16 C90 16 110 34 106 58 Z" fill="none" stroke="#a86d3f" stroke-width="2"/>
+          <path d="M38 30 L44 46" stroke="#f3d2a6" stroke-width="4" stroke-linecap="round"/>
+          <path d="M58 24 L62 42" stroke="#f3d2a6" stroke-width="4" stroke-linecap="round"/>
+          <path d="M78 28 L82 44" stroke="#f3d2a6" stroke-width="4" stroke-linecap="round"/>
+          <rect x="8" y="58" width="104" height="8" rx="4" fill="#5a3e36"/>
+        </svg>
+        <h1>Crumb &amp; Co. Bakery</h1>
+        <div class="rule" aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <section class="side back" aria-label="Business card back">
+      <div class="back-inner">
+        <div class="panel hours">
+          <svg class="spoon" viewBox="0 0 40 40" aria-hidden="true">
+            <circle cx="20" cy="20" r="18" fill="#fff" opacity=".6"/>
+            <circle cx="20" cy="20" r="9" fill="none" stroke="#5a3e36" stroke-width="3"/>
+            <path d="M20 11 L20 20 L26 24" fill="none" stroke="#5a3e36" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <p class="kicker">Hours</p>
+          <p class="big">Tuesday to Sunday (Tue-Sun)</p>
+          <p class="small">7am to 3pm</p>
+        </div>
+        <div class="panel preorder">
+          <p class="kicker">Preorders</p>
+          <p class="url">Preorders at crumbandco.example</p>
+          <p class="brand-foot">Crumb &amp; Co. Bakery</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+</main>
+</body>
+</html>

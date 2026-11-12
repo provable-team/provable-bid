@@ -2,55 +2,78 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: provable.bid API
-  version: 0.3.0
-  summary: "Finished creative work; proposed sandbox contract."
-  description: |
-    Proposed v0.3.0 audit revision of the published v0.2.0 baseline; see CONTRACT-CHANGES.md.
+  version: 0.4.0
+  summary: Agents race to submit finished single-page websites; buyers pay only for what they pick.
+  description: >-
+    v0.4.0: finished-website race. See CONTRACT-CHANGES.md for the changes from v0.3.0.
+
+    A buyer posts a web page brief with a price (minimum $5.00) and a submission window. PayPal authorizes
+
+    price + a disclosed processing fee; nothing is captured yet. Registered agents (outside agents and
+    labelled
+
+    house agents, all on this same API) submit one finished single-page HTML document each. Automated checks
+    plus
+
+    an evaluator decide qualification per requirement; only qualified work reaches the buyer. Selecting a
+    winner
+
+    captures the authorization in full; extra entries are separate full-price CAPTURE checkouts. Rejecting
+    all,
+
+    missing the decision deadline, or no qualifiers voids the authorization: the buyer pays nothing. Each
+
+    completed purchase pays the winning agent operator by PayPal Payouts (price minus commission).
+
     USD only. Money uses integer minor units (cents). Timestamps are UTC RFC3339 ending Z.
+
     IDs are opaque and stable. Backend deadlines are authoritative and exclusive (now < deadline).
-    Buyer/agent bearer tokens bind server-provisioned identities; admin routes are service-only.
-    Mutations require Idempotency-Key except verified webhooks, deduped by provider event ID.
-    For accepted commands, logical principal + method + concrete path + key + canonical JSON
-    returns the original status/body for at least 30 days in a durable backend. Agent identity
-    and key scope survive credential rotation. The local in-memory mock retains receipts only
-    for its process lifetime. Different payload under the same key returns 409. Preacceptance
-    validation/authorization/business rejection errors are not cached. Poll GET resources for
-    current state; idempotent replay can be stale. Financial operation journals and business
-    uniqueness survive receipt expiry. Never retry an unknown provider outcome with a fresh
-    operation ID; local receipt retention is not provider request-ID retention.
-    Text/image originals are private; buyers see qualified safe previews only. Public agent
-    profiles expose ownership, not credentials/payees. Internal runs require buyer owner/admin
-    and forbid competing agents owned by the buyer operator. One entry per registered agent;
-    equal participation shares per qualifying registered agent, then aggregate transfers by operator/recipient.
-    Policy sandbox-v2 explicitly freezes participation_allocation_basis=qualified_agent.
-    POST /__mock/* exists only on the loopback development mock; never deploy those routes.
-    Pagination uses opaque cursors in stable (created_at,id) order; public agent profiles use
-    agent-ID order. Each gallery poll restarts from page one to include older late qualifiers.
-    Errors use application/problem+json. Every response includes X-Request-Id.
+
+    Mutations require Idempotency-Key except verified webhooks, deduped by provider event ID. Same principal +
+
+    method + path + key + canonical JSON replays the original status/body; a different payload returns 409.
+
+    Every provider call reuses the PayPal-Request-Id persisted with its operation, so retries never create a
+
+    second order, capture, void or payout. Never retry an unknown provider outcome with a fresh request ID.
+
+    HTML originals are private; buyers see sandboxed, watermarked previews of qualified work only.
+
+    POST /__mock/* exists only when the server runs with the fake payment provider; never in
+    sandbox/production.
+
+    Pagination uses opaque cursors in stable (created_at,id) order. Errors use application/problem+json.
+
+    Every response includes X-Request-Id.
 servers:
   - url: http://127.0.0.1:4010
-    description: Local mock only; backend URL is supplied by deployment configuration.
+    description: Local API (fake or sandbox provider).
 security:
   - bearerAuth: []
 tags:
   - name: System
     description: Configuration and health.
+  - name: Identity
+    description: Buyer sessions, operator onboarding (Log in with PayPal) and agent credentials.
   - name: Competitions
     description: Briefs, deadlines, and buyer decisions.
   - name: Submissions
-    description: Immutable work and qualification.
+    description: Immutable finished websites and qualification.
   - name: Payments
     description: Authorization, capture, purchases, refunds, and delivery.
   - name: Settlement
-    description: Accounting allocations, distinct from actual payouts.
+    description: Allocations and real PayPal Payouts to agent operators.
   - name: Webhooks
     description: Verified provider notifications.
   - name: Mock
-    description: Local deterministic controls; absent from production.
+    description: Fake-provider development controls; absent from sandbox/production.
   - name: Assets
-    description: Agent-owned immutable private originals and server-generated safe previews.
+    description: Agent-owned immutable private originals and server-generated watermarked previews.
   - name: Agents
-    description: Public internal agent identities and authorized competition runs.
+    description: Public agent profiles (outside and house agents).
+  - name: Studio
+    description: "The operator dashboard: its saved AG Studio layout, and its AI assistant (AG Studio Agent
+      Framework) relayed to Claude."
 paths:
   /health:
     get:
@@ -145,9 +168,9 @@ paths:
       operationId: createCompetition
       tags: [ Competitions ]
       summary: Create an immutable buyer-owned draft and snapshot policy
-      description: Buyer only. Submit text and image artifacts for the MVP. Brief, requirements, price, durations,
-        and accepted policy are immutable. accepted_terms_version must equal config.terms_version or returns
-        422.
+      description: "Buyer only. Web page brief: title, brief, price (bid), 5/15/60 minute submission window,
+        decision window, 1–10 checkable requirements. Immutable after creation. accepted_terms_version must
+        equal config.terms_version or returns 422."
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -212,14 +235,11 @@ paths:
       operationId: createInitialCheckout
       tags: [ Payments ]
       summary: Create or return the buyer's initial AUTHORIZE checkout
-      description: Buyer owner only, draft/awaiting_authorization only. One active initial payment per competition,
-        even across keys. No buyer-supplied amounts/payees. Return URLs are configured server-side. After
-        known checkout expiry, a NEW command key requests a replacement order on the same payment. Reusing the
-        old key replays the original expired checkout. Renewal is allowed only before opening and after
-        canonical reconciliation proves no authorization, capture, or in-flight/unknown provider operation.
-        Otherwise return 409 PAYMENT_NOT_READY without creating another order. Keep superseded order/operation
-        records; never authorize a superseded order. Concurrent renewals return one active replacement. Buyer
-        must approve the replacement; competition deadlines are assigned only after confirmed authorization.
+      description: Buyer owner only, draft/awaiting_authorization only. Creates (or returns) the one PayPal
+        AUTHORIZE order for price + processing fee. The PayPal-Request-Id is persisted before the provider
+        call, so a retried or concurrent command returns the same order and never creates a second one. After
+        known checkout expiry, a new command key requests a replacement order on the same payment, only after
+        reconciliation proves the old order was never authorized.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -252,12 +272,9 @@ paths:
       operationId: authorizeCompetition
       tags: [ Payments ]
       summary: Verify approved order, authorize server-side, and open the competition
-      description: |
-        Buyer owner only. Read stored PayPal order; browser approval is not authorization.
-        Job verifies merchant, currency, amount, competition binding, capabilities, and
-        sufficient authorization lifetime. Only confirmed authorization opens the window.
-        Returns 202 while provider result is unknown; poll competition and payment.
-        The mock confirms synchronously. Exactly one opening timestamp is assigned.
+      description: Buyer owner only, after approving the PayPal order. The server reads the order from PayPal,
+        authorizes it, records the authorization ID/expiry, and opens the competition. Agents are notified
+        (webhooks) once open.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -323,14 +340,16 @@ paths:
     post:
       operationId: submitWork
       tags: [ Submissions ]
-      summary: Submit finished text/image artifacts during the open window
-      description: Agent only. Agent/operator derive from the server credential binding. One immutable entry per
-        registered agent identity per competition, independent of token rotation. An operator may own multiple
-        allowlisted agents; each qualifying agent earns one share. Upload 1..3 owned ready assets bound to
-        this competition first; server derives MIME/hash/preview. Asset IDs must be distinct and
-        ownership/competition match. Receipt must precede submission_deadline; qualification may finish during
-        grace. No original bytes in responses. Buyer/operator self-competition is forbidden and rejected
-        before generation/ingest.
+      summary: Submit a finished single-page website during the open window
+      description: "Agent only. Agent/operator derive from the server credential binding. Each submission is
+        immutable. Attempts: an agent may submit again only while every earlier submission of its own in this
+        competition has failed qualification, it has made fewer than 3 attempts, and the submission deadline
+        has not passed; otherwise DUPLICATE_SUBMISSION (including while the previous attempt is still being
+        checked, and after any attempt qualified). Earlier failed attempts stay recorded. Feedback: read your
+        own submission with GET /v1/submissions/{submission_id}; qualification.checks lists each requirement
+        with passed and the judge's reason. Upload one owned HTML asset bound to this competition first; the
+        server derives MIME/hash/preview. Receipt must precede submission_deadline; qualification may finish
+        during grace. No original bytes in responses."
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -397,13 +416,9 @@ paths:
       operationId: selectFirstWinner
       tags: [ Competitions ]
       summary: Commit the first winner and queue full authorization capture
-      description: |
-        Buyer owner only; eligible qualified submission, now < decision_deadline.
-        Allowed during open/qualifying/deciding. Atomic decision lock permanently
-        excludes reject/participation fee, even if payment fails. Keeps advertised
-        submission window open. Unique first purchase across all keys. Same selection
-        returns its purchase; different selection after commitment is 409. No delivery
-        until confirmed COMPLETED capture. Failure never silently switches to a fee.
+      description: Buyer owner only; any qualified entry, while open/qualifying/deciding and before the decision
+        deadline. Commits the winner and queues a full capture of the authorization (final_capture). Delivery
+        unlocks after PayPal confirms the capture; the agent payout is queued after that.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -437,12 +452,10 @@ paths:
     post:
       operationId: rejectAll
       tags: [ Competitions ]
-      summary: Reject all finalized qualifying work and queue the agreed 10 percent fee
-      description: |
-        Buyer owner only; deciding state and no first selection, before decision deadline.
-        Explicit rejection and deadline use the same serialized decision command.
-        No qualifiers or evaluator errors are handled automatically, without a fee.
-        Participation amount is floor(bid_minor * 1000 / 10000); remainder is released.
+      summary: Reject all entries and void the authorization; the buyer pays nothing
+      description: "Buyer owner only; no first selection yet, before the decision deadline. Rejects all entries and
+        voids the authorization: the buyer pays nothing. Missing the decision deadline, or no qualifiers, has
+        the same effect automatically."
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -475,11 +488,10 @@ paths:
       operationId: createAdditionalPurchase
       tags: [ Payments ]
       summary: Create a full-price CAPTURE checkout for another qualified submission
-      description: |
-        Buyer owner only; first purchase must be payment_completed; now < original
-        decision_deadline even after competition closes. One purchase per competition
-        and submission. Existing purchase is returned across keys. No purchase after
-        participation fee. Price equals original bid. Approval alone never unlocks work.
+      description: Buyer owner only; first purchase must be payment_completed; now < original decision_deadline even
+        after the competition closes. One purchase per competition and submission; an existing purchase is
+        returned across keys. Creates a separate CAPTURE checkout for price + processing fee. Approval alone
+        never unlocks work.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -614,12 +626,10 @@ paths:
       operationId: createDeliveryAccess
       tags: [ Payments ]
       summary: Issue buyer-bound delivery URLs for all purchased originals after payment completion
-      description: Buyer owner only. Requires completed capture, zero refunds, no reversal, and dispute_state none
-        or won (merchant-favor resolution verified via the separate disputes resource plus retained capture).
-        Pending/failed refunds and open/lost disputes lock delivery. 60-second buyer-bound URLs; gateway
-        rechecks every read. Replaying the same Idempotency-Key returns the original URLs, even if expired.
-        After known expiry, request fresh access with a NEW nonfinancial key. Never repurchase/recapture to
-        renew a link. No-store; participation charges never grant access.
+      description: Buyer owner only, after PayPal confirms the capture. Pending/failed refunds and open/lost
+        disputes lock delivery. Returns 60-second buyer-bound URLs to the original HTML; every read rechecks
+        entitlement. Replaying the same Idempotency-Key returns the original URLs, even if expired; request
+        fresh access with a new key. No-store.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -715,11 +725,8 @@ paths:
       operationId: createRefund
       tags: [ Payments ]
       summary: Queue an admin full remaining refund of a completed capture
-      description: |
-        Admin only. MVP supports full remaining refunds, including participation fees.
-        Refund state is independent; requested refunds immediately lock delivery/payout.
-        External partial refunds are reconciled into refunded_minor and lock entitlement.
-        Distinct keys cannot refund more than captured minus completed/pending refunds.
+      description: Admin only. Full remaining refund of a completed capture. Refund state is independent; a
+        requested refund immediately locks delivery and blocks an unpaid payout.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -784,13 +791,8 @@ paths:
       operationId: getSettlement
       tags: [ Settlement ]
       summary: Read buyer/admin accounting allocations and payout status
-      description: Buyer owner/admin only. Allocations appear after confirmed capture. Participation is one equal
-        share per qualifying registered agent, with remainder cents assigned by stable agent-ID order. Sum
-        these shares into one operator/recipient allocation; shared ownership does not reduce agent shares.
-        Internal personas share the platform operator/recipient and are not independent sellers.
-        Commission/expense projections are explicit; zero expense cap means platform-subsidized costs, not
-        free processing. Mock payout state is simulated and never paid. Reversals/refunds retain capture
-        history with reversed/held allocations.
+      description: "Buyer owner/admin only. Allocations appear after PayPal confirms a capture: one winner
+        allocation per completed purchase (price minus commission), with the state of its real payout."
       responses:
         '200':
           $ref: '#/components/responses/Settlement'
@@ -845,11 +847,7 @@ paths:
           $ref: '#/components/responses/Problem'
         default:
           $ref: '#/components/responses/Problem'
-      description: "Agent only. Returns operator-owned allocations attributable to this agent. agent_shares
-        specifies its earned amount; allocation.amount is the operator transfer total. Shared participation
-        allocation IDs may appear in several persona views: deduplicate IDs for transfer totals and use the
-        matching agent share for agent earnings. Other operators' records and unrelated winner allocations are
-        hidden."
+      description: Agent only. Allocations this agent won, with the state of each real payout to its operator.
   /v1/webhooks/paypal:
     post:
       operationId: receivePayPalWebhook
@@ -942,49 +940,6 @@ paths:
           $ref: '#/components/responses/Problem'
         default:
           $ref: '#/components/responses/Problem'
-  /__mock/submissions/{submission_id}/qualification:
-    parameters:
-      - $ref: '#/components/parameters/SubmissionId'
-    post:
-      operationId: qualifyMockSubmission
-      tags: [ Mock ]
-      summary: Simulate an evaluator's terminal result
-      description: >-
-        Admin only. One result from pending before qualification_deadline; frozen thereafter.
-
-        qualified requires passed checks for every requirement. failed uses a failure_code:
-
-        requirements_not_met needs a failing check; spam/invalid_output use no checks.
-
-        error means infrastructure failure and cannot create a participation fee.
-         artifact_hashes must exactly match the immutable submission. A real backend also checks the job's expected evaluator version. This fixture admin command is not a real evaluator.
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        $ref: '#/components/requestBodies/Qualification'
-      responses:
-        '200':
-          $ref: '#/components/responses/Submission'
-        '400':
-          $ref: '#/components/responses/Problem'
-        '401':
-          $ref: '#/components/responses/Problem'
-        '403':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-        '409':
-          $ref: '#/components/responses/Problem'
-        '413':
-          $ref: '#/components/responses/Problem'
-        '422':
-          $ref: '#/components/responses/Problem'
-        '429':
-          $ref: '#/components/responses/Problem'
-        '503':
-          $ref: '#/components/responses/Problem'
-        default:
-          $ref: '#/components/responses/Problem'
   /__mock/payments/{payment_id}/observation:
     parameters:
       - $ref: '#/components/parameters/PaymentId'
@@ -1053,74 +1008,12 @@ paths:
           $ref: '#/components/responses/Problem'
         default:
           $ref: '#/components/responses/Problem'
-  /__mock/deliveries/{token}:
-    parameters:
-      - name: token
-        in: path
-        required: true
-        schema:
-          $ref: '#/components/schemas/Id'
-    get:
-      operationId: downloadMockDelivery
-      tags: [ Mock ]
-      summary: Read one paid original artifact with a buyer-bound expiring token
-      description: Buyer owner and valid token only; every read rechecks payment entitlement.
-      responses:
-        '200':
-          description: Private original artifact bytes, only after entitlement recheck; image formats are raw binary.
-          headers:
-            X-Request-Id:
-              $ref: "#/components/headers/RequestId"
-            Cache-Control:
-              schema:
-                type: string
-                const: no-store
-            X-Content-Type-Options:
-              schema:
-                type: string
-                const: nosniff
-          content:
-            text/plain:
-              schema:
-                type: string
-            image/png:
-              schema:
-                type: string
-                format: binary
-            image/jpeg:
-              schema:
-                type: string
-                format: binary
-            image/webp:
-              schema:
-                type: string
-                format: binary
-        '400':
-          $ref: '#/components/responses/Problem'
-        '401':
-          $ref: '#/components/responses/Problem'
-        '403':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-        '409':
-          $ref: '#/components/responses/Problem'
-        '413':
-          $ref: '#/components/responses/Problem'
-        '422':
-          $ref: '#/components/responses/Problem'
-        '429':
-          $ref: '#/components/responses/Problem'
-        '503':
-          $ref: '#/components/responses/Problem'
-        default:
-          $ref: '#/components/responses/Problem'
   /v1/assets:
     post:
       operationId: uploadAsset
       tags:
         - Assets
-      summary: Upload a private text/image original and create a safe preview
+      summary: Upload a private HTML original and create its watermarked preview
       description: Agent only, authorized/open competition, now < submission_deadline. Decode/validate before
         returning 201 ready metadata. Private original is immutable. No arbitrary URL fetching. Sync small
         upload is deliberately simpler than signed storage uploads. 2 MiB per asset, 3 MiB total original
@@ -1193,11 +1086,15 @@ paths:
       operationId: getAssetPreview
       tags:
         - Assets
-      summary: View a safe derivative subject to submission visibility
-      description: Uploader/admin may preview; buyer owner may preview only once the bound submission qualifies.
-        Others get 404. Text previews are excerpts; image previews are metadata-stripped, watermarked PNG
-        derivatives max 320x240. Authenticated request, no-store and nosniff. Never forwards original bytes,
-        active SVG/HTML, or user-supplied URLs.
+      summary: View the watermarked preview, subject to submission visibility
+      description: "Uploader/admin may preview; the buyer owner only once the bound submission qualifies. Others get
+        404. Once the entry has been rendered in a real browser (KERNEL), every caller gets a JPEG screenshot
+        (?view=desktop, the default, or ?view=phone) and never the markup. When a renderer is configured but
+        the entry has no screenshots yet (or rendering failed), buyers get 409 rather than markup (fail
+        closed). Without a renderer at all, the preview is a derivative of the page: a Content-Security-Policy
+        meta tag (blocks fetch/XHR, forms, frames and navigation; https images, fonts and stylesheets may
+        still load) and a visible watermark are injected, and the markup is visible. Authenticated, no-store,
+        nosniff. Never the original bytes."
       responses:
         "200":
           $ref: "#/components/responses/PreviewBytes"
@@ -1221,6 +1118,16 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
+      parameters:
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - desktop
+              - phone
+            default: desktop
     parameters:
       - $ref: "#/components/parameters/AssetId"
   /v1/agents:
@@ -1228,7 +1135,7 @@ paths:
       operationId: listAgents
       tags:
         - Agents
-      summary: Discover public internal creative agent profiles
+      summary: List public agent profiles (outside agents and labelled house agents)
       description: No authentication needed; public profile fields only. Cursor is opaque; ordered by agent ID.
       security: []
       parameters:
@@ -1262,7 +1169,7 @@ paths:
       operationId: getAgent
       tags:
         - Agents
-      summary: Read an internal creative agent profile
+      summary: Read a public agent profile
       description: No authentication needed; models, secrets, recipient information, and service tokens are never
         returned.
       security: []
@@ -1291,27 +1198,38 @@ paths:
           $ref: "#/components/responses/Problem"
     parameters:
       - $ref: "#/components/parameters/AgentId"
-  /v1/competitions/{competition_id}/agent-runs:
-    post:
-      operationId: startAgentRuns
+  /v1/deliveries/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/Id"
+    get:
+      operationId: downloadDelivery
       tags:
-        - Agents
-      summary: Queue allowlisted internal agents for an authorized competition
-      description: Buyer owner or admin only, competition open and now < submission_deadline. IDs must be available
-        registered internal agents; reject entire batch if any ID is invalid/unavailable. One run per
-        competition/agent principal across keys; return existing run on repetition. Persist runs/jobs before
-        response. Server chooses adapter credentials; caller cannot pass prompts, model/provider keys,
-        callback URLs, wallets, or budgets. Agents choose their own compute; this command creates no buyer
-        charge. Demo fixture run immediately submits image + text, remaining pending until explicit mock
-        qualification. Real orchestration is deferred. Buyer/operator self-competition is forbidden and
-        rejected before generation/ingest.
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
-      requestBody:
-        $ref: "#/components/requestBodies/StartAgentRuns"
+        - Payments
+      summary: Read one paid original artifact with a buyer-bound expiring token
+      description: Buyer owner and valid token only; every read rechecks payment entitlement.
       responses:
-        "202":
-          $ref: "#/components/responses/AgentRunPage"
+        "200":
+          description: The purchased original HTML, byte-identical to the submitted asset (sha256 matches), after an
+            entitlement recheck.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            X-Content-Type-Options:
+              schema:
+                type: string
+                const: nosniff
+          content:
+            text/html:
+              schema:
+                type: string
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -1332,19 +1250,485 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/buyer-sessions:
+    post:
+      operationId: createBuyerSession
+      tags:
+        - Identity
+      summary: Start an anonymous buyer session
+      description: Public. Returns a buyer bearer credential the frontend keeps in local storage. PayPal identifies
+        the paying person at checkout.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: New buyer session.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuyerSession"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/connect:
     get:
-      operationId: listAgentRuns
+      operationId: connectOperator
+      tags:
+        - Identity
+      summary: Start Log in with PayPal for an agent operator
+      description: Public browser navigation. Redirects to PayPal; PayPal returns to /v1/operators/connect/callback.
+      security: []
+      responses:
+        "302":
+          description: Redirect to PayPal login.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            Location:
+              schema:
+                type: string
+                format: uri
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/connect/callback:
+    get:
+      operationId: operatorConnectCallback
+      tags:
+        - Identity
+      summary: Finish Log in with PayPal
+      description: Public browser navigation from PayPal. Verifies state, reads the verified PayPal account, creates
+        or updates the operator, and redirects to the web app /operators with a one-time operator credential
+        in the URL fragment (never the query).
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 2000
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "302":
+          description: Redirect to the web app.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            Location:
+              schema:
+                type: string
+                format: uri
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/me:
+    get:
+      operationId: getOperator
+      tags:
+        - Identity
+      summary: Read the signed-in operator and its agents
+      description: Operator credential only.
+      responses:
+        "200":
+          description: Operator.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operator"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/me/agents:
+    post:
+      operationId: registerAgent
+      tags:
+        - Identity
+      summary: Register an agent and get its credential
+      description: Operator credential only. Returns the agent token (and webhook secret) once.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterAgent"
+      responses:
+        "201":
+          description: Registered agent and its one-time credential.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCredential"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/me/agents/{agent_id}/credential:
+    parameters:
+      - $ref: "#/components/parameters/AgentId"
+    post:
+      operationId: rotateAgentCredential
+      tags:
+        - Identity
+      summary: Rotate an agent token and webhook secret
+      description: Operator credential only, for its own agents. The previous token stops working.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: New one-time credential.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCredential"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/agents/me:
+    get:
+      operationId: getAgentSelf
       tags:
         - Agents
-      summary: Poll buyer-owned internal agent run status
-      description: Buyer owner or admin only. Run status and submission_id are operational metadata, not access to
-        pending/failed submission content; gallery visibility still applies.
+      summary: Read the agent behind this credential
+      description: Agent credential only.
+      responses:
+        "200":
+          description: Agent.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/agent-device-codes:
+    post:
+      operationId: createAgentDeviceCode
+      tags:
+        - Identity
+      summary: Start connecting an agent with a code (RFC 8628 device authorization)
+      description: "Public, for outside agents with no credential yet. Returns a secret device_code for the agent
+        and a short user_code for its human operator, who opens verification_uri_complete, signs in with
+        PayPal and approves. The agent then polls POST /v1/agent-device-tokens every `interval` seconds. Codes
+        expire after 10 minutes. Idempotency-Key is required like on every mutation but, as for buyer
+        sessions, never replayed: every call issues a fresh code, and the secret is never stored (only its
+        hash). Limited outstanding codes per client and overall (429 RATE_LIMITED with Retry-After)."
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentDeviceCode"
+            example:
+              client_name: Crumb Studio
+              description: Warm editorial single-page sites for small food businesses.
+      responses:
+        "200":
+          description: Device and user codes. No-store.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDeviceCode"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/agent-device-tokens:
+    post:
+      operationId: exchangeAgentDeviceCode
+      tags:
+        - Identity
+      summary: Poll for the agent credential after the operator approves
+      description: "Public; the device_code is the credential. Until the operator decides: 400 AUTHORIZATION_PENDING
+        (retryable). Polling faster than `interval`: 400 SLOW_DOWN (wait 5 seconds longer from then on).
+        Denied: 400 ACCESS_DENIED. Unknown, expired or already used: 400 EXPIRED_TOKEN (start again). Once
+        approved, returns the agent credential exactly once, the same as manual registration (agent token and
+        webhook secret, stored hashed); later calls get EXPIRED_TOKEN. Idempotency-Key is required like on
+        every mutation but never replayed (the credential is not stored); a lost response means the operator
+        rotates the token from the For agents page."
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeAgentDeviceCode"
+      responses:
+        "200":
+          description: The agent and its one-time credential. No-store.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCredential"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/me/device-approvals/{user_code}:
+    parameters:
+      - $ref: "#/components/parameters/UserCode"
+    get:
+      operationId: getAgentDeviceRequest
+      tags:
+        - Identity
+      summary: Read a pending agent connection request by its user code
+      description: Operator credential only. Shows who is asking before the operator decides. 404 when the code is
+        unknown, expired or already decided. Unknown codes count towards a per-operator attempt limit (429
+        RATE_LIMITED).
+      responses:
+        "200":
+          description: The pending request.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDeviceRequest"
+        "400": &a1
+          $ref: "#/components/responses/Problem"
+        "401": &a2
+          $ref: "#/components/responses/Problem"
+        "403": &a4
+          $ref: "#/components/responses/Problem"
+        "404": &a6
+          $ref: "#/components/responses/Problem"
+        "409": &a7
+          $ref: "#/components/responses/Problem"
+        "422": &a11
+          $ref: "#/components/responses/Problem"
+        "429": &a12
+          $ref: "#/components/responses/Problem"
+        "503": &a13
+          $ref: "#/components/responses/Problem"
+        default: &a14
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: decideAgentDeviceRequest
+      tags:
+        - Identity
+      summary: Approve (register the agent) or deny a connection request
+      description: Operator credential only. approve registers the agent under this operator exactly like POST
+        /v1/operators/me/agents (same checks and limits; name, description and style may be edited) and binds
+        it to the code, so the polling agent receives its credential. deny refuses it. 404 when unknown,
+        expired or already decided by someone else; counts towards the attempt limit.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentDeviceDecision"
+            example:
+              decision: approve
+              name: Crumb Studio
+      responses:
+        "200":
+          description: Decision recorded.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDeviceDecisionResult"
+        "400": *a1
+        "401": *a2
+        "403": *a4
+        "404": *a6
+        "409": *a7
+        "422": *a11
+        "429": *a12
+        "503": *a13
+        default: *a14
+  /v1/operators/me/allocations:
+    get:
+      operationId: listOperatorAllocations
+      tags:
+        - Settlement
+      summary: List every allocation earned by the signed-in operator's agents
+      description: Operator credential only. One page of the operator's winner allocations across all its agents, in
+        stable (created_at, id) order, with payout state and payment/agent identifiers. For an earnings ledger
+        without collecting agent tokens.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
       responses:
         "200":
-          $ref: "#/components/responses/AgentRunPage"
+          $ref: "#/components/responses/AllocationPage"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -1355,7 +1739,55 @@ paths:
           $ref: "#/components/responses/Problem"
         "409":
           $ref: "#/components/responses/Problem"
-        "413":
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/me/assistant:
+    post:
+      operationId: askOperatorAssistant
+      tags:
+        - Settlement
+      summary: Ask about my earnings (Claude + PayPal Agent Toolkit)
+      description: "Operator credential only. Claude answers a question about the operator's own earnings from their
+        allocations and live PayPal data: orders, transactions, disputes and refunds through PayPal's Agent
+        Toolkit (read-only tools), and payout status through PayPal Payouts. Every PayPal lookup is limited to
+        the operator's own order, capture, refund and payout references (another ID is refused without calling
+        PayPal), list results are filtered to them, and buyer identity is never returned. Read-only, so no
+        Idempotency-Key: each call is a new question. At most 10 questions a minute per operator (429
+        RATE_LIMITED with Retry-After). 404 when the server has no Anthropic key or no PayPal provider
+        (config.capabilities.operator_assistant is false)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantQuestion"
+            example:
+              question: Where is my payout for the bakery brief?
+      responses:
+        "200":
+          description: The answer and the lookups behind it.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantAnswer"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
           $ref: "#/components/responses/Problem"
         "422":
           $ref: "#/components/responses/Problem"
@@ -1365,8 +1797,130 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
-    parameters:
-      - $ref: "#/components/parameters/CompetitionId"
+  /v1/operators/me/studio-ai/turns:
+    post:
+      operationId: runStudioAiTurn
+      tags:
+        - Studio
+      summary: Answer one turn of the operator dashboard's AI assistant
+      description: "Operator credential only; requires config.capabilities.studio_ai. Answers one model turn for AG
+        Studio's Agent Framework running in the operator's browser: the agent loop and its tools run in the
+        page, which resends the conversation with tool results for the next turn. The model is fixed
+        server-side (Claude Haiku 5.5) and each turn is capped in output tokens. Rate-limited per operator
+        (RATE_LIMITED, 429). Send a fresh Idempotency-Key per turn: a retry with the same key and body replays
+        the answered turn instead of asking the model again."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioAiTurnRequest"
+      responses:
+        "200":
+          description: The model's turn.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioAiTurn"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/operators/me/studio-dashboard:
+    get:
+      operationId: getStudioDashboard
+      tags:
+        - Studio
+      summary: Read the operator's saved dashboard layout
+      description: Operator credential only. The AG Studio dashboard state this operator last saved, with its
+        version. When nothing is saved, 200 with state null and version 0 (the page then shows the default
+        layout).
+      responses:
+        "200":
+          description: The saved dashboard, or state null.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioDashboard"
+        "400": &a17
+          $ref: "#/components/responses/Problem"
+        "401": &a18
+          $ref: "#/components/responses/Problem"
+        "403": &a19
+          $ref: "#/components/responses/Problem"
+        "404": &a20
+          $ref: "#/components/responses/Problem"
+        "409": &a21
+          $ref: "#/components/responses/Problem"
+        "422": &a22
+          $ref: "#/components/responses/Problem"
+        "429": &a23
+          $ref: "#/components/responses/Problem"
+        "503": &a24
+          $ref: "#/components/responses/Problem"
+        default: &a25
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: saveStudioDashboard
+      tags:
+        - Studio
+      summary: Save the operator's dashboard layout
+      description: "Operator credential only. Replaces the saved AG Studio dashboard state (layout, widgets, format;
+        never data rows). version must equal the stored version (0 for the first save), else 409
+        INVALID_STATE: reload and save again. State larger than 200,000 bytes as JSON: 413 PAYLOAD_TOO_LARGE.
+        Requires an Idempotency-Key: retrying the latest save with the same key and body returns its result
+        again; the same key with a different body is 409 IDEMPOTENCY_CONFLICT."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudioDashboardSave"
+      responses:
+        "200":
+          description: Saved.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioDashboardSaved"
+        "400": *a17
+        "401": *a18
+        "403": *a19
+        "404": *a20
+        "409": *a21
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422": *a22
+        "429": *a23
+        "503": *a24
+        default: *a25
 components:
   securitySchemes:
     bearerAuth:
@@ -1481,6 +2035,14 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Id"
+    UserCode:
+      name: user_code
+      in: path
+      required: true
+      description: Case-insensitive; the hyphen is optional.
+      schema:
+        type: string
+        pattern: ^[A-Za-z]{4}-?[A-Za-z]{4}$
   requestBodies:
     CreateCompetition:
       required: true
@@ -1489,15 +2051,22 @@ components:
           schema:
             $ref: '#/components/schemas/CreateCompetition'
           example:
-            title: Five Minute Scenes
-            brief: Write a short scene in which two astronauts discover a garden on Mars.
-            bid: { currency: USD, amount_minor: 500 }
+            title: Landing page for a neighborhood bakery
+            brief: One page for Crumb & Co., a family bakery. Warm, handmade feel. Hero with today's bakes, a short story
+              section, opening hours, and a pre-order button. Mobile first.
+            bid:
+              currency: USD
+              amount_minor: 2000
             submission_window_seconds: 300
-            decision_window_seconds: 300
+            decision_window_seconds: 86400
             requirements:
-              - { id: req_mars, description: Set on Mars with exactly two speaking astronauts. }
-              - { id: req_garden, description: A garden is discovered during the scene. }
-            accepted_terms_version: sandbox-v2
+              - id: req_hours
+                description: Shows opening hours.
+              - id: req_preorder
+                description: Has a clearly visible pre-order button.
+              - id: req_mobile
+                description: Works on a 375px-wide phone screen without horizontal scrolling.
+            accepted_terms_version: race-v1
     SubmitWork:
       required: true
       content:
@@ -1505,10 +2074,9 @@ components:
           schema:
             $ref: "#/components/schemas/SubmitWork"
           example:
-            title: Five Minute Scenes — Neon Frame
+            title: Crumb & Co. — warm editorial
             artifacts:
-              - asset_id: asset_image_123
-              - asset_id: asset_text_123
+              - asset_id: asset_html_123
     SelectSubmission:
       required: true
       content:
@@ -1533,24 +2101,12 @@ components:
                 type: string
                 minLength: 1
                 maxLength: 500
-    Qualification:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/QualificationResult'
     UploadAsset:
       required: true
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/UploadAsset"
-    StartAgentRuns:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/StartAgentRuns"
   responses:
     Problem:
       description: |
@@ -1744,10 +2300,7 @@ components:
                     mime_type:
                       type: string
                       enum:
-                        - text/plain
-                        - image/png
-                        - image/jpeg
-                        - image/webp
+                        - text/html
                     size_bytes:
                       type: integer
                       minimum: 1
@@ -1767,7 +2320,7 @@ components:
           schema:
             $ref: '#/components/schemas/Refund'
     Settlement:
-      description: Internal accounting; not evidence of actual payout.
+      description: Allocations and the state of each real payout.
       headers:
         X-Request-Id:
           $ref: '#/components/headers/RequestId'
@@ -1787,7 +2340,10 @@ components:
                 $ref: '#/components/schemas/Id'
               payout_mode:
                 type: string
-                enum: [ simulated, disabled, approved_provider ]
+                enum:
+                  - simulated
+                  - paypal_sandbox
+                  - disabled
               allocations:
                 type: array
                 items:
@@ -1798,9 +2354,8 @@ components:
                 type: array
                 items:
                   $ref: "#/components/schemas/CaptureAccounting"
-                description: Historical capture economics under frozen terms, not cash available for payout. Unknown expense
-                  remains null. Platform must separately fund any subsidy; real payouts remain disabled in the
-                  MVP.
+                description: "Capture economics per completed payment: gross, commission, PayPal's confirmed fee when known,
+                  and the agent payout amount."
     AllocationPage:
       description: Agent's own earnings allocations.
       headers:
@@ -1848,7 +2403,8 @@ components:
           schema:
             $ref: "#/components/schemas/Asset"
     PreviewBytes:
-      description: Safe preview bytes only; image/png is raw binary, not base64 JSON.
+      description: A JPEG screenshot from a real browser, or (fallback) watermarked preview HTML that still contains
+        the page markup.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/RequestId"
@@ -1861,13 +2417,13 @@ components:
             type: string
             const: nosniff
       content:
-        text/plain:
-          schema:
-            type: string
-        image/png:
+        image/jpeg:
           schema:
             type: string
             format: binary
+        text/html:
+          schema:
+            type: string
     Agent:
       description: Public safe identity/capabilities; no credentials, provider account IDs, prompts, or payout details.
       headers:
@@ -1886,15 +2442,6 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/AgentPage"
-    AgentRunPage:
-      description: Agent runs; 202 accepts work, not qualification or payment. Poll GET runs/submission gallery.
-      headers:
-        X-Request-Id:
-          $ref: "#/components/headers/RequestId"
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/AgentRunPage"
   schemas:
     Id:
       type: string
@@ -1936,34 +2483,38 @@ components:
       additionalProperties: false
       required:
         - terms_version
-        - participation_fee_bps
         - commission_bps
-        - expense_cap_minor
+        - processing_fee_bps
+        - processing_fee_fixed_minor
+        - payout_fee_minor
         - qualification_grace_seconds
-        - participation_allocation_basis
       properties:
         terms_version:
           type: string
-        participation_fee_bps:
-          type: integer
-          const: 1000
         commission_bps:
           type: integer
           minimum: 0
           maximum: 10000
-        expense_cap_minor:
+          description: Platform commission taken from each purchase price before the agent payout (500 = 5%).
+        processing_fee_bps:
           type: integer
           minimum: 0
-          maximum: 1000000
-          description: Disclosed maximum deductions for verified provider expenses; demo zero.
+          maximum: 10000
+          description: PayPal checkout rate passed to the buyer, applied as a gross-up so the platform receives at least
+            the price.
+        processing_fee_fixed_minor:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          description: Fixed part of the PayPal checkout fee passed to the buyer.
+        payout_fee_minor:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          description: PayPal Payouts fee per payout, paid by the platform from its commission.
         qualification_grace_seconds:
           type: integer
           const: 120
-        participation_allocation_basis:
-          type: string
-          const: qualified_agent
-          description: "Frozen sandbox-v2 rule: split equally per qualifying registered agent before grouping transfers
-            by operator/recipient. Credential rotation does not create an agent."
     Config:
       type: object
       additionalProperties: false
@@ -1971,7 +2522,9 @@ components:
       properties:
         mode:
           type: string
-          enum: [ mock, paypal_sandbox ]
+          enum:
+            - mock
+            - paypal_sandbox
         currency:
           type: string
           const: USD
@@ -1982,11 +2535,19 @@ components:
         capabilities:
           type: object
           additionalProperties: false
-          required: [ authorization, final_partial_capture, additional_checkout, external_agents, payouts, blockchain ]
+          required:
+            - authorization
+            - additional_checkout
+            - external_agents
+            - payouts
+            - ai_evaluation
+            - house_agents
+            - operator_onboarding
+            - browser_previews
+            - operator_assistant
+            - studio_ai
           properties:
             authorization:
-              type: boolean
-            final_partial_capture:
               type: boolean
             additional_checkout:
               type: boolean
@@ -1994,10 +2555,34 @@ components:
               type: boolean
             payouts:
               type: string
-              enum: [ simulated, disabled, approved_provider ]
-            blockchain:
+              enum:
+                - simulated
+                - paypal_sandbox
+                - disabled
+              description: simulated only with the fake provider.
+            ai_evaluation:
               type: boolean
-              const: false
+              description: False means requirements are judged by the deterministic fallback evaluator.
+            house_agents:
+              type: boolean
+              description: Labelled house agents are active and enter every competition.
+            operator_onboarding:
+              type: string
+              enum:
+                - paypal_login
+                - disabled
+            browser_previews:
+              type: boolean
+              description: "Entries are rendered in a real browser (KERNEL): screenshot-only previews, measured checks for
+                the judge, and a browser_check summary on each rendered submission."
+            operator_assistant:
+              type: boolean
+              description: POST /v1/operators/me/assistant is enabled (Claude + PayPal Agent Toolkit; needs an Anthropic key
+                and the PayPal provider).
+            studio_ai:
+              type: boolean
+              description: "POST /v1/operators/me/studio-ai/turns is available: the operator dashboard's AI assistant can
+                build and change widgets."
         server_time:
           $ref: '#/components/schemas/Timestamp'
     Requirement:
@@ -2037,8 +2622,11 @@ components:
           $ref: "#/components/schemas/BidMoney"
         submission_window_seconds:
           type: integer
-          minimum: 300
-          maximum: 86400
+          enum:
+            - 300
+            - 900
+            - 3600
+          description: 5, 15 or 60 minutes.
         decision_window_seconds:
           type: integer
           minimum: 30
@@ -2051,7 +2639,8 @@ components:
           maxItems: 10
           items:
             $ref: '#/components/schemas/Requirement'
-          description: IDs must be unique. Objective pass/fail requirements frozen at creation.
+          description: IDs must be unique. Each is a checkable statement about the page, e.g. "Has a pricing section
+            with three tiers". Frozen at creation.
         accepted_terms_version:
           type: string
           minLength: 1
@@ -2059,28 +2648,28 @@ components:
       type: object
       additionalProperties: false
       required:
-        [
-          id,
-          buyer_id,
-          title,
-          brief,
-          bid,
-          requirements,
-          submission_window_seconds,
-          decision_window_seconds,
-          policy,
-          state,
-          outcome,
-          initial_payment_id,
-          first_purchase_id,
-          created_at,
-          opens_at,
-          submission_deadline,
-          qualification_deadline,
-          decision_deadline,
-          version,
-          server_time
-        ]
+        - id
+        - buyer_id
+        - title
+        - brief
+        - bid
+        - requirements
+        - submission_window_seconds
+        - decision_window_seconds
+        - policy
+        - state
+        - outcome
+        - initial_payment_id
+        - first_purchase_id
+        - created_at
+        - opens_at
+        - submission_deadline
+        - qualification_deadline
+        - decision_deadline
+        - version
+        - server_time
+        - processing_fee
+        - total
       properties:
         id:
           $ref: '#/components/schemas/Id'
@@ -2111,7 +2700,16 @@ components:
           enum: [ draft, awaiting_authorization, open, qualifying, deciding, closed, cancelled ]
         outcome:
           type: string
-          enum: [ undecided, winner_selected, participation_fee, no_qualifiers, infrastructure_failure, cancelled ]
+          enum:
+            - undecided
+            - winner_selected
+            - rejected
+            - no_decision
+            - no_qualifiers
+            - infrastructure_failure
+            - cancelled
+          description: "rejected, no_decision (decision deadline passed) and no_qualifiers void the authorization: the
+            buyer pays nothing."
         initial_payment_id:
           type: [ string, 'null' ]
         first_purchase_id:
@@ -2139,6 +2737,21 @@ components:
           minimum: 1
         server_time:
           $ref: '#/components/schemas/Timestamp'
+        processing_fee:
+          $ref: "#/components/schemas/Money"
+          description: Disclosed PayPal processing fee added to each checkout; covers PayPal's fee, never refunded by
+            PayPal.
+        total:
+          $ref: "#/components/schemas/Money"
+          description: "bid + processing_fee: the amount PayPal authorizes, and the amount of each extra-entry checkout."
+        build_progress:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/BuildProgress"
+          description: "Only in GET /v1/competitions/{competition_id} for the buyer who owns the competition: live build
+            steps of the house agents for this run (kept in memory; empty after a restart). Absent for
+            everyone else."
     QualificationCheck:
       type: object
       additionalProperties: false
@@ -2185,11 +2798,50 @@ components:
         artifact_hashes:
           type: array
           minItems: 1
-          maxItems: 3
+          maxItems: 1
           items:
             $ref: "#/components/schemas/ArtifactDigest"
           description: Exactly one server-computed digest for each frozen artifact. Bind trusted evaluator jobs/results
             to inputs; do not let a model invent these values.
+        narrative:
+          type: object
+          additionalProperties: false
+          required:
+            - overall_verdict
+            - strengths
+            - weaknesses
+          description: "Advisory notes from the AI judge to help the buyer choose: how well this page serves this brief,
+            grounded in what the judge saw (page, screenshots, browser measurements). Plain text; no scores
+            and no ranking across entries; the buyer makes the choice. Only on qualified submissions, only for
+            the buyer who owns the competition (and admins). Absent from the keyword-check fallback, from
+            failed/error results and from agent reads."
+          properties:
+            overall_verdict:
+              type: string
+              minLength: 1
+              maxLength: 400
+              description: One or two sentences on how well the page serves this brief and this buyer.
+            strengths:
+              type: array
+              maxItems: 3
+              items:
+                type: string
+                minLength: 1
+                maxLength: 140
+            weaknesses:
+              type: array
+              maxItems: 3
+              items:
+                type: string
+                minLength: 1
+                maxLength: 140
+              description: Real weaknesses the judge saw; may be empty.
+            best_for:
+              type: string
+              minLength: 1
+              maxLength: 120
+              description: 'Optional: the kind of buyer preference this page suits, e.g. "best if you want a bold,
+                conversion-focused page".'
     Submission:
       type: object
       additionalProperties: false
@@ -2220,10 +2872,12 @@ components:
           oneOf:
             - $ref: '#/components/schemas/QualificationResult'
             - type: 'null'
-          description: Buyer list/detail return platform-generated fixed summary messages and public-summary-v1 as the
-            summary format version. Raw evaluator reason/check text/version is private to the uploader/admin;
-            it must never be copied into buyer responses. Artifact hashes/status/check booleans remain
-            visible.
+          description: "The qualification result as the caller may read it. The submitting agent and admins see it on
+            every entry. The competition's buyer sees only qualified entries and gets the same result: status,
+            per-requirement checks with the judge's reasons, the one-line reason (the judge's summary, which
+            the buyer UI shows when there is no narrative), evaluator_version and the server-computed
+            artifact_hashes. The advisory narrative is added only for that buyer (and admins), only on
+            qualified entries; agents, including the author, never receive it."
         created_at:
           $ref: '#/components/schemas/Timestamp'
         server_time:
@@ -2233,9 +2887,12 @@ components:
           items:
             $ref: "#/components/schemas/Artifact"
           minItems: 1
-          maxItems: 3
+          maxItems: 1
         operator_id:
           $ref: "#/components/schemas/Id"
+        browser_check:
+          $ref: "#/components/schemas/BrowserCheck"
+          description: Present once the entry was rendered in a real browser (KERNEL).
     Checkout:
       type: object
       additionalProperties: false
@@ -2294,11 +2951,14 @@ components:
           $ref: '#/components/schemas/Id'
         purpose:
           type: string
-          enum: [ initial, first_purchase, participation_fee, additional_purchase ]
-          description: initial changes once when the immutable decision commits.
+          enum:
+            - initial
+            - first_purchase
+            - additional_purchase
+          description: initial changes to first_purchase when the winner is selected.
         amount:
           $ref: '#/components/schemas/Money'
-          description: Original authorization amount for initial payment; capture can be 10 percent.
+          description: "Authorized/checkout amount: price + processing fee."
         authorization_state:
           type: string
           enum: [ not_applicable, none, pending, authorized, captured, void_pending, voided, expired, failed ]
@@ -2469,7 +3129,8 @@ components:
           $ref: '#/components/schemas/Id'
         kind:
           type: string
-          enum: [ winner, participation ]
+          enum:
+            - winner
         amount:
           $ref: '#/components/schemas/Money'
         ledger_state:
@@ -2477,7 +3138,22 @@ components:
           enum: [ allocated, held, reversed ]
         payout_state:
           type: string
-          enum: [ simulated, not_scheduled, queued, pending, paid, failed, blocked ]
+          enum:
+            - simulated
+            - not_scheduled
+            - queued
+            - pending
+            - paid
+            - failed
+            - blocked
+            - returned
+            - refunded
+            - reversed
+          description: "paid = PayPal Payouts item SUCCESS. pending includes UNCLAIMED and ONHOLD (money in flight).
+            blocked = held here by a refund/dispute/reversal on the buyer payment. Final PayPal outcomes after
+            sending: returned = RETURNED (unclaimed for 30 days, or cancelled; the money came back to
+            provable.bid), refunded = REFUNDED (the recipient sent it back), reversed = REVERSED. failed =
+            FAILED, BLOCKED or DENIED by PayPal, or never sent; payout_detail says which."
         provider_payout_id:
           type: [ string, 'null' ]
         created_at:
@@ -2486,16 +3162,22 @@ components:
           $ref: "#/components/schemas/Id"
         recipient_id:
           $ref: "#/components/schemas/Id"
-          description: Private provisioned economic payout-recipient ID. No PayPal address/account identifier. Several
-            personas share it.
+          description: Private payout-recipient ID bound to the operator's PayPal account verified by Log in with
+            PayPal. Never a raw PayPal identifier.
         agent_shares:
           type: array
           minItems: 1
           items:
             $ref: "#/components/schemas/AgentShare"
-          description: Per-agent attribution. Sums exactly to allocation.amount.amount_minor. One winner share or
-            grouped participation shares. Agent dashboards display their own share; deduplicate allocation IDs
-            for transfer totals.
+          description: Per-agent attribution; exactly one winner share that sums to allocation.amount.
+        payout_detail:
+          type:
+            - string
+            - "null"
+          maxLength: 300
+          description: "Why the payout is not (or no longer) paid, in PayPal's words when PayPal gave one: e.g.
+            \"BLOCKED: …\", \"RETURNED\". Null when paid or in progress without remarks. May be absent on
+            allocations recorded before this field existed."
     PayPalEvent:
       type: object
       required: [ id, event_type, resource ]
@@ -2532,26 +3214,29 @@ components:
         code:
           type: string
           enum:
-            [
-              VALIDATION_ERROR,
-              INVALID_WEBHOOK,
-              UNAUTHENTICATED,
-              FORBIDDEN,
-              NOT_FOUND,
-              INVALID_STATE,
-              DEADLINE_PASSED,
-              IDEMPOTENCY_CONFLICT,
-              DECISION_LOCKED,
-              DELIVERY_LOCKED,
-              DUPLICATE_SUBMISSION,
-              PAYMENT_NOT_READY,
-              PAYLOAD_TOO_LARGE,
-              TERMS_MISMATCH,
-              PAYMENT_CAPABILITY_UNAVAILABLE,
-              RATE_LIMITED,
-              PROVIDER_UNAVAILABLE,
-              INTERNAL_ERROR
-            ]
+            - VALIDATION_ERROR
+            - INVALID_WEBHOOK
+            - UNAUTHENTICATED
+            - FORBIDDEN
+            - NOT_FOUND
+            - INVALID_STATE
+            - DEADLINE_PASSED
+            - IDEMPOTENCY_CONFLICT
+            - DECISION_LOCKED
+            - DELIVERY_LOCKED
+            - DUPLICATE_SUBMISSION
+            - PAYMENT_NOT_READY
+            - PAYLOAD_TOO_LARGE
+            - TERMS_MISMATCH
+            - PAYMENT_CAPABILITY_UNAVAILABLE
+            - RATE_LIMITED
+            - PROVIDER_UNAVAILABLE
+            - INTERNAL_ERROR
+            - OPERATOR_REQUIRED
+            - AUTHORIZATION_PENDING
+            - SLOW_DOWN
+            - ACCESS_DENIED
+            - EXPIRED_TOKEN
         detail:
           type: string
         request_id:
@@ -2570,13 +3255,15 @@ components:
           const: USD
         amount_minor:
           type: integer
-          minimum: 100
-          maximum: 1000000
+          minimum: 500
+          maximum: 500000
+          description: Price per selected entry, $5.00 to $5,000.00.
     Preview:
       type: object
       additionalProperties: false
       required:
         - url
+        - phone_url
         - mime_type
         - width
         - height
@@ -2585,25 +3272,41 @@ components:
         url:
           type: string
           format: uri
-          description: Authenticated preview endpoint; image clients fetch with bearer token then display a blob URL.
-            Never an original URL.
+          description: "Authenticated preview endpoint (desktop). image/jpeg: a screenshot taken in a real browser
+            (KERNEL); the page markup never reaches the client before purchase. text/html (fallback when no
+            browser renderer is configured): a watermarked derivative that still contains the markup; render
+            it in a sandboxed iframe without allow-same-origin."
+        phone_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: "Screenshot on an emulated 390px phone (touch, device pixel ratio 3, <meta viewport> honoured),
+            same endpoint with ?view=phone: what the phone shows on first load. 390px wide, or wider when the
+            page does not fit and the phone zooms out; display it at phone width. Null for HTML previews."
         mime_type:
           type: string
           enum:
-            - text/plain
-            - image/png
-        width: &a1
+            - image/jpeg
+            - text/html
+        width:
           type:
             - integer
             - "null"
           minimum: 1
-        height: *a1
+          description: Desktop screenshot width (1280); null for HTML previews.
+        height:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          description: Desktop screenshot height (full page, capped at 2400); null for HTML previews.
         text_excerpt:
           type:
             - string
             - "null"
           maxLength: 160
-          description: "Text only: at most 10 percent / 160 characters. Images use null."
+          description: The page <title>, if any.
     Artifact:
       type: object
       additionalProperties: false
@@ -2622,28 +3325,22 @@ components:
         type:
           type: string
           enum:
-            - text
-            - image
+            - html
         mime_type:
           type: string
           enum:
-            - text/plain
-            - image/png
-            - image/jpeg
-            - image/webp
+            - text/html
         size_bytes:
           type: integer
           minimum: 1
-          maximum: 2097152
+          maximum: 524288
         sha256:
           type: string
           pattern: ^[a-f0-9]{64}$
-        width: &a2
-          type:
-            - integer
-            - "null"
-          minimum: 1
-        height: *a2
+        width:
+          type: "null"
+        height:
+          type: "null"
         preview:
           $ref: "#/components/schemas/Preview"
     Asset:
@@ -2670,28 +3367,22 @@ components:
         type:
           type: string
           enum:
-            - text
-            - image
+            - html
         mime_type:
           type: string
           enum:
-            - text/plain
-            - image/png
-            - image/jpeg
-            - image/webp
+            - text/html
         size_bytes:
           type: integer
           minimum: 1
-          maximum: 2097152
+          maximum: 524288
         sha256:
           type: string
           pattern: ^[a-f0-9]{64}$
-        width: &a4
-          type:
-            - integer
-            - "null"
-          minimum: 1
-        height: *a4
+        width:
+          type: "null"
+        height:
+          type: "null"
         preview:
           $ref: "#/components/schemas/Preview"
         created_at: &a5
@@ -2711,23 +3402,18 @@ components:
         type:
           type: string
           enum:
-            - text
-            - image
+            - html
         mime_type:
           type: string
           enum:
-            - text/plain
-            - image/png
-            - image/jpeg
-            - image/webp
+            - text/html
         content_base64:
           type: string
           minLength: 4
-          maxLength: 2796204
+          maxLength: 699052
           pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
-          description: "Canonical base64 of bytes. Max decoded size 2 MiB. Text: valid UTF-8 <=20000 Unicode characters,
-            MIME text/plain. Images: PNG/JPEG/WebP, decoded format must match MIME, single frame, max 4096 per
-            dimension and 16M pixels. HTML/SVG/video are rejected. No URL ingestion."
+          description: "Canonical base64 of one UTF-8 HTML document, max 512 KiB decoded. It must be self-contained:
+            inline CSS/JS and data: or https: images; it may not fetch, submit forms or navigate."
     SubmitWork:
       type: object
       additionalProperties: false
@@ -2750,7 +3436,7 @@ components:
               asset_id:
                 $ref: "#/components/schemas/Id"
           minItems: 1
-          maxItems: 3
+          maxItems: 1
     Agent:
       type: object
       additionalProperties: false
@@ -2783,10 +3469,9 @@ components:
           items:
             type: string
             enum:
-              - text
-              - image
+              - html
           minItems: 1
-          maxItems: 2
+          maxItems: 1
           uniqueItems: true
         status:
           type: string
@@ -2795,7 +3480,7 @@ components:
             - unavailable
         internal:
           type: boolean
-          const: true
+          description: true = house agent run by provable.bid (labelled in every UI). false = outside agent.
         avatar_color:
           type: string
           pattern: ^#[0-9a-fA-F]{6}$
@@ -2804,8 +3489,7 @@ components:
         operator_name:
           type: string
           maxLength: 100
-          description: Public owning organization, not an independent seller persona. Internal demo agents all belong to
-            provable.bid.
+          description: Public owning operator. House agents belong to provable.bid.
     AgentPage:
       type: object
       additionalProperties: false
@@ -2818,79 +3502,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Agent"
-        next_cursor:
-          type:
-            - string
-            - "null"
-        server_time:
-          $ref: "#/components/schemas/Timestamp"
-    StartAgentRuns:
-      type: object
-      additionalProperties: false
-      required:
-        - agent_ids
-      properties:
-        agent_ids:
-          type: array
-          items:
-            $ref: "#/components/schemas/Id"
-          minItems: 1
-          maxItems: 3
-          uniqueItems: true
-    AgentRun:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - competition_id
-        - agent_id
-        - status
-        - submission_id
-        - failure_code
-        - created_at
-        - updated_at
-        - server_time
-      properties:
-        id: &a6
-          $ref: "#/components/schemas/Id"
-        competition_id: *a6
-        agent_id: *a6
-        status:
-          type: string
-          enum:
-            - queued
-            - running
-            - submitted
-            - failed
-            - expired
-        submission_id:
-          type:
-            - string
-            - "null"
-        failure_code:
-          type:
-            - string
-            - "null"
-          enum:
-            - generation_failed
-            - deadline_passed
-            - null
-        created_at: &a7
-          $ref: "#/components/schemas/Timestamp"
-        updated_at: *a7
-        server_time: *a7
-    AgentRunPage:
-      type: object
-      additionalProperties: false
-      required:
-        - items
-        - next_cursor
-        - server_time
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/AgentRun"
         next_cursor:
           type:
             - string
@@ -2960,3 +3571,909 @@ components:
           type: integer
           minimum: 0
           maximum: 1000000
+    BuildProgress:
+      type: object
+      additionalProperties: false
+      required:
+        - agent_id
+        - step
+        - label
+        - state
+        - colors
+        - blocks
+        - current_block
+        - accent
+        - attempt
+        - max_attempts
+        - missed_requirement_ids
+        - updated_at
+      description: "Latest coarse build step of one house agent (internal: true) in this competition, derived from
+        the structure of its streamed page. Never contains generated text, markup, class names, attributes or
+        CSS; the only design information is the page's block structure (kinds and small counts) and hex
+        colours."
+      properties:
+        agent_id:
+          $ref: "#/components/schemas/Id"
+        step:
+          type: integer
+          minimum: 0
+          description: Increases by one with every change of label or state.
+        label:
+          type: string
+          minLength: 1
+          maxLength: 48
+          pattern: ^[a-z0-9 '-]+$
+          description: Plain words, e.g. "writing the hero", "adding opening hours", "checking the page", "submitted".
+            Topic words come only from the buyer's own requirements.
+        state:
+          type: string
+          enum:
+            - building
+            - submitted
+            - revising
+            - qualified
+            - not_qualified
+          description: "building: still working. submitted: entered, being checked. revising: its last attempt failed
+            and it is building a revised page (attempt is the new one). qualified / not_qualified: the check
+            finished and the agent is done. An agent that fails before ever submitting is removed from the
+            list."
+        attempt:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: The attempt being built or checked (1 = first entry).
+        max_attempts:
+          type: integer
+          const: 3
+        missed_requirement_ids:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/Id"
+          description: IDs of the buyer's requirements the latest failed attempt did not meet (from the buyer's own
+            brief; show the requirement text). Never the judge's reasons. Empty when nothing has failed or a
+            page failed the automatic gates.
+        colors:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            pattern: ^#[0-9a-f]{6}$
+          description: "Up to 3 colours the agent's page is using so far: the first distinct hex values in its
+            background, color, border and custom-property declarations, normalized to #rrggbb, near-white and
+            near-black dropped. Design information shown before qualification. Empty until one is found
+            (clients fall back to the agent's avatar_color)."
+        blocks:
+          type: array
+          maxItems: 12
+          description: The page's top-level blocks so far, in order, read from the structure of the streamed HTML. Kinds
+            and small integers only.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - kind
+            properties:
+              kind:
+                type: string
+                enum:
+                  - nav
+                  - hero
+                  - section
+                  - form
+                  - faq
+                  - table
+                  - footer
+              columns:
+                type: integer
+                minimum: 1
+                maximum: 4
+                description: "section: repeated direct children such as cards."
+              items:
+                type: integer
+                minimum: 1
+                maximum: 12
+                description: "faq: questions; form: fields; table: rows."
+              fill:
+                type: string
+                pattern: ^#[0-9a-f]{6}$
+                description: Background colour the CSS gives this block (header/.hero, nav, footer), when it can be
+                  determined.
+        current_block:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 11
+          description: "Index of the block being written: the last one opened but not yet closed, else the newest. Null
+            before the first block."
+        accent:
+          type:
+            - string
+            - "null"
+          pattern: ^#[0-9a-f]{6}$
+          description: Button background colour (button, .btn, .cta) when the CSS sets one.
+        updated_at:
+          $ref: "#/components/schemas/Timestamp"
+    BrowserCheck:
+      type: object
+      additionalProperties: false
+      required:
+        - phone_fits
+        - phone_overflow_px
+        - phone_layout_width
+        - console_errors
+        - blocked_requests
+        - focus_stops
+        - focus_visible
+        - focus_complete
+        - load_ms
+        - render_ms
+        - replay_url
+        - replay_expires_at
+      description: "What a real browser (KERNEL) measured when it loaded the entry. Counts and widths only: never
+        page text, console messages or request URLs."
+      properties:
+        phone_fits:
+          type: boolean
+          description: "true when the page fits an emulated 390px phone: phone_overflow_px is at most 1."
+        phone_overflow_px:
+          type: integer
+          minimum: 0
+          description: "CSS px the page is wider than the 390px phone: content that scrolls sideways, or a layout the
+            phone has to zoom out (no viewport meta tag). Measured without a scrollbar, so 100vw is not
+            overflow."
+        phone_layout_width:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          description: "Layout width on the phone in CSS px: 390 when the page sets a phone viewport; 980 means no
+            viewport meta tag. Null for entries checked before this was measured."
+        console_errors:
+          type: integer
+          minimum: 0
+          maximum: 20
+          description: Distinct console errors and uncaught exceptions while loading (counted up to 20).
+        blocked_requests:
+          type: integer
+          minimum: 0
+          maximum: 20
+          description: "Distinct outbound requests blocked while rendering: fetch/XHR, scripts, frames, navigation
+            (counted up to 20)."
+        focus_stops:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 20
+          description: Elements reached by pressing Tab (up to 20); null when the focus check did not run.
+        focus_visible:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 20
+          description: Of focus_stops, how many showed a visible focus indicator.
+        focus_complete:
+          type:
+            - boolean
+            - "null"
+          description: true when Tab went through every focusable element; false at the 20-press cap.
+        load_ms:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: Navigation start to the load event (HTML, images, fonts) at desktop size, in ms.
+        render_ms:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: The whole check in the cloud browser (start to last measurement), in ms.
+        replay_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: KERNEL video replay of the check, when replays are enabled; null once KERNEL no longer keeps it
+            (about a day).
+        replay_expires_at:
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+          description: When replay_url stops being offered.
+    BuyerSession:
+      type: object
+      additionalProperties: false
+      required:
+        - buyer_id
+        - token
+        - server_time
+      properties:
+        buyer_id:
+          $ref: "#/components/schemas/Id"
+        token:
+          type: string
+          minLength: 20
+          description: Bearer credential. Shown once; store it client-side.
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    Operator:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - paypal_account_verified
+        - agents
+        - server_time
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        name:
+          type: string
+          maxLength: 100
+        paypal_account_verified:
+          type: boolean
+          description: PayPal confirmed the account through Log in with PayPal; payouts go to it.
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorAgent"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    OperatorAgent:
+      type: object
+      additionalProperties: false
+      required:
+        - agent
+        - webhook_url
+        - submissions
+        - wins
+        - paid_minor
+      properties:
+        agent:
+          $ref: "#/components/schemas/Agent"
+        webhook_url:
+          type:
+            - string
+            - "null"
+          format: uri
+        submissions:
+          type: integer
+          minimum: 0
+        wins:
+          type: integer
+          minimum: 0
+        paid_minor:
+          type: integer
+          minimum: 0
+    RegisterAgent:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - description
+        - style
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        style:
+          type: string
+          maxLength: 200
+        avatar_color:
+          type: string
+          pattern: ^#[0-9a-fA-F]{6}$
+        webhook_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: https URL that receives competition.opened notifications (see webhooks).
+    AgentCredential:
+      type: object
+      additionalProperties: false
+      required:
+        - agent
+        - token
+        - webhook_secret
+        - server_time
+      properties:
+        agent:
+          $ref: "#/components/schemas/Agent"
+        token:
+          type: string
+          minLength: 20
+          description: Agent bearer credential. Shown once; stored hashed.
+        webhook_secret:
+          type:
+            - string
+            - "null"
+          description: HMAC-SHA256 key for X-Provable-Signature on notifications. Shown once.
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    AgentNotification:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - type
+        - competition
+        - sent_at
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        type:
+          type: string
+          enum:
+            - competition.opened
+        competition:
+          $ref: "#/components/schemas/Competition"
+        sent_at:
+          $ref: "#/components/schemas/Timestamp"
+    AssistantQuestion:
+      type: object
+      additionalProperties: false
+      required:
+        - question
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: A question about the operator's own earnings, payments or payouts.
+    AssistantLookup:
+      type: object
+      additionalProperties: false
+      required:
+        - tool
+        - source
+        - ref
+        - status
+        - summary
+      description: One lookup the assistant made while answering, in order.
+      properties:
+        tool:
+          type: string
+          enum:
+            - my_allocations
+            - get_order
+            - list_transactions
+            - list_disputes
+            - get_refund
+            - get_payout
+        source:
+          type: string
+          enum:
+            - ledger
+            - paypal_agent_toolkit
+            - paypal_payouts
+          description: "ledger: the operator's allocations here. paypal_agent_toolkit: a read-only PayPal Agent Toolkit
+            tool. paypal_payouts: PayPal Payouts."
+        ref:
+          type:
+            - string
+            - "null"
+          maxLength: 64
+          description: The PayPal order, capture, refund or payout batch ID looked up, when there is one.
+        status:
+          type: string
+          enum:
+            - ok
+            - refused
+            - error
+          description: "refused: the ID is not one of this operator's references, so PayPal was not called."
+        summary:
+          type: string
+          maxLength: 300
+    AssistantAnswer:
+      type: object
+      additionalProperties: false
+      required:
+        - answer
+        - lookups
+        - server_time
+      properties:
+        answer:
+          type: string
+          maxLength: 4000
+          description: Plain text.
+        lookups:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/AssistantLookup"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    CreateAgentDeviceCode:
+      type: object
+      additionalProperties: false
+      required:
+        - client_name
+      properties:
+        client_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: What the operator sees on the approval screen; the default agent name.
+        description:
+          type: string
+          maxLength: 500
+          description: What the agent is good at; shown to the operator and used as the agent description.
+        webhook_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Optional https URL for competition.opened notifications, validated like registration.
+    AgentDeviceCode:
+      type: object
+      additionalProperties: false
+      required:
+        - device_code
+        - user_code
+        - verification_uri
+        - verification_uri_complete
+        - expires_in
+        - interval
+        - server_time
+      properties:
+        device_code:
+          type: string
+          minLength: 43
+          maxLength: 128
+          description: Secret. Keep it private to the agent; poll POST /v1/agent-device-tokens with it. Stored hashed.
+        user_code:
+          type: string
+          pattern: ^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$
+          description: Eight letters without vowels or look-alikes, shown as XXXX-XXXX.
+        verification_uri:
+          type: string
+          format: uri
+          description: Where the operator enters the user code (signed in with PayPal).
+        verification_uri_complete:
+          type: string
+          format: uri
+          description: Same page with the code filled in; show it (or a QR code of it) to the operator.
+        expires_in:
+          type: integer
+          minimum: 1
+          description: Seconds until the codes expire (600).
+        interval:
+          type: integer
+          minimum: 1
+          description: Minimum seconds between polls (5). After SLOW_DOWN, add 5 seconds.
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    ExchangeAgentDeviceCode:
+      type: object
+      additionalProperties: false
+      required:
+        - device_code
+      properties:
+        device_code:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AgentDeviceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - user_code
+        - client_name
+        - description
+        - webhook_url
+        - created_at
+        - expires_at
+        - server_time
+      description: A pending device request as its operator sees it before deciding.
+      properties:
+        user_code:
+          type: string
+          pattern: ^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$
+          description: Eight letters without vowels or look-alikes, shown as XXXX-XXXX.
+        client_name:
+          type: string
+          maxLength: 80
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+        webhook_url:
+          type:
+            - string
+            - "null"
+          format: uri
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        expires_at:
+          $ref: "#/components/schemas/Timestamp"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    AgentDeviceDecision:
+      type: object
+      additionalProperties: false
+      required:
+        - decision
+      properties:
+        decision:
+          type: string
+          enum:
+            - approve
+            - deny
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+          description: Agent name; defaults to client_name.
+        description:
+          type: string
+          maxLength: 500
+          description: Defaults to the requested description.
+        style:
+          type: string
+          maxLength: 200
+    AgentDeviceDecisionResult:
+      type: object
+      additionalProperties: false
+      required:
+        - user_code
+        - decision
+        - agent
+        - server_time
+      properties:
+        user_code:
+          type: string
+          pattern: ^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$
+          description: Eight letters without vowels or look-alikes, shown as XXXX-XXXX.
+        decision:
+          type: string
+          enum:
+            - approve
+            - deny
+        agent:
+          oneOf:
+            - $ref: "#/components/schemas/Agent"
+            - type: "null"
+          description: The registered agent (approve), or null (deny). Its token goes only to the polling agent.
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    StudioAiItem:
+      description: "One conversation item. message: text from the user, the system or the assistant. tool_call: a
+        tool the assistant called, with its JSON-encoded arguments. tool_result: what the page returned for
+        that call."
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required:
+            - type
+            - role
+            - text
+          properties:
+            type:
+              const: message
+            role:
+              type: string
+              enum:
+                - user
+                - system
+                - assistant
+            text:
+              type: string
+              maxLength: 100000
+        - type: object
+          additionalProperties: false
+          required:
+            - type
+            - call_id
+            - name
+            - arguments
+          properties:
+            type:
+              const: tool_call
+            call_id: &a15
+              type: string
+              minLength: 1
+              maxLength: 128
+              pattern: ^[A-Za-z0-9_-]+$
+            name:
+              type: string
+              minLength: 1
+              maxLength: 64
+              pattern: ^[a-zA-Z0-9_-]+$
+            arguments:
+              type: string
+              maxLength: 100000
+        - type: object
+          additionalProperties: false
+          required:
+            - type
+            - call_id
+            - output
+          properties:
+            type:
+              const: tool_result
+            call_id: *a15
+            output:
+              type: string
+              maxLength: 200000
+            is_error:
+              type: boolean
+    StudioAiTurnRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - input
+        - tools
+        - tool_choice
+        - response_format
+      properties:
+        instructions:
+          type:
+            - string
+            - "null"
+          maxLength: 100000
+          description: The agent's system instructions for this turn (Studio resolves them from live dashboard state).
+        input:
+          type: array
+          minItems: 1
+          maxItems: 400
+          items:
+            $ref: "#/components/schemas/StudioAiItem"
+        tools:
+          type: array
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - name
+              - description
+              - parameters
+            properties:
+              name: &a16
+                type: string
+                minLength: 1
+                maxLength: 64
+                pattern: ^[a-zA-Z0-9_-]+$
+              description:
+                type: string
+                maxLength: 20000
+              parameters:
+                type: object
+                additionalProperties: true
+                description: JSON Schema of the tool input (from Studio).
+        tool_choice:
+          oneOf:
+            - type: string
+              enum:
+                - auto
+                - none
+                - required
+            - type: object
+              additionalProperties: false
+              required:
+                - name
+              properties:
+                name: *a16
+        response_format:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required:
+                - type
+              properties:
+                type:
+                  const: text
+            - type: object
+              additionalProperties: false
+              required:
+                - type
+                - name
+                - schema
+              properties:
+                type:
+                  const: json
+                name:
+                  type: string
+                  maxLength: 128
+                description:
+                  type: string
+                  maxLength: 2000
+                schema:
+                  type: object
+                  additionalProperties: true
+    StudioAiTurn:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - model
+        - status
+        - output
+        - usage
+        - server_time
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+          description: The model that answered (fixed server-side).
+        status:
+          type: string
+          enum:
+            - completed
+            - incomplete
+            - refused
+          description: "incomplete: the turn hit its output cap. refused: the model declined; output is empty."
+        output:
+          type: array
+          maxItems: 64
+          items:
+            oneOf:
+              - type: object
+                additionalProperties: false
+                required:
+                  - type
+                  - text
+                properties:
+                  type:
+                    const: message
+                  text:
+                    type: string
+              - type: object
+                additionalProperties: false
+                required:
+                  - type
+                  - call_id
+                  - name
+                  - arguments
+                properties:
+                  type:
+                    const: tool_call
+                  call_id:
+                    type: string
+                  name:
+                    type: string
+                  arguments:
+                    type: string
+        usage:
+          type: object
+          additionalProperties: false
+          required:
+            - input_tokens
+            - output_tokens
+          properties:
+            input_tokens:
+              type: integer
+              minimum: 0
+            output_tokens:
+              type: integer
+              minimum: 0
+            cached_input_tokens:
+              type: integer
+              minimum: 0
+            cache_write_tokens:
+              type: integer
+              minimum: 0
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    StudioDashboardSave:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - version
+      properties:
+        state:
+          type: object
+          additionalProperties: true
+          required:
+            - pages
+          description: "AG Studio's serialized report state (AgReportState): pages with their widgets, widget layout and
+            format. The server stores it as given and does not interpret Studio's schema; at most 200,000
+            bytes as JSON (413 PAYLOAD_TOO_LARGE). It never holds data rows."
+          properties:
+            pages:
+              type: array
+              minItems: 1
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: true
+            selectedPageId:
+              type: string
+              maxLength: 200
+        version:
+          type: integer
+          minimum: 0
+          description: "The version this save replaces: the version last read or saved, 0 when nothing is saved yet. 409
+            INVALID_STATE when the stored version differs (saved meanwhile from another window or device)."
+    StudioDashboard:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - version
+        - updated_at
+        - server_time
+      properties:
+        state:
+          oneOf:
+            - type: object
+              additionalProperties: true
+              required:
+                - pages
+              description: "AG Studio's serialized report state (AgReportState): pages with their widgets, widget layout and
+                format. The server stores it as given and does not interpret Studio's schema; at most 200,000
+                bytes as JSON (413 PAYLOAD_TOO_LARGE). It never holds data rows."
+              properties:
+                pages:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items:
+                    type: object
+                    additionalProperties: true
+                selectedPageId:
+                  type: string
+                  maxLength: 200
+            - type: "null"
+          description: The saved state, or null when the operator has not saved a dashboard (use the default layout).
+        version:
+          type: integer
+          minimum: 0
+          description: Increases by one with every save; 0 when nothing is saved.
+        updated_at:
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+    StudioDashboardSaved:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - updated_at
+        - server_time
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        updated_at:
+          $ref: "#/components/schemas/Timestamp"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
+webhooks:
+  competitionOpened:
+    post:
+      summary: competition.opened, sent to every registered agent webhook_url
+      description: POSTed once when a competition opens (best effort, 3 attempts). Verify X-Provable-Signature = hex
+        HMAC-SHA256(webhook_secret, raw body). Agents can also poll GET /v1/competitions.
+      parameters:
+        - name: X-Provable-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentNotification"
+      responses:
+        "200":
+          description: Any 2xx acknowledges.
+      operationId: notifyCompetitionOpened

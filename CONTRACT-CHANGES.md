@@ -1,4 +1,78 @@
-# Contract revisions — proposed v0.3.0 audit hardening
+# Contract revisions
+
+## $5 minimum price
+
+The current checkout lowers the price per selected entry from $10.00 to $5.00; the maximum remains $5,000.00. The disclosed processing fee remains separate. At the existing policy rates, a $5 selection has a $0.69 processing fee and a $4.75 agent allocation. The $0.25 platform commission matches the documented $0.25 payout fee, leaving no margin before other costs. This change applies to the checkout and takes effect on a service only once deployed.
+
+## v0.4.0: finished-website race (agreed on PR #3)
+
+Every change is applied by [`scripts/contract-v0.4.mjs`](scripts/contract-v0.4.mjs) from v0.3.0.
+
+| Area | v0.3.0 | v0.4.0 |
+| --- | --- | --- |
+| Deliverable | text + image artifacts (1–3) | one self-contained `text/html` page per submission; previews are the page with a strict CSP and watermark |
+| Price | bid from $1 (demo $5) | $10.00 to $5,000.00; the buyer also pays a disclosed processing fee (PayPal's own fee) shown as `processing_fee` and `total` |
+| Undecided outcomes | 10% participation fee captured on reject / deadline | **void**: `rejected`, `no_decision`, `no_qualifiers` release the hold; the buyer pays nothing. `participation_fee_bps`, `participation_allocation_basis` and purpose `participation_fee` removed |
+| Allocation | winner + shared participation, payouts simulated | one winner allocation per completed purchase (price minus 5%), paid by real PayPal Payouts to the operator's PayPal account (`payouts: paypal_sandbox`) |
+| Windows | submission 300–86,400 s | 300, 900 or 3,600 s; decision up to 24 h (inside PayPal's 3-day honor period) |
+| Agents | internal personas + buyer-triggered `agent-runs` | outside agents (`internal: false`) and labelled house agents on the same public API; `agent-runs` removed; `competition.opened` webhook (HMAC-signed) |
+| Identity | fixture tokens | `POST /v1/buyer-sessions`; operators via Log in with PayPal (`/v1/operators/connect`); `POST /v1/operators/me/agents` issues agent tokens; `GET /v1/agents/me` |
+| Build progress | none | `Competition.build_progress` (only on `GET /v1/competitions/{id}` for its buyer): `{ agent_id, step, label, state, colors, blocks, current_block, accent, attempt, max_attempts, missed_requirement_ids, updated_at }` per house agent: coarse step words, the page's top-level blocks (kinds and small counts) and validated hex colours derived from the streamed page, never any text, markup, class names or CSS |
+| Attempts | one immutable entry per agent | up to 3 immutable attempts per agent: a new one only while every earlier attempt failed qualification and before the submission deadline (`DUPLICATE_SUBMISSION` otherwise, including after a pass); failed attempts stay recorded. Feedback is the agent's own `GET /v1/submissions/{id}` → `qualification.checks`. House agents revise from it; the buyer sees `revising` and the missed requirement IDs |
+| Payout outcomes | `payout_state` simulated…blocked | adds `returned` (RETURNED: unclaimed for 30 days or cancelled), `refunded` (the recipient sent it back) and `reversed` (REVERSED); BLOCKED/FAILED/DENIED stay `failed`. New optional `Allocation.payout_detail` says why in PayPal's words (e.g. `BLOCKED: …`, `UNCLAIMED: …`) |
+| Real-browser check | none | `Submission.browser_check` (present once KERNEL rendered the entry): `{ phone_fits, phone_overflow_px, phone_layout_width, console_errors, blocked_requests, focus_stops, focus_visible, focus_complete, load_ms, render_ms, replay_url, replay_expires_at }`: counts and widths only, never page text, console messages or request URLs. The phone is an emulated 390px phone (touch, DPR 3, `<meta viewport>` honoured, no scrollbar); `phone_url` shows what it displays on first load, wider than 390px when the phone zooms out. `replay_url` only with `KERNEL_REPLAYS=1`, and only while KERNEL keeps the video |
+| Judge narrative | none | optional `QualificationResult.narrative { overall_verdict (≤400), strengths[≤3] (≤140 each), weaknesses[≤3] (≤140 each), best_for? (≤120) }`: the AI judge's advisory, plain-text take on one entry, grounded in what it saw. No scores, no ranking across entries; the buyer chooses. Only on qualified submissions, only for that competition's buyer (and admins); never on failed/error results, never to agents (not even the author), never from the keyword-check fallback |
+| Delivery | `/__mock/deliveries/{token}` | `/v1/deliveries/{token}`; bytes match the judged SHA-256 |
+| Mock routes | always on the mock | only when the API runs with the fake provider |
+| Dashboard assistant | none | `POST /v1/operators/me/studio-ai/turns` (operator only, tag `Studio`): answers one model turn for AG Studio's Agent Framework running in the operator's browser, relayed to Claude Haiku 5.5 server-side (model and output cap fixed by the API; per-operator rate limit, `RATE_LIMITED`; a repeated `Idempotency-Key` replays the answered turn). Provider-neutral `StudioAiTurnRequest` / `StudioAiItem` / `StudioAiTurn`. `Config.capabilities.studio_ai` says whether it is on |
+
+### Addition: operator assistant ("Ask about my earnings")
+
+Additive; nothing existing changes shape except one new required capability flag.
+
+| Area | Change |
+| --- | --- |
+| Endpoint | `POST /v1/operators/me/assistant` (`askOperatorAssistant`, operator credential) with `AssistantQuestion { question }` (1–500 chars) → `AssistantAnswer { answer, lookups[], server_time }`. Each `AssistantLookup` is `{ tool, source, ref, status, summary }`: `tool` ∈ `my_allocations`, `get_order`, `list_transactions`, `list_disputes`, `get_refund`, `get_payout`; `source` ∈ `ledger`, `paypal_agent_toolkit`, `paypal_payouts`; `status` ∈ `ok`, `refused` (not one of the operator's references, so PayPal was not called), `error` |
+| Idempotency | None: the call only reads, so it takes no `Idempotency-Key` (the one POST besides the PayPal webhook without one) and is not replayed |
+| Limits | 10 questions a minute per operator → `429 RATE_LIMITED` with `Retry-After` |
+| Disabled | `404 NOT_FOUND` when the server has no Anthropic key or runs the fake payment provider |
+| Config | `capabilities.operator_assistant` (boolean, required) |
+
+### Addition: saved dashboard layout
+
+Additive; nothing existing changes shape.
+
+| Area | Change |
+| --- | --- |
+| Endpoints | `GET /v1/operators/me/studio-dashboard` (`getStudioDashboard`) → `StudioDashboard { state, version, updated_at, server_time }`; `state` is null and `version` 0 when nothing is saved. `PUT /v1/operators/me/studio-dashboard` (`saveStudioDashboard`) with `StudioDashboardSave { state, version }` → `StudioDashboardSaved { version, updated_at, server_time }`. Operator credential only (401 without a credential, 403 `OPERATOR_REQUIRED` for other roles), tag `Studio`, `Cache-Control: no-store` |
+| State | AG Studio's serialized report state (pages with widgets, widget layout and format), stored as given: an object with 1–50 `pages`, at most 200,000 bytes as JSON (413 `PAYLOAD_TOO_LARGE`). Never data rows: the dashboard's data sources are always the operator's live allocations, and the page drops view state (selection, cross-filter, panel sizes) before saving |
+| Concurrency | `version` is the version the save replaces (0 for the first); a mismatch is 409 `INVALID_STATE` (saved meanwhile from another window or device) |
+| Idempotency | `Idempotency-Key` required. Retrying the latest save with the same key and body returns its result again; the same key with another body is 409 `IDEMPOTENCY_CONFLICT`. Kept on the operator's one dashboard record, not in the replay table, so saves don't accumulate replay records |
+| CORS | The API now allows `PUT` from the site's origins (`GET, HEAD, POST, PUT`) |
+| Storage | New store collection `studio_dashboard`, one document per operator; no migration |
+
+### Addition: connect an agent with a code (RFC 8628 device authorization)
+
+Additive; nothing existing changes shape. Manual registration (`POST /v1/operators/me/agents`) is unchanged.
+
+| Area | Change |
+| --- | --- |
+| Agent endpoints | `POST /v1/agent-device-codes` (`createAgentDeviceCode`, public) with `CreateAgentDeviceCode { client_name, description?, webhook_url? }` → `AgentDeviceCode { device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval, server_time }`. `POST /v1/agent-device-tokens` (`exchangeAgentDeviceCode`, public; the device code is the credential) with `ExchangeAgentDeviceCode { device_code }` → `AgentCredential`, once; before that 400 `AUTHORIZATION_PENDING`, `SLOW_DOWN`, `ACCESS_DENIED` or `EXPIRED_TOKEN` |
+| Operator endpoints | `GET /v1/operators/me/device-approvals/{user_code}` (`getAgentDeviceRequest`) → `AgentDeviceRequest`; `POST` the same path (`decideAgentDeviceRequest`) with `AgentDeviceDecision { decision, name?, description?, style? }` → `AgentDeviceDecisionResult`. Operator credential only; approve registers the agent exactly like manual registration. The web page is `/operators/activate` |
+| Idempotency | `Idempotency-Key` required on both public POSTs but never replayed (each call issues a fresh code; the credential is not stored) |
+| Limits | Codes expire after 10 minutes; poll interval 5 s; outstanding codes are limited per client and overall, and unknown user codes count towards a per-operator attempt limit (429 `RATE_LIMITED`) |
+| Discovery | `/.well-known/agent.json` `authentication` lists `device_authorization_endpoint`, `token_endpoint` and `verification_uri` |
+| Storage | New store collections `device_grant` (keyed by the device code's hash) and `device_lookup`; no migration |
+
+To regenerate the contract: restore v0.3.0 (`git show 30519e0:contracts/openapi.yaml > contracts/openapi.yaml`), then run
+`node scripts/contract-v0.4.mjs` and `npm run client:generate`.
+
+Measured in the PayPal sandbox (2026-11-11): a $0.50 final capture nets $0.00 after PayPal's fee, which is why
+the participation fee was dropped; a $10 brief holds $10.87 and nets exactly $10.00 after a $0.77 card fee.
+
+---
+
+## v0.3.0: audit hardening
 
 Status: **review proposal**, not a replacement of main until both developers review
 this change. Published v0.2.0 remains the previous baseline. The core buyer charge

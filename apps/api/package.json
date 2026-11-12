@@ -1,0 +1,25 @@
+{
+  "name": "@provable/api",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "*",
+    "@fastify/cors": "^11.1.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@onkernel/sdk": "^0.147.0",
+    "@paypal/agent-toolkit": "1.11.0",
+    "@paypal/paypal-server-sdk": "2.5.0",
+    "@renderinc/sdk": "1.8.0",
+    "better-sqlite3": "*",
+    "fastify": "^5.6.1",
+    "parse5": "^8.1.1",
+    "pg": "^8.23.1",
+    "playwright-core": "^1.65.0",
+    "zod": "*"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "*",
+    "@types/pg": "^8.23.1"
+  }
+}

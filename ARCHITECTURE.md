@@ -1,3 +1,5 @@
+> **Superseded in part by v0.4.0** (finished-website race, void instead of a participation fee, real payouts). See [README.md](README.md) and [CONTRACT-CHANGES.md](CONTRACT-CHANGES.md). This document records the v0.3.0 design.
+
 # provable.bid — proposed contract v0.3.0 audit revision
 
 Status: reviewable architecture/contract/mock proposal, 2026-11-10. The published

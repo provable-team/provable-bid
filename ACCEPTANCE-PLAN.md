@@ -1,3 +1,5 @@
+> **Superseded in part by v0.4.0** (finished-website race, void instead of a participation fee, real payouts). See [README.md](README.md) and [CONTRACT-CHANGES.md](CONTRACT-CHANGES.md). This document records the v0.3.0 design.
+
 # Repository-specific 52-case acceptance plan
 
 Baseline reviewed: v0.2.0 (`adb311b`); hardening proposal: v0.3.0. This is a new matrix

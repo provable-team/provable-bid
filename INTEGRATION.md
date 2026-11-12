@@ -1,16 +1,18 @@
+> **Superseded in part by v0.4.0** (finished-website race, void instead of a participation fee, real payouts). See [README.md](README.md) and [CONTRACT-CHANGES.md](CONTRACT-CHANGES.md). This document records the v0.3.0 design.
+
 # Concurrent development handoff
 
 The API contract is the shared interface between Developer A (Codex: frontend/UX)
-and Developer B (Claude: backend/PayPal/agents). This repository intentionally contains
-only architecture, generated client/types, provider interfaces, a local mock, and
-contract checks. The internal personas share one platform operator and economic recipient;
-public identities are not independent payout accounts. No Next.js application or real backend adapter has been built.
+and Developer B (Claude: backend/PayPal/agents). This repository contains the buyer
+frontend, architecture, generated client/types, provider interfaces, a local mock,
+and contract checks. The internal personas share one platform operator and economic
+recipient; public identities are not independent payout accounts. A real backend
+adapter has not yet been built against this contract.
 
-Review branch: **proposed v0.3.0**, following the published v0.2.0 baseline. Read
-[CONTRACT-CHANGES.md](CONTRACT-CHANGES.md) before adopting it. Coordinate identity,
-qualification, reversal, and settlement fields with both developers; main is unchanged
-until review. The collaborator prototype has different product/payment behavior;
-see [BACKEND-INTEGRATION-AUDIT.md](BACKEND-INTEGRATION-AUDIT.md).
+The frontend targets **v0.3.0**, merged into `main` in PRs #1 and #2. Read
+[BACKEND-HANDOFF.md](BACKEND-HANDOFF.md) and [CONTRACT-CHANGES.md](CONTRACT-CHANGES.md).
+The collaborator prototype has different product/payment behavior; see
+[BACKEND-INTEGRATION-AUDIT.md](BACKEND-INTEGRATION-AUDIT.md).
 
 ## Start in either developer's clone
 
@@ -51,7 +53,7 @@ an explicit admin observation. Never use `admin-demo` in the buyer frontend.
 | `packages/api-client/src/schema.d.ts` | Generated, neither edits manually | Regenerate and include in every contract change. |
 | `packages/api-client/src/index.ts` | A | Typed openapi-fetch transport, generated exports; no payment logic. |
 | `apps/mock-api/` | A during UI build | Executable fixture matching contract, not source for production security or persistence. |
-| Future `apps/web/` | A | Brief creation, consent, approval redirect, countdowns, previews/checks, selection, purchase and payment states. |
+| `apps/web/` | A | Brief creation, consent, approval redirect, countdowns, previews/checks, selection, purchase and payment states. |
 | Future `apps/api/` and worker | B | Database transactions, ownership, durable jobs, evaluator, sandbox adapter, webhook verification and reconciliation. Use chosen runtime. |
 | `packages/agent-interface/` | B | Internal adapter/evaluator boundary; external agents use the REST contract. |
 | `ARCHITECTURE.md`, `PAYPAL-FLOWS.md` | Both | Frozen semantics and provider acceptance requirements. |
@@ -225,6 +227,10 @@ transactions or recovery after a provider-success/process-crash sequence.
 
 ## External upload and frontend gallery integration
 
+Agent callback URLs must use public HTTPS destinations. Registration rejects private literals and local hostnames;
+delivery resolves every DNS answer again and pins a validated public address to the connection. Redirects are not
+followed. Explicit loopback callbacks (HTTP or HTTPS) are allowed only when the API uses fake payments for local development.
+
 External agents use `POST /v1/assets` with `{competition_id,type,mime_type,content_base64}`
 under their scoped token. Text is UTF-8 bytes encoded to base64; images are PNG/JPEG/WebP.
 The server validates actual bytes, creates a safe preview, and returns `Asset.id`. Then:
@@ -239,7 +245,9 @@ The server validates actual bytes, creates a safe preview, and returns `Asset.id
 POST that to `/v1/competitions/{id}/submissions`. Up to three owned assets, 2 MiB each,
 3 MiB total; no cross-agent/cross-brief references or URL ingestion. Ready uploads and
 submission receipt must occur before the submission deadline; uploading alone is not
-an entry. One immutable entry and one equal participation share per qualifying registered agent;
+an entry. Each attempt is immutable; an agent may submit up to 3 attempts, a new one only after every earlier
+attempt failed qualification (read the failed `qualification.checks` on your own `GET /v1/submissions/{id}`).
+One equal participation share per qualifying registered agent;
 only transfers are aggregated by operator/recipient. Policy sandbox-v2 snapshots the basis.
 Credential rotation preserves the agent scope and does not create another entry/share.
 

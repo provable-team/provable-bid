@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1020" viewBox="0 0 720 1020" role="img" aria-labelledby="title desc">
+  <title id="title">Night Shift — a fictional jazz night</title>
+  <desc id="desc">A black, cream and vermilion editorial poster with oversized Night Shift lettering and an abstract record and piano graphic. The Mara Vale Quartet and DJ Ida Loop. Friday 19 March 2027, doors 20:00, music 21:00. The fictional Hour Room, East London. Information at example.com/nightshift. AI-created concept artwork for a fictional event.</desc>
+  <rect width="720" height="1020" fill="#111512"/>
+  <g fill="#f3efd9" font-family="Arial, Helvetica, sans-serif">
+    <path d="M46 44H674" stroke="#f3efd9" stroke-width="1"/>
+    <text x="48" y="72" font-size="13" letter-spacing="2.1">NO. 014 / LIVE AFTER DARK</text>
+    <text x="673" y="72" font-size="13" text-anchor="end" letter-spacing="1.7">EAST LONDON</text>
+    <circle cx="617" cy="145" r="48" fill="#f45132"/>
+    <text x="39" y="214" font-size="149" font-weight="900" letter-spacing="-10">NIGHT</text>
+    <text x="40" y="343" font-size="156" font-weight="900" letter-spacing="-9">SHIFT</text>
+    <text x="48" y="377" font-size="13" letter-spacing="3.2">JAZZ, AFTER THE CLOCK STOPS.</text>
+    <path d="M48 400H672" stroke="#f3efd9" stroke-width="1"/>
+  </g>
+  <g transform="translate(48 426)">
+    <path d="M0 144a144 144 0 0 1 288 0v144H0Z" fill="#f3efd9"/>
+    <path d="M36 144a108 108 0 0 1 216 0v144H36Z" fill="#111512"/>
+    <path d="M72 144a72 72 0 0 1 144 0v144H72Z" fill="#f3efd9"/>
+    <path d="M108 144a36 36 0 0 1 72 0v144h-72Z" fill="#111512"/>
+    <path d="M288 0h336v288H288Z" fill="#f45132"/>
+    <path d="M288 0h42v184h-42ZM372 0h42v184h-42ZM456 0h42v184h-42ZM540 0h42v184h-42Z" fill="#111512"/>
+    <path d="M288 220h336M288 254h336" stroke="#111512" stroke-width="2"/>
+    <circle cx="144" cy="144" r="11" fill="#f45132"/>
+    <path d="M0 307H624" stroke="#f3efd9" stroke-width="1"/>
+  </g>
+  <g fill="#f3efd9" font-family="Arial, Helvetica, sans-serif">
+    <text x="48" y="774" font-size="13" letter-spacing="2.6">IN THE ROOM</text>
+    <text x="48" y="813" font-size="33" font-weight="700" letter-spacing="-1">THE MARA VALE QUARTET</text>
+    <text x="48" y="843" font-size="20" letter-spacing=".6">+ DJ IDA LOOP / ALL VINYL, ALL NIGHT</text>
+    <path d="M48 866H672" stroke="#f3efd9" stroke-width="1"/>
+    <text x="48" y="905" font-size="29" font-weight="700" letter-spacing="-.6">FRIDAY 19 MARCH 2027</text>
+    <text x="48" y="934" font-size="15" letter-spacing=".7">THE HOUR ROOM · DOORS 20:00 · MUSIC 21:00</text>
+    <text x="48" y="968" font-size="14" fill="#f45132" letter-spacing="1.2">EXAMPLE.COM/NIGHTSHIFT</text>
+    <text x="48" y="992" font-size="10" letter-spacing=".8">AI-CREATED CONCEPT · FICTIONAL EVENT, ARTISTS &amp; VENUE</text>
+    <text x="672" y="992" font-size="10" text-anchor="end">27 / 014</text>
+  </g>
+</svg>

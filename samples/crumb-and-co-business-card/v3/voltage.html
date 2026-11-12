@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crumb &amp; Co. Bakery - Business Card (3.5 x 2 in)</title>
+<style>
+@page { size: 3.5in 2in; margin: 0; }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #e9e6e1;
+  color: #111;
+  font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.wrap {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+
+.note {
+  width: min(100%, 420px);
+  font-size: 14px;
+  line-height: 1.5;
+  color: #333;
+  margin: 0;
+}
+.note strong { color: #111; }
+
+.card {
+  width: min(100%, 420px);
+  aspect-ratio: 3.5 / 2;
+  container-type: inline-size;
+  position: relative;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+}
+
+.inner {
+  min-height: 100%;
+  padding: 7cqi;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4cqi;
+}
+
+/* FRONT */
+.front { background: #ff4f1f; color: #111; }
+.front h1 {
+  margin: 0;
+  font-size: 13cqi;
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+.front .kicker {
+  margin: 0;
+  font-size: 4.2cqi;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.front .bar {
+  align-self: flex-start;
+  background: #111;
+  color: #fff;
+  font-size: 4.6cqi;
+  font-weight: 800;
+  padding: 2.6cqi 4cqi;
+  line-height: 1.2;
+}
+.front .bar b { color: #ff4f1f; font-weight: 900; }
+
+/* BACK */
+.back { background: #141414; color: #f5f1ea; }
+.back .label {
+  margin: 0;
+  font-size: 4.2cqi;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ff4f1f;
+}
+.back .days {
+  margin: 0;
+  font-size: 7cqi;
+  font-weight: 900;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+.back .time {
+  margin: 0;
+  font-size: 11cqi;
+  font-weight: 900;
+  line-height: 1;
+  color: #ff4f1f;
+}
+.back .pre {
+  align-self: stretch;
+  background: #ff4f1f;
+  color: #111;
+  font-size: 4.6cqi;
+  font-weight: 800;
+  padding: 2.6cqi 4cqi;
+  line-height: 1.25;
+  margin: 0;
+}
+.back .pre span { white-space: nowrap; }
+
+.svgmark {
+  position: absolute;
+  right: 6cqi;
+  top: 6cqi;
+  width: 9cqi;
+  height: 9cqi;
+}
+
+/* PRINT: exact 3.5 x 2 in pages, one card per page */
+@media print {
+  html, body { background: #fff; margin: 0; padding: 0; }
+  .note { display: none !important; }
+  .wrap { display: block; padding: 0; margin: 0; max-width: none; gap: 0; }
+  .card {
+    width: 3.5in;
+    height: 2in;
+    aspect-ratio: auto;
+    box-shadow: none;
+    position: relative;
+    overflow: hidden;
+    margin: 0;
+    break-after: page;
+    page-break-after: always;
+  }
+  .card:last-child { break-after: auto; page-break-after: auto; }
+  .inner {
+    height: 2in;
+    min-height: 0;
+    padding: 0.2in;
+    gap: 0.08in;
+  }
+  .front h1 { font-size: 25pt; line-height: 1; }
+  .front .kicker { font-size: 8pt; }
+  .front .bar { font-size: 8.5pt; padding: 0.05in 0.1in; }
+  .back .label { font-size: 8pt; }
+  .back .days { font-size: 13pt; }
+  .back .time { font-size: 22pt; }
+  .back .pre { font-size: 8.5pt; padding: 0.05in 0.1in; }
+  .svgmark { width: 0.3in; height: 0.3in; right: 0.2in; top: 0.2in; }
+}
+</style>
+</head>
+<body>
+
+<main class="wrap">
+
+  <p class="note">
+    <strong>Business card, 3.5 × 2 in (US standard).</strong>
+    To print, choose "Actual size" or 100% scale, set margins to none, and turn on background graphics. The document prints as two pages: front, then back.
+  </p>
+
+  <!-- FRONT -->
+  <section class="card front" aria-label="Business card front">
+    <div class="inner">
+      <svg class="svgmark" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+        <circle cx="20" cy="20" r="18" fill="#111"/>
+        <path d="M20 9 L23 17 L31 17 L24.5 22 L27 30 L20 25 L13 30 L15.5 22 L9 17 L17 17 Z" fill="#ff4f1f"/>
+      </svg>
+      <p class="kicker">Crumb &amp; Co.</p>
+      <h1>Crumb &amp; Co. Bakery</h1>
+      <p class="bar">Preorders at <b>crumbandco.example</b></p>
+    </div>
+  </section>
+
+  <!-- BACK -->
+  <section class="card back" aria-label="Business card back">
+    <div class="inner">
+      <p class="label">Hours</p>
+      <div>
+        <p class="days">Tuesday to Sunday (Tue-Sun)</p>
+        <p class="time">7am to 3pm</p>
+      </div>
+      <p class="pre">Preorders at <span>crumbandco.example</span></p>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>
