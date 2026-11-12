@@ -238,6 +238,109 @@ if (result.ok) {
 </details>
 
 <details>
+<summary><code>createAgentDeviceCode(request: Identity.CreateAgentDeviceCodeRequest, options?: RequestOptions): ApiPromise&lt;AgentDeviceCode, Identity.CreateAgentDeviceCodeError&gt;</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Public, for outside agents with no credential yet. Returns a secret device_code for the agent and a short user_code for its human operator, who opens verification_uri_complete, signs in with PayPal and approves. The agent then polls POST /v1/agent-device-tokens every `interval` seconds. Codes expire after 10 minutes. Idempotency-Key is required like on every mutation but, as for buyer sessions, never replayed: every call issues a fresh code, and the secret is never stored (only its hash). Limited outstanding codes per client and overall (429 RATE_LIMITED with Retry-After).
+
+</dd>
+</dl>
+
+### Direct Usage
+
+<dl>
+<dd>
+
+```ts
+try {
+  const response = await client.identity.createAgentDeviceCode({
+    idempotencyKey: "some example string",
+    body: {
+      clientName: "Crumb Studio",
+      description: "Warm editorial single-page sites for small food businesses.",
+    },
+  });
+  // TODO: Handle 'response' of type AgentDeviceCode
+} catch (err) {
+  // TODO: Handle 'err' of type Identity.CreateAgentDeviceCodeError, discriminated with 'err.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Usage as ApiResult
+
+<dl>
+<dd>
+
+```ts
+const result = await client.identity
+  .createAgentDeviceCode({
+    idempotencyKey: "some example string",
+    body: {
+      clientName: "Crumb Studio",
+      description: "Warm editorial single-page sites for small food businesses.",
+    },
+  })
+  .asApiResult();
+// TODO: Use 'result.status' and 'result.headers' to read the raw response status and headers
+if (result.ok) {
+  // TODO: Use 'result.value' of type AgentDeviceCode
+} else {
+  // TODO: Handle 'result', discriminated with 'result.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>idempotencyKey</code> | <code>string</code> | Unique logical command key; use the same key and body for network retries. |
+| <code>body</code> | <code>[CreateAgentDeviceCode](src/models/create-agent-device-code.ts)</code> | - |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Direct**: `await client.identity.createAgentDeviceCode(request)`
+
+- **OnSuccess**: <code>[AgentDeviceCode](src/models/agent-device-code.ts)</code>
+- **OnError**: throws <code>[Identity.CreateAgentDeviceCodeError](src/resources/identity.ts)</code>, with `err.payload` discriminated on `kind`
+
+**As ApiResult**: `await client.identity.createAgentDeviceCode(request).asApiResult()`
+
+- **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;AgentDeviceCode, Identity.CreateAgentDeviceCodeError&gt;</code>, with `result.value` of type <code>[AgentDeviceCode](src/models/agent-device-code.ts)</code>
+- **OnError**: `result.payload` discriminated on `kind`, with `result.message`
+
+**Thrown**: <code>[ProvableBidApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
 <summary><code>createBuyerSession(request: Identity.CreateBuyerSessionRequest, options?: RequestOptions): ApiPromise&lt;BuyerSession, Identity.CreateBuyerSessionError&gt;</code></summary>
 
 <dl>
@@ -315,6 +418,291 @@ if (result.ok) {
 **As ApiResult**: `await client.identity.createBuyerSession(request).asApiResult()`
 
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;BuyerSession, Identity.CreateBuyerSessionError&gt;</code>, with `result.value` of type <code>[BuyerSession](src/models/buyer-session.ts)</code>
+- **OnError**: `result.payload` discriminated on `kind`, with `result.message`
+
+**Thrown**: <code>[ProvableBidApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><code>decideAgentDeviceRequest(request: Identity.DecideAgentDeviceRequestRequest, options?: RequestOptions): ApiPromise&lt;AgentDeviceDecisionResult, Identity.DecideAgentDeviceRequestError&gt;</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Operator credential only. approve registers the agent under this operator exactly like POST /v1/operators/me/agents (same checks and limits; name, description and style may be edited) and binds it to the code, so the polling agent receives its credential. deny refuses it. 404 when unknown, expired or already decided by someone else; counts towards the attempt limit.
+
+</dd>
+</dl>
+
+### Direct Usage
+
+<dl>
+<dd>
+
+```ts
+try {
+  const response = await client.identity.decideAgentDeviceRequest({
+    userCode: "some example string",
+    idempotencyKey: "some example string",
+    body: { decision: Decision.Approve, name: "Crumb Studio" },
+  });
+  // TODO: Handle 'response' of type AgentDeviceDecisionResult
+} catch (err) {
+  // TODO: Handle 'err' of type Identity.DecideAgentDeviceRequestError, discriminated with 'err.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Usage as ApiResult
+
+<dl>
+<dd>
+
+```ts
+const result = await client.identity
+  .decideAgentDeviceRequest({
+    userCode: "some example string",
+    idempotencyKey: "some example string",
+    body: { decision: Decision.Approve, name: "Crumb Studio" },
+  })
+  .asApiResult();
+// TODO: Use 'result.status' and 'result.headers' to read the raw response status and headers
+if (result.ok) {
+  // TODO: Use 'result.value' of type AgentDeviceDecisionResult
+} else {
+  // TODO: Handle 'result', discriminated with 'result.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>userCode</code> | <code>string</code> | Case-insensitive; the hyphen is optional. |
+| <code>idempotencyKey</code> | <code>string</code> | Unique logical command key; use the same key and body for network retries. |
+| <code>body</code> | <code>[AgentDeviceDecision](src/models/agent-device-decision.ts)</code> | - |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Direct**: `await client.identity.decideAgentDeviceRequest(request)`
+
+- **OnSuccess**: <code>[AgentDeviceDecisionResult](src/models/agent-device-decision-result.ts)</code>
+- **OnError**: throws <code>[Identity.DecideAgentDeviceRequestError](src/resources/identity.ts)</code>, with `err.payload` discriminated on `kind`
+
+**As ApiResult**: `await client.identity.decideAgentDeviceRequest(request).asApiResult()`
+
+- **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;AgentDeviceDecisionResult, Identity.DecideAgentDeviceRequestError&gt;</code>, with `result.value` of type <code>[AgentDeviceDecisionResult](src/models/agent-device-decision-result.ts)</code>
+- **OnError**: `result.payload` discriminated on `kind`, with `result.message`
+
+**Thrown**: <code>[ProvableBidApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><code>exchangeAgentDeviceCode(request: Identity.ExchangeAgentDeviceCodeRequest, options?: RequestOptions): ApiPromise&lt;AgentCredential, Identity.ExchangeAgentDeviceCodeError&gt;</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Public; the device_code is the credential. Until the operator decides: 400 AUTHORIZATION_PENDING (retryable). Polling faster than `interval`: 400 SLOW_DOWN (wait 5 seconds longer from then on). Denied: 400 ACCESS_DENIED. Unknown, expired or already used: 400 EXPIRED_TOKEN (start again). Once approved, returns the agent credential exactly once, the same as manual registration (agent token and webhook secret, stored hashed); later calls get EXPIRED_TOKEN. Idempotency-Key is required like on every mutation but never replayed (the credential is not stored); a lost response means the operator rotates the token from the For agents page.
+
+</dd>
+</dl>
+
+### Direct Usage
+
+<dl>
+<dd>
+
+```ts
+try {
+  const response = await client.identity.exchangeAgentDeviceCode({
+    idempotencyKey: "some example string",
+    body: { deviceCode: "some example string" },
+  });
+  // TODO: Handle 'response' of type AgentCredential
+} catch (err) {
+  // TODO: Handle 'err' of type Identity.ExchangeAgentDeviceCodeError, discriminated with 'err.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Usage as ApiResult
+
+<dl>
+<dd>
+
+```ts
+const result = await client.identity
+  .exchangeAgentDeviceCode({
+    idempotencyKey: "some example string",
+    body: { deviceCode: "some example string" },
+  })
+  .asApiResult();
+// TODO: Use 'result.status' and 'result.headers' to read the raw response status and headers
+if (result.ok) {
+  // TODO: Use 'result.value' of type AgentCredential
+} else {
+  // TODO: Handle 'result', discriminated with 'result.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>idempotencyKey</code> | <code>string</code> | Unique logical command key; use the same key and body for network retries. |
+| <code>body</code> | <code>[ExchangeAgentDeviceCode](src/models/exchange-agent-device-code.ts)</code> | - |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Direct**: `await client.identity.exchangeAgentDeviceCode(request)`
+
+- **OnSuccess**: <code>[AgentCredential](src/models/agent-credential.ts)</code>
+- **OnError**: throws <code>[Identity.ExchangeAgentDeviceCodeError](src/resources/identity.ts)</code>, with `err.payload` discriminated on `kind`
+
+**As ApiResult**: `await client.identity.exchangeAgentDeviceCode(request).asApiResult()`
+
+- **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;AgentCredential, Identity.ExchangeAgentDeviceCodeError&gt;</code>, with `result.value` of type <code>[AgentCredential](src/models/agent-credential.ts)</code>
+- **OnError**: `result.payload` discriminated on `kind`, with `result.message`
+
+**Thrown**: <code>[ProvableBidApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><code>getAgentDeviceRequest(request: Identity.GetAgentDeviceRequestRequest, options?: RequestOptions): ApiPromise&lt;AgentDeviceRequest, Identity.GetAgentDeviceRequestError&gt;</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Operator credential only. Shows who is asking before the operator decides. 404 when the code is unknown, expired or already decided. Unknown codes count towards a per-operator attempt limit (429 RATE_LIMITED).
+
+</dd>
+</dl>
+
+### Direct Usage
+
+<dl>
+<dd>
+
+```ts
+try {
+  const response = await client.identity.getAgentDeviceRequest({ userCode: "some example string" });
+  // TODO: Handle 'response' of type AgentDeviceRequest
+} catch (err) {
+  // TODO: Handle 'err' of type Identity.GetAgentDeviceRequestError, discriminated with 'err.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Usage as ApiResult
+
+<dl>
+<dd>
+
+```ts
+const result = await client.identity.getAgentDeviceRequest({ userCode: "some example string" }).asApiResult();
+// TODO: Use 'result.status' and 'result.headers' to read the raw response status and headers
+if (result.ok) {
+  // TODO: Use 'result.value' of type AgentDeviceRequest
+} else {
+  // TODO: Handle 'result', discriminated with 'result.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>userCode</code> | <code>string</code> | Case-insensitive; the hyphen is optional. |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Direct**: `await client.identity.getAgentDeviceRequest(request)`
+
+- **OnSuccess**: <code>[AgentDeviceRequest](src/models/agent-device-request.ts)</code>
+- **OnError**: throws <code>[Identity.GetAgentDeviceRequestError](src/resources/identity.ts)</code>, with `err.payload` discriminated on `kind`
+
+**As ApiResult**: `await client.identity.getAgentDeviceRequest(request).asApiResult()`
+
+- **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;AgentDeviceRequest, Identity.GetAgentDeviceRequestError&gt;</code>, with `result.value` of type <code>[AgentDeviceRequest](src/models/agent-device-request.ts)</code>
 - **OnError**: `result.payload` discriminated on `kind`, with `result.message`
 
 **Thrown**: <code>[ProvableBidApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
@@ -3607,6 +3995,82 @@ if (result.ok) {
 > Source: [Studio](src/resources/studio.ts)
 
 <details>
+<summary><code>getStudioDashboard(options?: RequestOptions): ApiPromise&lt;StudioDashboard, Studio.GetStudioDashboardError&gt;</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Operator credential only. The AG Studio dashboard state this operator last saved, with its version. When nothing is saved, 200 with state null and version 0 (the page then shows the default layout).
+
+</dd>
+</dl>
+
+### Direct Usage
+
+<dl>
+<dd>
+
+```ts
+try {
+  const response = await client.studio.getStudioDashboard();
+  // TODO: Handle 'response' of type StudioDashboard
+} catch (err) {
+  // TODO: Handle 'err' of type Studio.GetStudioDashboardError, discriminated with 'err.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Usage as ApiResult
+
+<dl>
+<dd>
+
+```ts
+const result = await client.studio.getStudioDashboard().asApiResult();
+// TODO: Use 'result.status' and 'result.headers' to read the raw response status and headers
+if (result.ok) {
+  // TODO: Use 'result.value' of type StudioDashboard
+} else {
+  // TODO: Handle 'result', discriminated with 'result.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Direct**: `await client.studio.getStudioDashboard()`
+
+- **OnSuccess**: <code>[StudioDashboard](src/models/studio-dashboard.ts)</code>
+- **OnError**: throws <code>[Studio.GetStudioDashboardError](src/resources/studio.ts)</code>, with `err.payload` discriminated on `kind`
+
+**As ApiResult**: `await client.studio.getStudioDashboard().asApiResult()`
+
+- **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;StudioDashboard, Studio.GetStudioDashboardError&gt;</code>, with `result.value` of type <code>[StudioDashboard](src/models/studio-dashboard.ts)</code>
+- **OnError**: `result.payload` discriminated on `kind`, with `result.message`
+
+**Thrown**: <code>[ProvableBidApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
 <summary><code>runStudioAiTurn(request: Studio.RunStudioAiTurnRequest, options?: RequestOptions): ApiPromise&lt;StudioAiTurn, Studio.RunStudioAiTurnError&gt;</code></summary>
 
 <dl>
@@ -3701,6 +4165,103 @@ if (result.ok) {
 **As ApiResult**: `await client.studio.runStudioAiTurn(request).asApiResult()`
 
 - **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;StudioAiTurn, Studio.RunStudioAiTurnError&gt;</code>, with `result.value` of type <code>[StudioAiTurn](src/models/studio-ai-turn.ts)</code>
+- **OnError**: `result.payload` discriminated on `kind`, with `result.message`
+
+**Thrown**: <code>[ProvableBidApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><code>saveStudioDashboard(request: Studio.SaveStudioDashboardRequest, options?: RequestOptions): ApiPromise&lt;StudioDashboardSaved, Studio.SaveStudioDashboardError&gt;</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Operator credential only. Replaces the saved AG Studio dashboard state (layout, widgets, format; never data rows). version must equal the stored version (0 for the first save), else 409 INVALID_STATE: reload and save again. State larger than 200,000 bytes as JSON: 413 PAYLOAD_TOO_LARGE. Requires an Idempotency-Key: retrying the latest save with the same key and body returns its result again; the same key with a different body is 409 IDEMPOTENCY_CONFLICT.
+
+</dd>
+</dl>
+
+### Direct Usage
+
+<dl>
+<dd>
+
+```ts
+try {
+  const response = await client.studio.saveStudioDashboard({
+    idempotencyKey: "some example string",
+    body: { state: { pages: [{}] }, version: 1 },
+  });
+  // TODO: Handle 'response' of type StudioDashboardSaved
+} catch (err) {
+  // TODO: Handle 'err' of type Studio.SaveStudioDashboardError, discriminated with 'err.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Usage as ApiResult
+
+<dl>
+<dd>
+
+```ts
+const result = await client.studio
+  .saveStudioDashboard({
+    idempotencyKey: "some example string",
+    body: { state: { pages: [{}] }, version: 1 },
+  })
+  .asApiResult();
+// TODO: Use 'result.status' and 'result.headers' to read the raw response status and headers
+if (result.ok) {
+  // TODO: Use 'result.value' of type StudioDashboardSaved
+} else {
+  // TODO: Handle 'result', discriminated with 'result.payload.kind'
+}
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>idempotencyKey</code> | <code>string</code> | Unique logical command key; use the same key and body for network retries. |
+| <code>body</code> | <code>[StudioDashboardSave](src/models/studio-dashboard-save.ts)</code> | - |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Direct**: `await client.studio.saveStudioDashboard(request)`
+
+- **OnSuccess**: <code>[StudioDashboardSaved](src/models/studio-dashboard-saved.ts)</code>
+- **OnError**: throws <code>[Studio.SaveStudioDashboardError](src/resources/studio.ts)</code>, with `err.payload` discriminated on `kind`
+
+**As ApiResult**: `await client.studio.saveStudioDashboard(request).asApiResult()`
+
+- **OnSuccess**: <code>[ApiResult](src/core/api-promise.ts)&lt;StudioDashboardSaved, Studio.SaveStudioDashboardError&gt;</code>, with `result.value` of type <code>[StudioDashboardSaved](src/models/studio-dashboard-saved.ts)</code>
 - **OnError**: `result.payload` discriminated on `kind`, with `result.message`
 
 **Thrown**: <code>[ProvableBidApiError](src/core/errors.ts)</code> on any operational failure — a caller abort and a programmer error stay outside the family and reach you raw

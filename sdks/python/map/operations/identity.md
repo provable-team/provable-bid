@@ -2,7 +2,7 @@
 
 # Identity — operations
 
-Accessor: `client.identity` · Source: `provable_bid_api/apis/identity.py` · 6 operations
+Accessor: `client.identity` · Source: `provable_bid_api/apis/identity.py` · 10 operations
 
 Each `###` block is one operation and assumes `sdk-map.md` is loaded: blocks omit what its invariants table covers and are otherwise self-contained, so chunk at block level. Signatures are the sync parsed spelling; the async and raw spellings take the same parameters (see sdk-map.md). **Type sources** names the module declaring each type an operation mentions, so resolving a body, return or error payload is a lookup rather than a search; the runtime types `RawError` and `ApiResult` are excluded.
 
@@ -20,6 +20,25 @@ Each `###` block is one operation and assumes `sdk-map.md` is loaded: blocks omi
 | `ConnectOperatorErrorBody` | `provable_bid_api/errors/connect_operator_error.py` |
 | `Problem` | `provable_bid_api/models/problem.py` |
 
+### client.identity.create_agent_device_code
+
+- **Route**: `POST /v1/agent-device-codes`
+- **Signature**: `def create_agent_device_code(idempotency_key: str, body: CreateAgentDeviceCode | CreateAgentDeviceCodeDict, *, request_options: RequestOptionsOrDict | None = None)`
+  - required, positional: `idempotency_key`, `body`
+- **Params**: `idempotency_key` — header `Idempotency-Key` · `body` — JSON body
+- **Returns (parsed)**: `AgentDeviceCode`
+- **Returns (raw)**: `ApiResult[AgentDeviceCode, CreateAgentDeviceCodeErrorBody]`
+- **Error**: `CreateAgentDeviceCodeErrorBody` — **Case A (typed)**
+- **Error arms**: `Problem` [400, 401, 403, 404, 409, 422, 429, 503] · `RawError` [anything unmapped]
+
+| Type | Source |
+| --- | --- |
+| `CreateAgentDeviceCode` | `provable_bid_api/models/create_agent_device_code.py` |
+| `CreateAgentDeviceCodeDict` | `provable_bid_api/models/create_agent_device_code.py` |
+| `AgentDeviceCode` | `provable_bid_api/models/agent_device_code.py` |
+| `CreateAgentDeviceCodeErrorBody` | `provable_bid_api/errors/create_agent_device_code_error.py` |
+| `Problem` | `provable_bid_api/models/problem.py` |
+
 ### client.identity.create_buyer_session
 
 - **Route**: `POST /v1/buyer-sessions`
@@ -35,6 +54,63 @@ Each `###` block is one operation and assumes `sdk-map.md` is loaded: blocks omi
 | --- | --- |
 | `BuyerSession` | `provable_bid_api/models/buyer_session.py` |
 | `CreateBuyerSessionErrorBody` | `provable_bid_api/errors/create_buyer_session_error.py` |
+| `Problem` | `provable_bid_api/models/problem.py` |
+
+### client.identity.decide_agent_device_request
+
+- **Route**: `POST /v1/operators/me/device-approvals/{user_code}`
+- **Auth**: `bearer_auth`
+- **Signature**: `def decide_agent_device_request(user_code: str, idempotency_key: str, body: AgentDeviceDecision | AgentDeviceDecisionDict, *, request_options: RequestOptionsOrDict | None = None)`
+  - required, positional: `user_code`, `idempotency_key`, `body`
+- **Params**: `user_code` — path · `idempotency_key` — header `Idempotency-Key` · `body` — JSON body
+- **Returns (parsed)**: `AgentDeviceDecisionResult`
+- **Returns (raw)**: `ApiResult[AgentDeviceDecisionResult, DecideAgentDeviceRequestErrorBody]`
+- **Error**: `DecideAgentDeviceRequestErrorBody` — **Case A (typed)**
+- **Error arms**: `Problem` [400, 401, 403, 404, 409, 422, 429, 503] · `RawError` [anything unmapped]
+
+| Type | Source |
+| --- | --- |
+| `AgentDeviceDecision` | `provable_bid_api/models/agent_device_decision.py` |
+| `AgentDeviceDecisionDict` | `provable_bid_api/models/agent_device_decision.py` |
+| `AgentDeviceDecisionResult` | `provable_bid_api/models/agent_device_decision_result.py` |
+| `DecideAgentDeviceRequestErrorBody` | `provable_bid_api/errors/decide_agent_device_request_error.py` |
+| `Problem` | `provable_bid_api/models/problem.py` |
+
+### client.identity.exchange_agent_device_code
+
+- **Route**: `POST /v1/agent-device-tokens`
+- **Signature**: `def exchange_agent_device_code(idempotency_key: str, body: ExchangeAgentDeviceCode | ExchangeAgentDeviceCodeDict, *, request_options: RequestOptionsOrDict | None = None)`
+  - required, positional: `idempotency_key`, `body`
+- **Params**: `idempotency_key` — header `Idempotency-Key` · `body` — JSON body
+- **Returns (parsed)**: `AgentCredential`
+- **Returns (raw)**: `ApiResult[AgentCredential, ExchangeAgentDeviceCodeErrorBody]`
+- **Error**: `ExchangeAgentDeviceCodeErrorBody` — **Case A (typed)**
+- **Error arms**: `Problem` [400, 401, 403, 404, 409, 422, 429, 503] · `RawError` [anything unmapped]
+
+| Type | Source |
+| --- | --- |
+| `ExchangeAgentDeviceCode` | `provable_bid_api/models/exchange_agent_device_code.py` |
+| `ExchangeAgentDeviceCodeDict` | `provable_bid_api/models/exchange_agent_device_code.py` |
+| `AgentCredential` | `provable_bid_api/models/agent_credential.py` |
+| `ExchangeAgentDeviceCodeErrorBody` | `provable_bid_api/errors/exchange_agent_device_code_error.py` |
+| `Problem` | `provable_bid_api/models/problem.py` |
+
+### client.identity.get_agent_device_request
+
+- **Route**: `GET /v1/operators/me/device-approvals/{user_code}`
+- **Auth**: `bearer_auth`
+- **Signature**: `def get_agent_device_request(user_code: str, *, request_options: RequestOptionsOrDict | None = None)`
+  - required, positional: `user_code`
+- **Params**: `user_code` — path
+- **Returns (parsed)**: `AgentDeviceRequest`
+- **Returns (raw)**: `ApiResult[AgentDeviceRequest, GetAgentDeviceRequestErrorBody]`
+- **Error**: `GetAgentDeviceRequestErrorBody` — **Case A (typed)**
+- **Error arms**: `Problem` [400, 401, 403, 404, 409, 422, 429, 503] · `RawError` [anything unmapped]
+
+| Type | Source |
+| --- | --- |
+| `AgentDeviceRequest` | `provable_bid_api/models/agent_device_request.py` |
+| `GetAgentDeviceRequestErrorBody` | `provable_bid_api/errors/get_agent_device_request_error.py` |
 | `Problem` | `provable_bid_api/models/problem.py` |
 
 ### client.identity.get_operator

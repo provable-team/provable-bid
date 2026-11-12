@@ -187,11 +187,11 @@ except Exception as e:
     raise e
 ```
 
-**Raw (`.with_raw_response`) variants: present on every operation** — the same call returns `ApiResult` instead of raising, with the same body on `Failure.error`. Of **40 operations**, **40 are Case A (typed)** and **0 are Case B (raw)**.
+**Raw (`.with_raw_response`) variants: present on every operation** — the same call returns `ApiResult` instead of raising, with the same body on `Failure.error`. Of **46 operations**, **46 are Case A (typed)** and **0 are Case B (raw)**.
 
 ---
 
-## Operations — by controller (10 pages, 40 operations)
+## Operations — by controller (10 pages, 46 operations)
 
 Each links to a sub-page with one block per operation, headed by its full accessor path: the HTTP verb and route (for a mock, a raw request or a provider-side log — never reconstruct it from the method name), the sync parsed signature with its required positional parameters, each parameter's role and — where it differs — wire name, both return types, and its error case — **Case A** names the alias and the status each arm maps from, **Case B** names `RawError`. Every block also carries a **Type sources** table — every *generated* type it names, with the module that declares it. A runtime type — a file alias, a date/time or byte converter — is not listed there.
 
@@ -216,10 +216,10 @@ Sub-pages chunk per `###` block: each block is self-contained given the table ab
 | `client.agents` | `Agents` / `AsyncAgents` | 3 | [map/operations/agents.md](map/operations/agents.md) |
 | `client.assets` | `Assets` / `AsyncAssets` | 3 | [map/operations/assets.md](map/operations/assets.md) |
 | `client.competitions` | `Competitions` / `AsyncCompetitions` | 5 | [map/operations/competitions.md](map/operations/competitions.md) |
-| `client.identity` | `Identity` / `AsyncIdentity` | 6 | [map/operations/identity.md](map/operations/identity.md) |
+| `client.identity` | `Identity` / `AsyncIdentity` | 10 | [map/operations/identity.md](map/operations/identity.md) |
 | `client.payments` | `Payments` / `AsyncPayments` | 12 | [map/operations/payments.md](map/operations/payments.md) |
 | `client.settlement_api` | `SettlementApi` / `AsyncSettlementApi` | 4 | [map/operations/settlement_api.md](map/operations/settlement_api.md) |
-| `client.studio` | `Studio` / `AsyncStudio` | 1 | [map/operations/studio.md](map/operations/studio.md) |
+| `client.studio` | `Studio` / `AsyncStudio` | 3 | [map/operations/studio.md](map/operations/studio.md) |
 | `client.submissions` | `Submissions` / `AsyncSubmissions` | 3 | [map/operations/submissions.md](map/operations/submissions.md) |
 | `client.system` | `System` / `AsyncSystem` | 2 | [map/operations/system.md](map/operations/system.md) |
 | `client.webhooks` | `Webhooks` / `AsyncWebhooks` | 1 | [map/operations/webhooks.md](map/operations/webhooks.md) |
@@ -232,10 +232,10 @@ Sub-pages chunk per `###` block: each block is self-contained given the table ab
 
 | Group | Count | Directory (module = `<type_name>.py`) |
 | --- | --- | --- |
-| Models (`SdkBaseModel` pydantic classes) | 70 | `provable_bid_api/models/` |
-| Enums (`Enum` over `str`) — Python member names + wire values | 36 | `provable_bid_api/models/enums/` |
+| Models (`SdkBaseModel` pydantic classes) | 80 | `provable_bid_api/models/` |
+| Enums (`Enum` over `str`) — Python member names + wire values | 37 | `provable_bid_api/models/enums/` |
 | Unions (plain) — `TypeAlias` over the arms | 4 | `provable_bid_api/models/unions/` |
-| Error aliases (one per Case A operation) | 40 | `provable_bid_api/errors/` |
+| Error aliases (one per Case A operation) | 46 | `provable_bid_api/errors/` |
 
 Conventions: a model is a `SdkBaseModel` (pydantic) class; a field whose wire name differs from its Python name carries it as `Field(alias=…)` (`type_` ↔ `"type"`) — read the alias off the field rather than deriving it. An omittable field is annotated `Optional[T]` and defaults to `UNSET`, and one that may also be explicitly null is `OptionalNullable[T]`; both come from `core` and neither is `typing.Optional` — there is no `None` arm unless the spec declared the property nullable, so passing `None` to the first is a type error rather than a value that serializes.
 

@@ -2,6 +2,7 @@ from .authorization_state import AuthorizationState, AuthorizationStateOrStr
 from .capabilities1 import Capabilities1, Capabilities1OrStr
 from .capture_state import CaptureState, CaptureStateOrStr
 from .code import Code, CodeOrStr
+from .decision import Decision, DecisionOrStr
 from .dispute_state import DisputeState, DisputeStateOrStr
 from .expense_state import ExpenseState, ExpenseStateOrStr
 from .failure_code import FailureCode, FailureCodeOrStr
@@ -44,6 +45,8 @@ __all__ = [
     "CaptureStateOrStr",
     "Code",
     "CodeOrStr",
+    "Decision",
+    "DecisionOrStr",
     "DisputeState",
     "DisputeStateOrStr",
     "ExpenseState",

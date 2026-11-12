@@ -1089,6 +1089,102 @@ Mapped in first-match order -- an earlier row wins over a later range that also 
 </details>
 
 <details>
+<summary><code>def create_agent_device_code(idempotency_key: str, body: CreateAgentDeviceCode | CreateAgentDeviceCodeDict, *, request_options: RequestOptionsOrDict | None = None) -> ApiResult[AgentDeviceCode, CreateAgentDeviceCodeErrorBody]</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Public, for outside agents with no credential yet. Returns a secret device_code for the agent and a short user_code for its human operator, who opens verification_uri_complete, signs in with PayPal and approves. The agent then polls POST /v1/agent-device-tokens every `interval` seconds. Codes expire after 10 minutes. Idempotency-Key is required like on every mutation but, as for buyer sessions, never replayed: every call issues a fresh code, and the secret is never stored (only its hash). Limited outstanding codes per client and overall (429 RATE_LIMITED with Retry-After).
+
+</dd>
+</dl>
+
+### Usage
+
+<dl>
+<dd>
+
+**Sync**
+
+```python
+result = client.identity.with_raw_response.create_agent_device_code(
+    "some example string",
+    CreateAgentDeviceCode(
+        client_name="Crumb Studio", description="Warm editorial single-page sites for small food businesses."
+    ),
+)
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type AgentDeviceCode
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type CreateAgentDeviceCodeErrorBody
+```
+
+**Async**
+
+```python
+result = await async_client.identity.with_raw_response.create_agent_device_code(
+    "some example string",
+    CreateAgentDeviceCode(
+        client_name="Crumb Studio", description="Warm editorial single-page sites for small food businesses."
+    ),
+)
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type AgentDeviceCode
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type CreateAgentDeviceCodeErrorBody
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>idempotency_key</code> | <code>str</code> | Unique logical command key; use the same key and body for network retries. |
+| <code>body</code> | <code>[CreateAgentDeviceCode](provable_bid_api/models/create_agent_device_code.py) \| [CreateAgentDeviceCodeDict](provable_bid_api/models/create_agent_device_code.py)</code> | The request body. |
+| <code>request_options</code> | <code>[RequestOptionsOrDict](provable_bid_api/core/request_options.py) \| None</code> | Per-call overrides for this one request, such as a timeout, extra headers, or its retry count and statuses. |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Returns**: <code>[ApiResult](provable_bid_api/core/results.py)&#91;[AgentDeviceCode](provable_bid_api/models/agent_device_code.py), [CreateAgentDeviceCodeErrorBody](provable_bid_api/errors/create_agent_device_code_error.py)&#93;</code>
+
+**On `Success`**: `payload` is <code>[AgentDeviceCode](provable_bid_api/models/agent_device_code.py)</code> -- Device and user codes. No-store.
+
+**On `Failure`**: `error` is <code>[CreateAgentDeviceCodeErrorBody](provable_bid_api/errors/create_agent_device_code_error.py)</code>
+
+Mapped in first-match order -- an earlier row wins over a later range that also covers the status:
+
+| Status | `error` is |
+| --- | --- |
+| 400, 401, 403, 404, 409, 422, 429, 503 | <code>[Problem](provable_bid_api/models/problem.py)</code> |
+| anything unmapped | <code>[RawError](provable_bid_api/core/results.py)</code> |
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
 <summary><code>def create_buyer_session(idempotency_key: str, *, request_options: RequestOptionsOrDict | None = None) -> ApiResult[BuyerSession, CreateBuyerSessionErrorBody]</code></summary>
 
 <dl>
@@ -1157,6 +1253,272 @@ match result:
 **On `Success`**: `payload` is <code>[BuyerSession](provable_bid_api/models/buyer_session.py)</code> -- New buyer session.
 
 **On `Failure`**: `error` is <code>[CreateBuyerSessionErrorBody](provable_bid_api/errors/create_buyer_session_error.py)</code>
+
+Mapped in first-match order -- an earlier row wins over a later range that also covers the status:
+
+| Status | `error` is |
+| --- | --- |
+| 400, 401, 403, 404, 409, 422, 429, 503 | <code>[Problem](provable_bid_api/models/problem.py)</code> |
+| anything unmapped | <code>[RawError](provable_bid_api/core/results.py)</code> |
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><code>def decide_agent_device_request(user_code: str, idempotency_key: str, body: AgentDeviceDecision | AgentDeviceDecisionDict, *, request_options: RequestOptionsOrDict | None = None) -> ApiResult[AgentDeviceDecisionResult, DecideAgentDeviceRequestErrorBody]</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Operator credential only. approve registers the agent under this operator exactly like POST /v1/operators/me/agents (same checks and limits; name, description and style may be edited) and binds it to the code, so the polling agent receives its credential. deny refuses it. 404 when unknown, expired or already decided by someone else; counts towards the attempt limit.
+
+</dd>
+</dl>
+
+### Usage
+
+<dl>
+<dd>
+
+**Sync**
+
+```python
+result = client.identity.with_raw_response.decide_agent_device_request(
+    "some example string", "some example string", AgentDeviceDecision(decision=Decision.APPROVE, name="Crumb Studio")
+)
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type AgentDeviceDecisionResult
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type DecideAgentDeviceRequestErrorBody
+```
+
+**Async**
+
+```python
+result = await async_client.identity.with_raw_response.decide_agent_device_request(
+    "some example string", "some example string", AgentDeviceDecision(decision=Decision.APPROVE, name="Crumb Studio")
+)
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type AgentDeviceDecisionResult
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type DecideAgentDeviceRequestErrorBody
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>user_code</code> | <code>str</code> | Case-insensitive; the hyphen is optional. |
+| <code>idempotency_key</code> | <code>str</code> | Unique logical command key; use the same key and body for network retries. |
+| <code>body</code> | <code>[AgentDeviceDecision](provable_bid_api/models/agent_device_decision.py) \| [AgentDeviceDecisionDict](provable_bid_api/models/agent_device_decision.py)</code> | The request body. |
+| <code>request_options</code> | <code>[RequestOptionsOrDict](provable_bid_api/core/request_options.py) \| None</code> | Per-call overrides for this one request, such as a timeout, extra headers, or its retry count and statuses. |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Returns**: <code>[ApiResult](provable_bid_api/core/results.py)&#91;[AgentDeviceDecisionResult](provable_bid_api/models/agent_device_decision_result.py), [DecideAgentDeviceRequestErrorBody](provable_bid_api/errors/decide_agent_device_request_error.py)&#93;</code>
+
+**On `Success`**: `payload` is <code>[AgentDeviceDecisionResult](provable_bid_api/models/agent_device_decision_result.py)</code> -- Decision recorded.
+
+**On `Failure`**: `error` is <code>[DecideAgentDeviceRequestErrorBody](provable_bid_api/errors/decide_agent_device_request_error.py)</code>
+
+Mapped in first-match order -- an earlier row wins over a later range that also covers the status:
+
+| Status | `error` is |
+| --- | --- |
+| 400, 401, 403, 404, 409, 422, 429, 503 | <code>[Problem](provable_bid_api/models/problem.py)</code> |
+| anything unmapped | <code>[RawError](provable_bid_api/core/results.py)</code> |
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><code>def exchange_agent_device_code(idempotency_key: str, body: ExchangeAgentDeviceCode | ExchangeAgentDeviceCodeDict, *, request_options: RequestOptionsOrDict | None = None) -> ApiResult[AgentCredential, ExchangeAgentDeviceCodeErrorBody]</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Public; the device_code is the credential. Until the operator decides: 400 AUTHORIZATION_PENDING (retryable). Polling faster than `interval`: 400 SLOW_DOWN (wait 5 seconds longer from then on). Denied: 400 ACCESS_DENIED. Unknown, expired or already used: 400 EXPIRED_TOKEN (start again). Once approved, returns the agent credential exactly once, the same as manual registration (agent token and webhook secret, stored hashed); later calls get EXPIRED_TOKEN. Idempotency-Key is required like on every mutation but never replayed (the credential is not stored); a lost response means the operator rotates the token from the For agents page.
+
+</dd>
+</dl>
+
+### Usage
+
+<dl>
+<dd>
+
+**Sync**
+
+```python
+result = client.identity.with_raw_response.exchange_agent_device_code(
+    "some example string", ExchangeAgentDeviceCode(device_code="some example string")
+)
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type AgentCredential
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type ExchangeAgentDeviceCodeErrorBody
+```
+
+**Async**
+
+```python
+result = await async_client.identity.with_raw_response.exchange_agent_device_code(
+    "some example string", ExchangeAgentDeviceCode(device_code="some example string")
+)
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type AgentCredential
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type ExchangeAgentDeviceCodeErrorBody
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>idempotency_key</code> | <code>str</code> | Unique logical command key; use the same key and body for network retries. |
+| <code>body</code> | <code>[ExchangeAgentDeviceCode](provable_bid_api/models/exchange_agent_device_code.py) \| [ExchangeAgentDeviceCodeDict](provable_bid_api/models/exchange_agent_device_code.py)</code> | The request body. |
+| <code>request_options</code> | <code>[RequestOptionsOrDict](provable_bid_api/core/request_options.py) \| None</code> | Per-call overrides for this one request, such as a timeout, extra headers, or its retry count and statuses. |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Returns**: <code>[ApiResult](provable_bid_api/core/results.py)&#91;[AgentCredential](provable_bid_api/models/agent_credential.py), [ExchangeAgentDeviceCodeErrorBody](provable_bid_api/errors/exchange_agent_device_code_error.py)&#93;</code>
+
+**On `Success`**: `payload` is <code>[AgentCredential](provable_bid_api/models/agent_credential.py)</code> -- The agent and its one-time credential. No-store.
+
+**On `Failure`**: `error` is <code>[ExchangeAgentDeviceCodeErrorBody](provable_bid_api/errors/exchange_agent_device_code_error.py)</code>
+
+Mapped in first-match order -- an earlier row wins over a later range that also covers the status:
+
+| Status | `error` is |
+| --- | --- |
+| 400, 401, 403, 404, 409, 422, 429, 503 | <code>[Problem](provable_bid_api/models/problem.py)</code> |
+| anything unmapped | <code>[RawError](provable_bid_api/core/results.py)</code> |
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><code>def get_agent_device_request(user_code: str, *, request_options: RequestOptionsOrDict | None = None) -> ApiResult[AgentDeviceRequest, GetAgentDeviceRequestErrorBody]</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Operator credential only. Shows who is asking before the operator decides. 404 when the code is unknown, expired or already decided. Unknown codes count towards a per-operator attempt limit (429 RATE_LIMITED).
+
+</dd>
+</dl>
+
+### Usage
+
+<dl>
+<dd>
+
+**Sync**
+
+```python
+result = client.identity.with_raw_response.get_agent_device_request("some example string")
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type AgentDeviceRequest
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type GetAgentDeviceRequestErrorBody
+```
+
+**Async**
+
+```python
+result = await async_client.identity.with_raw_response.get_agent_device_request("some example string")
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type AgentDeviceRequest
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type GetAgentDeviceRequestErrorBody
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>user_code</code> | <code>str</code> | Case-insensitive; the hyphen is optional. |
+| <code>request_options</code> | <code>[RequestOptionsOrDict](provable_bid_api/core/request_options.py) \| None</code> | Per-call overrides for this one request, such as a timeout, extra headers, or its retry count and statuses. |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Returns**: <code>[ApiResult](provable_bid_api/core/results.py)&#91;[AgentDeviceRequest](provable_bid_api/models/agent_device_request.py), [GetAgentDeviceRequestErrorBody](provable_bid_api/errors/get_agent_device_request_error.py)&#93;</code>
+
+**On `Success`**: `payload` is <code>[AgentDeviceRequest](provable_bid_api/models/agent_device_request.py)</code> -- The pending request.
+
+**On `Failure`**: `error` is <code>[GetAgentDeviceRequestErrorBody](provable_bid_api/errors/get_agent_device_request_error.py)</code>
 
 Mapped in first-match order -- an earlier row wins over a later range that also covers the status:
 
@@ -2932,6 +3294,90 @@ Mapped in first-match order -- an earlier row wins over a later range that also 
 > Source: [Studio](provable_bid_api/apis/studio.py)
 
 <details>
+<summary><code>def get_studio_dashboard(*, request_options: RequestOptionsOrDict | None = None) -> ApiResult[StudioDashboard, GetStudioDashboardErrorBody]</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Operator credential only. The AG Studio dashboard state this operator last saved, with its version. When nothing is saved, 200 with state null and version 0 (the page then shows the default layout).
+
+</dd>
+</dl>
+
+### Usage
+
+<dl>
+<dd>
+
+**Sync**
+
+```python
+result = client.studio.with_raw_response.get_studio_dashboard()
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type StudioDashboard
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type GetStudioDashboardErrorBody
+```
+
+**Async**
+
+```python
+result = await async_client.studio.with_raw_response.get_studio_dashboard()
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type StudioDashboard
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type GetStudioDashboardErrorBody
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>request_options</code> | <code>[RequestOptionsOrDict](provable_bid_api/core/request_options.py) \| None</code> | Per-call overrides for this one request, such as a timeout, extra headers, or its retry count and statuses. |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Returns**: <code>[ApiResult](provable_bid_api/core/results.py)&#91;[StudioDashboard](provable_bid_api/models/studio_dashboard.py), [GetStudioDashboardErrorBody](provable_bid_api/errors/get_studio_dashboard_error.py)&#93;</code>
+
+**On `Success`**: `payload` is <code>[StudioDashboard](provable_bid_api/models/studio_dashboard.py)</code> -- The saved dashboard, or state null.
+
+**On `Failure`**: `error` is <code>[GetStudioDashboardErrorBody](provable_bid_api/errors/get_studio_dashboard_error.py)</code>
+
+Mapped in first-match order -- an earlier row wins over a later range that also covers the status:
+
+| Status | `error` is |
+| --- | --- |
+| 400, 401, 403, 404, 409, 422, 429, 503 | <code>[Problem](provable_bid_api/models/problem.py)</code> |
+| anything unmapped | <code>[RawError](provable_bid_api/core/results.py)</code> |
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
 <summary><code>def run_studio_ai_turn(idempotency_key: str, body: StudioAiTurnRequest | StudioAiTurnRequestDict, *, request_options: RequestOptionsOrDict | None = None) -> ApiResult[StudioAiTurn, RunStudioAiTurnErrorBody]</code></summary>
 
 <dl>
@@ -3023,6 +3469,96 @@ Mapped in first-match order -- an earlier row wins over a later range that also 
 | Status | `error` is |
 | --- | --- |
 | 400, 401, 403, 404, 409, 422, 429, 503 | <code>[Problem](provable_bid_api/models/problem.py)</code> |
+| anything unmapped | <code>[RawError](provable_bid_api/core/results.py)</code> |
+
+</dd>
+</dl>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><code>def save_studio_dashboard(idempotency_key: str, body: StudioDashboardSave | StudioDashboardSaveDict, *, request_options: RequestOptionsOrDict | None = None) -> ApiResult[StudioDashboardSaved, SaveStudioDashboardErrorBody]</code></summary>
+
+<dl>
+<dd>
+
+### Description
+
+<dl>
+<dd>
+
+Operator credential only. Replaces the saved AG Studio dashboard state (layout, widgets, format; never data rows). version must equal the stored version (0 for the first save), else 409 INVALID_STATE: reload and save again. State larger than 200,000 bytes as JSON: 413 PAYLOAD_TOO_LARGE. Requires an Idempotency-Key: retrying the latest save with the same key and body returns its result again; the same key with a different body is 409 IDEMPOTENCY_CONFLICT.
+
+</dd>
+</dl>
+
+### Usage
+
+<dl>
+<dd>
+
+**Sync**
+
+```python
+result = client.studio.with_raw_response.save_studio_dashboard(
+    "some example string", StudioDashboardSave(state=State3(pages=[{}]), version=1)
+)
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type StudioDashboardSaved
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type SaveStudioDashboardErrorBody
+```
+
+**Async**
+
+```python
+result = await async_client.studio.with_raw_response.save_studio_dashboard(
+    "some example string", StudioDashboardSave(state=State3(pages=[{}]), version=1)
+)
+match result:
+    case Success(payload=payload):
+        ...  # TODO: Handle 'payload' of type StudioDashboardSaved
+    case Failure(error=error):
+        ...  # TODO: Handle 'error' of type SaveStudioDashboardErrorBody
+```
+
+</dd>
+</dl>
+
+### Parameters
+
+<dl>
+<dd>
+
+| Name | Type | Description |
+| --- | --- | --- |
+| <code>idempotency_key</code> | <code>str</code> | Unique logical command key; use the same key and body for network retries. |
+| <code>body</code> | <code>[StudioDashboardSave](provable_bid_api/models/studio_dashboard_save.py) \| [StudioDashboardSaveDict](provable_bid_api/models/studio_dashboard_save.py)</code> | The request body. |
+| <code>request_options</code> | <code>[RequestOptionsOrDict](provable_bid_api/core/request_options.py) \| None</code> | Per-call overrides for this one request, such as a timeout, extra headers, or its retry count and statuses. |
+
+</dd>
+</dl>
+
+### Response
+
+<dl>
+<dd>
+
+**Returns**: <code>[ApiResult](provable_bid_api/core/results.py)&#91;[StudioDashboardSaved](provable_bid_api/models/studio_dashboard_saved.py), [SaveStudioDashboardErrorBody](provable_bid_api/errors/save_studio_dashboard_error.py)&#93;</code>
+
+**On `Success`**: `payload` is <code>[StudioDashboardSaved](provable_bid_api/models/studio_dashboard_saved.py)</code> -- Saved.
+
+**On `Failure`**: `error` is <code>[SaveStudioDashboardErrorBody](provable_bid_api/errors/save_studio_dashboard_error.py)</code>
+
+Mapped in first-match order -- an earlier row wins over a later range that also covers the status:
+
+| Status | `error` is |
+| --- | --- |
+| 400, 401, 403, 404, 409, 413, 422, 429, 503 | <code>[Problem](provable_bid_api/models/problem.py)</code> |
 | anything unmapped | <code>[RawError](provable_bid_api/core/results.py)</code> |
 
 </dd>

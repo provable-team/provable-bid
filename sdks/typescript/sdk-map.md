@@ -218,11 +218,11 @@ try {
 
 `result.payload` is the same payload union a thrown `ApiError` carries on `err.payload`, and `result.message`, `result.method` and `result.uri` are that error's own members — so the **Error arms** bullet on an operation's page enumerates the payload either way, and the `catch` above it is for the rest of the family. `result.method` and `result.uri` are named on this map alone.
 
-Of **40 operations**, **40** declare typed error bodies and **0** reject with the base `ApiError`, whose payload is always the `"undeclared"` arm.
+Of **46 operations**, **46** declare typed error bodies and **0** reject with the base `ApiError`, whose payload is always the `"undeclared"` arm.
 
 ---
 
-## Operations — by resource (10 groups, 40 operations)
+## Operations — by resource (10 groups, 46 operations)
 
 Each page below carries one block per operation, with bullets in the fixed order **Server**, **Signature**, **Wire**, **Auth**, **Request body**, **SDK-sent**, **Returns**, **Error**, **Error arms**, then a **Fields** table mapping every request field to the channel it travels on, and a **Type sources** table naming the declaring file and schema value of every type the operation mentions. With `api-reference.md` documenting operations only, that table is the route from an operation to the file declaring what it takes.
 
@@ -230,7 +230,7 @@ Each page below carries one block per operation, with bullets in the fixed order
 
 | Applies to every operation | Stated where | A block departs from it only by |
 | --- | --- | --- |
-| **Call shape `op(request, options?)`** — one flat request object first, the per-call options second. When the request type has no required field the request is `request?:` and may be omitted — `client.identity.operatorConnectCallback()` sends what `client.identity.operatorConnectCallback({})` sends; 5 of the 40 operations are in that case. There is no positional overload. What the second argument carries is a `signal`, a `retry` override and a log level; a per-call base URL, header or auth override does not exist | here, Getting a client | never — it always holds |
+| **Call shape `op(request, options?)`** — one flat request object first, the per-call options second. When the request type has no required field the request is `request?:` and may be omitted — `client.identity.operatorConnectCallback()` sends what `client.identity.operatorConnectCallback({})` sends; 5 of the 46 operations are in that case. There is no positional overload. What the second argument carries is a `signal`, a `retry` override and a log level; a per-call base URL, header or auth override does not exist | here, Getting a client | never — it always holds |
 | **The request object is flat and channel-blind.** A field named `body` *is* the whole request body; every other field is fanned out to path, query, header or form by the SDK. Nothing in the object is nested by channel | here | never — the **Fields** table `Channel` column always resolves it |
 | **Throw-based, returning `ApiPromise<T, E>`.** `await` it for `T`; call `.asApiResult()` on the returned value for the non-throwing `ApiResult<T, E>`. No operation is result-only | here, Error-handling model | the operation is paged — it returns a `Pageable<TPage, TItem, E>`: a loop over it throws `E` at the first error status, and `.asApiResult()` on the returned value is the form whose `.pages()` yields one `ApiResult<TPage, E>` per page |
 | **`E` is the base `ApiError`** and the payload is always the `"undeclared"` arm | Error-handling model | the spec declared error bodies — the **Error** bullet names a subclass and an **Error arms** bullet gives each arm's tag, status and body |
@@ -259,7 +259,7 @@ Each page below carries one block per operation, with bullets in the fixed order
 | Resource (`client.X`) | Ops | Operations | Page |
 | --- | --- | --- | --- |
 | `system` | 2 | `getConfig` · `getHealth` | [map/operations/system.md](map/operations/system.md) |
-| `identity` | 6 | `connectOperator` · `createBuyerSession` · `getOperator` · `operatorConnectCallback` · `registerAgent` · `rotateAgentCredential` | [map/operations/identity.md](map/operations/identity.md) |
+| `identity` | 10 | `connectOperator` · `createAgentDeviceCode` · `createBuyerSession` · `decideAgentDeviceRequest` · `exchangeAgentDeviceCode` · `getAgentDeviceRequest` · `getOperator` · `operatorConnectCallback` · `registerAgent` · `rotateAgentCredential` | [map/operations/identity.md](map/operations/identity.md) |
 | `competitions` | 5 | `createCompetition` · `getCompetition` · `listCompetitions` · `rejectAll` · `selectFirstWinner` | [map/operations/competitions.md](map/operations/competitions.md) |
 | `submissions` | 3 | `getSubmission` · `listSubmissions` · `submitWork` | [map/operations/submissions.md](map/operations/submissions.md) |
 | `payments` | 12 | `authorizeCompetition` · `captureAdditionalPurchase` · `createAdditionalPurchase` · `createDeliveryAccess` · `createInitialCheckout` · `createRefund` · `downloadDelivery` · `getPayment` · `getPurchase` · `getRefund` · `listPurchases` · `reconcilePayment` | [map/operations/payments.md](map/operations/payments.md) |
@@ -267,7 +267,7 @@ Each page below carries one block per operation, with bullets in the fixed order
 | `webhooks` | 1 | `receivePayPalWebhook` | [map/operations/webhooks.md](map/operations/webhooks.md) |
 | `assets` | 3 | `getAsset` · `getAssetPreview` · `uploadAsset` | [map/operations/assets.md](map/operations/assets.md) |
 | `agents` | 3 | `getAgent` · `getAgentSelf` · `listAgents` | [map/operations/agents.md](map/operations/agents.md) |
-| `studio` | 1 | `runStudioAiTurn` | [map/operations/studio.md](map/operations/studio.md) |
+| `studio` | 3 | `getStudioDashboard` · `runStudioAiTurn` · `saveStudioDashboard` | [map/operations/studio.md](map/operations/studio.md) |
 
 ---
 
@@ -277,16 +277,16 @@ Each page below carries one block per operation, with bullets in the fixed order
 
 | Group | Count | Directory |
 | --- | --- | --- |
-| Objects (plain `type`, no class) | 70 | `src/models/` |
-| Enums (open; const companion plus schema) | 36 | `src/models/` |
+| Objects (plain `type`, no class) | 80 | `src/models/` |
+| Enums (open; const companion plus schema) | 37 | `src/models/` |
 | Unions | 4 | `src/models/unions/` |
-| Typed error classes (`ApiError` subclass, one per typed operation) | 40 | `src/resources/`, in the declaring module's namespace |
+| Typed error classes (`ApiError` subclass, one per typed operation) | 46 | `src/resources/`, in the declaring module's namespace |
 
 Conventions: every model is a plain `type`, not a class — build one with an object literal; there is no constructor and no builder. `f: T` is required, `f?: T` is optional (omit the key), and `f: T | null` is a **required, nullable** field where `null` is a value distinct from an omitted key. Optional properties are declared `f?: T`, not `f?: T | undefined`, so under `exactOptionalPropertyTypes` you must **omit or spread** an absent field rather than assign `undefined` to it. A schema value is directly usable both ways: `Schema<T, W = Encoded<T>>` is `{ decode(v: unknown): T; encode(v: T): W; validate(v: T): ValidationResult }` — `validate` runs `encode`'s rules without the conversion and without the throw, and answers `{ success: true }` or `{ success: false, message }` — and `Encoded<T>` is the wire projection — a `Date` becomes `string | number`, a `Uint8Array` becomes a base64 `string`, recursing through arrays and objects. `EnumSchema<T>` adds `readonly values: readonly T[]`, so an enum's known set is testable at run time. Enums are **not** TypeScript `enum`s and are open: a `const` companion plus a union that includes `(string & {})` or `(number & {})`, so **any** value of the base type is assignable and the schema validates the base type only, never membership — read the member names and the values they send off the companion, and use `.values` to test membership yourself. A discriminated union is narrowed with an exhaustive `switch` on its tag, with no fallback arm and no type guard to import; one without a discriminant is narrowed on the shape of its arms, which its declaration spells out. A property default is filled by the SDK on **encode as well as decode**, so omitting one still sends it — read it off the `defaulted(…)` entry in the schema, or off the property's `@default`. A numeric property is a `number` whatever its format, and its schema follows the type. `type: integer` with no format, `int32` or `int64` rejects a fraction and any value outside the safe-integer range; `type: number` with no format, `float`, `double` or `bigdecimal` rejects a non-finite value. A property's wire name is its `_keysMap` entry in the schema and may differ from the TypeScript name — read it there rather than deriving it. A model whose spec schema is open — `additionalProperties` absent, `true`, or a schema — carries one more optional field, `additionalProperties?: Record<string, T>`, where `T` is the value schema's own type: `JsonValue` for `true` or absent, otherwise the declared type. On the way in, every wire key the model does not declare lands in it, under its wire name and validated against `T` as a declared field would be; the field is **present only when the wire carried an extra**, so test for it with `?.`. On the way out, write extras into it and the SDK spreads them onto the wire as plain siblings of the declared fields; a value that is not a `T`, or a key the model already declares, is an `EncodeError` before any request is sent. A model whose schema says `additionalProperties: false` has no such field, and an unknown key on it still passes through both directions untouched. When the spec itself declares a property named `additionalProperties`, that property keeps its name and the record is `additionalProperties2` instead — so whether a model has the field, what it is called and what its `T` is, is read off the model's declaration, never off the spec. A named spec schema whose resolved form is a bare container, or which is used only as a form-encoded body, gets no model file and no exported name: the first is written inline at each use site, the second is flattened onto the operation's request type, one field per property, so read that field list from the request type.
 
 **A schema whose spec declares value constraints carries them on its public schema, and the operations run a structural twin.** The public schema enforces the spec's `minLength`/`maxLength`, `pattern`, `format` (`email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `json-pointer`), `minimum`/`maximum`, `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf`, `minItems`/`maxItems`/`uniqueItems` and `minProperties`/`maxProperties`, and the keywords on an array's `items` and a map's `additionalProperties`, reported under the item's index or the value's key, in both directions: its `validate(value)` returns `{ success: true }` or `{ success: false, message }`, the message naming every field that breaks one and why, and is how you check a value before sending it. A check never fires on an omitted optional field, and a missing required field is the same structural failure it is on every other model. The SDK's own operations do not apply these constraints — they encode and decode through a structural twin the module keeps for itself and the package root does not export — so a value the service would accept is never refused on the way out, and a service that is ahead of the spec is never refused on the way in. A model that nests a constrained one carries the same split, so its `validate` checks the nested value too and reports its fields under their full path, while the operation sends it through the unexported twin and accepts whatever you built. A model splits this way: `agentSchema` enforces the keywords and the unexported `agentInternalSchema` is what the operations run. An `anyOf` splits the same way: `responseFormat2Schema` is the union over the arms' constrained schemas and the unexported `responseFormat2InternalSchema` over their structural ones, so an operation sends any arm by shape, and only `validate` refuses a value that breaks an arm's constraints. Every other model's schema is structural only.
 
-**An operation whose request fields carry constraints of their own exports a request schema beside its request type** — `Identity.createBuyerSessionRequestSchema` — which the operation never runs: pass the request object to its `validate` before the call, the way a model's schema checks a model. A field that only nests a constrained model earns no request schema; validate that model with its own.
+**An operation whose request fields carry constraints of their own exports a request schema beside its request type** — `Identity.createAgentDeviceCodeRequestSchema` — which the operation never runs: pass the request object to its `validate` before the call, the way a model's schema checks a model. A field that only nests a constrained model earns no request schema; validate that model with its own.
 
 Every name comes from the package root — there is no default export, and no deep imports:
 
@@ -298,7 +298,7 @@ import { type Acknowledgement, acknowledgementSchema } from "provable-bid-sdk";
 
 ## Servers & auth
 
-**Authentication is per operation.** Every operation declares the requirement it enforces and the SDK sends exactly that: **32 of the 40 operations** require a credential and **8** are public. Each block on a page above carries an **Auth** bullet naming its requirement, `none` included. There is no client-global switch and no per-call override.
+**Authentication is per operation.** Every operation declares the requirement it enforces and the SDK sends exactly that: **36 of the 46 operations** require a credential and **10** are public. Each block on a page above carries an **Auth** bullet naming its requirement, `none` included. There is no client-global switch and no per-call override.
 
 | Scheme (as an **Auth** bullet names it) | Configured with | What the SDK sends |
 | --- | --- | --- |

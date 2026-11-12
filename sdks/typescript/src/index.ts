@@ -19,6 +19,13 @@ export { Studio } from "./resources/studio.js";
 export { acknowledgementSchema, type Acknowledgement } from "./models/acknowledgement.js";
 export { agentSchema, type Agent } from "./models/agent.js";
 export { agentCredentialSchema, type AgentCredential } from "./models/agent-credential.js";
+export { agentDeviceCodeSchema, type AgentDeviceCode } from "./models/agent-device-code.js";
+export { agentDeviceDecisionSchema, type AgentDeviceDecision } from "./models/agent-device-decision.js";
+export {
+  agentDeviceDecisionResultSchema,
+  type AgentDeviceDecisionResult,
+} from "./models/agent-device-decision-result.js";
+export { agentDeviceRequestSchema, type AgentDeviceRequest } from "./models/agent-device-request.js";
 export { agentNotificationSchema, type AgentNotification } from "./models/agent-notification.js";
 export { agentPageSchema, type AgentPage } from "./models/agent-page.js";
 export { agentShareSchema, type AgentShare } from "./models/agent-share.js";
@@ -48,9 +55,18 @@ export { Code, codeSchema } from "./models/code.js";
 export { competitionSchema, type Competition } from "./models/competition.js";
 export { competitionPageSchema, type CompetitionPage } from "./models/competition-page.js";
 export { configSchema, type Config } from "./models/config.js";
+export {
+  createAgentDeviceCodeSchema,
+  type CreateAgentDeviceCode,
+} from "./models/create-agent-device-code.js";
 export { createCompetitionSchema, type CreateCompetition } from "./models/create-competition.js";
+export { Decision, decisionSchema } from "./models/decision.js";
 export { deliveryAccessSchema, type DeliveryAccess } from "./models/delivery-access.js";
 export { DisputeState, disputeStateSchema } from "./models/dispute-state.js";
+export {
+  exchangeAgentDeviceCodeSchema,
+  type ExchangeAgentDeviceCode,
+} from "./models/exchange-agent-device-code.js";
 export { ExpenseState, expenseStateSchema } from "./models/expense-state.js";
 export { FailureCode, failureCodeSchema } from "./models/failure-code.js";
 export { healthSchema, type Health } from "./models/health.js";
@@ -104,6 +120,7 @@ export { Source, sourceSchema } from "./models/source.js";
 export { State, stateSchema } from "./models/state.js";
 export { State1, state1Schema } from "./models/state1.js";
 export { State2, state2Schema } from "./models/state2.js";
+export { state3Schema, type State3 } from "./models/state3.js";
 export { Status, statusSchema } from "./models/status.js";
 export { Status1, status1Schema } from "./models/status1.js";
 export { Status2, status2Schema } from "./models/status2.js";
@@ -115,6 +132,9 @@ export { studioAiItem2Schema, type StudioAiItem2 } from "./models/studio-ai-item
 export { studioAiItem3Schema, type StudioAiItem3 } from "./models/unions/studio-ai-item3.js";
 export { studioAiTurnSchema, type StudioAiTurn } from "./models/studio-ai-turn.js";
 export { studioAiTurnRequestSchema, type StudioAiTurnRequest } from "./models/studio-ai-turn-request.js";
+export { studioDashboardSchema, type StudioDashboard } from "./models/studio-dashboard.js";
+export { studioDashboardSaveSchema, type StudioDashboardSave } from "./models/studio-dashboard-save.js";
+export { studioDashboardSavedSchema, type StudioDashboardSaved } from "./models/studio-dashboard-saved.js";
 export { submissionSchema, type Submission } from "./models/submission.js";
 export { submissionPageSchema, type SubmissionPage } from "./models/submission-page.js";
 export { submitWorkSchema, type SubmitWork } from "./models/submit-work.js";

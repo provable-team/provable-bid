@@ -136,7 +136,8 @@ export class ProvableBidApiClient {
   }
 
   /**
-   * The operator dashboard's AI assistant (AG Studio Agent Framework), relayed to Claude.
+   * The operator dashboard: its saved AG Studio layout, and its AI assistant (AG Studio Agent
+   * Framework) relayed to Claude.
    */
   get studio(): Studio {
     return (this.#studio ??= new Studio(this.#rawClient, this.#servers, this.#auth));

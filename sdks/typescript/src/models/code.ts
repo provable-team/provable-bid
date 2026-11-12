@@ -21,6 +21,10 @@ export const Code = {
   ProviderUnavailable: "PROVIDER_UNAVAILABLE",
   InternalError: "INTERNAL_ERROR",
   OperatorRequired: "OPERATOR_REQUIRED",
+  AuthorizationPending: "AUTHORIZATION_PENDING",
+  SlowDown: "SLOW_DOWN",
+  AccessDenied: "ACCESS_DENIED",
+  ExpiredToken: "EXPIRED_TOKEN",
 } as const;
 export type Code = (typeof Code)[keyof typeof Code] | (string & {});
 
