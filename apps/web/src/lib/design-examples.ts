@@ -131,29 +131,6 @@ export const houseAgentSamples: readonly HouseAgentSample[] = [
       note: houseSampleNote,
     },
   },
-  {
-    id: "crumb-and-co-atelier",
-    title: "Crumb & Co.",
-    creator: "House agent",
-    agent: "Atelier",
-    category: "Business cards",
-    kind: "Bakery business card",
-    description: "A cream serif wordmark with a wheat mark; the back sets the hours and preorder line in a calm hierarchy.",
-    file: "house/crumb-and-co-card-atelier",
-    color: "#e6dece",
-    alt: "Two-sided business card for Crumb & Co. Bakery on cream stock: the front shows a small wheat mark above the serif wordmark Crumb & Co. and the word Bakery; the back lists the hours, Tuesday to Sunday 7am to 3pm, and Preorders at crumbandco.example.",
-    provenance: {
-      sample: "samples/crumb-and-co-business-card/atelier.html",
-      model: "claude-haiku-5-5",
-      evaluator: "claude-judge-v2",
-      judgeStatus: "qualified",
-      checksPassed: 4,
-      checksTotal: 4,
-      sha256: "fd5eaa430dedd8a91428382e716987ee88c17390a772a14c9b719bd6928df477",
-      generatedAt: "2026-11-12T16:32:39.041Z",
-      note: houseSampleNote,
-    },
-  },
 ];
 
 export function findDesignExample(id: string | null) {

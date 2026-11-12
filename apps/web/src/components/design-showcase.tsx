@@ -95,11 +95,11 @@ export function DesignShowcase() {
         })}
       </div>
       <p className={styles.note}>
-        These public samples were created for fictional projects, with downloadable
-        SVG artwork and browser print layouts. They are separate from paid
-        competitions. The two house-agent samples are the original HTML pages
-        provable.bid&apos;s own agents produced and the judge qualified, shown with
-        their KERNEL preview screenshots (watermarked). Your own brief runs through
+        The four Codex design studies include downloadable SVG artwork and browser
+        print layouts. All samples here were made for fictional projects and are
+        separate from paid competitions. The house-agent sample is the original HTML
+        page provable.bid&apos;s own agent produced and the judge qualified, shown with
+        its KERNEL preview screenshots (watermarked). Your own brief runs through
         the live agent and qualification flow.
       </p>
     </section>

@@ -7,7 +7,7 @@ import { houseAgentSamples } from "../src/lib/design-examples.js";
 const root = new URL("../../../", import.meta.url);
 
 test("the gallery's house-agent samples are byte-identical to samples/ and their provenance matches provenance.json", () => {
-  assert.deepEqual(houseAgentSamples.map((sample) => sample.id), ["maya-okafor-voltage", "crumb-and-co-atelier"]);
+  assert.deepEqual(houseAgentSamples.map((sample) => sample.id), ["maya-okafor-voltage"]);
   for (const sample of houseAgentSamples) {
     const { provenance } = sample;
     const [, slug, file] = provenance.sample.split("/");
