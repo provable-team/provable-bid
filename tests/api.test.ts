@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import { join } from 'node:path';
 import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
-import { createApi } from '../apps/api/src/app.js';
+import { createApi, disputeVerdict, eventRef, payoutOutcome } from '../apps/api/src/app.js';
 import { heuristicEvaluator, judgeText, streamingHouseAgent } from '../apps/api/src/claude.js';
 import { colorTracker, parseStructure, progressTracker, structureTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer } from '../apps/api/src/browser.js';
@@ -98,8 +98,32 @@ async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAda
     assert.equal(s.status, 201, JSON.stringify(s.data));
     return s.data;
   }
-  return { api, fake, store, notices, request, post, get, settle, advance, buyer, operator, agent, open, enter, now: () => now };
+  /** Deliver a PayPal webhook that the (fake) verify-webhook-signature call accepts. */
+  async function hook(event: { id: string; event_type: string; resource: any }) {
+    const r = await request('POST', '/v1/webhooks/paypal', event, null, null, { 'paypal-transmission-id': `tx_${event.id}`, 'paypal-transmission-time': '2026-11-12T10:05:00Z',
+      'paypal-transmission-sig': 'FAKE_VERIFIED', 'paypal-cert-url': 'https://api.paypal.com/cert', 'paypal-auth-algo': 'SHA256withRSA' });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    await api.idle();
+    return r;
+  }
+  /** A competition with one qualified entry, the winner selected and the capture completed. */
+  async function captured(b: string, opToken?: string) {
+    const ann = await agent(opToken ?? await operator('PAYERANN0001', 'Ann'), `Alpha ${++sequence}`);
+    const { c } = await open(b);
+    const s = await enter(ann.token, c.id); await settle();
+    const pick = await post(`/v1/competitions/${c.id}/selection`, { submission_id: s.id }, b);
+    await settle();
+    const pay = (await get(`/v1/payments/${c.initial_payment_id}`, b)).data;
+    return { c, pick: pick.data, pay };
+  }
+  return { api, fake, store, notices, request, post, get, settle, advance, buyer, operator, agent, open, enter, hook, captured, now: () => now };
 }
+
+/** PayPal's links on a refund resource: the capture is only in rel=up. */
+const refundLinks = (refundId: string, captureId: string) => [
+  { href: `https://api.sandbox.paypal.com/v2/payments/refunds/${refundId}`, rel: 'self', method: 'GET' },
+  { href: `https://api.sandbox.paypal.com/v2/payments/captures/${captureId}`, rel: 'up', method: 'GET' },
+];
 
 test('OpenAPI 3.1 structure, references, examples, operation IDs, and mutation keys are valid', () => {
   assert.equal(contract.openapi, '3.1.0');
@@ -295,7 +319,8 @@ test('PayPal webhooks: signature checked with PayPal, deduplicated, then canonic
   const pay = (await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data;
   assert.equal(pay.capture_state, 'pending');
   const headers = (sig: string) => ({ 'paypal-transmission-id': 'tx1', 'paypal-transmission-time': '2026-11-12T10:05:00Z', 'paypal-transmission-sig': sig, 'paypal-cert-url': 'https://api.paypal.com/cert', 'paypal-auth-algo': 'SHA256withRSA' });
-  const event = { id: 'WH-1', event_type: 'CUSTOMER.DISPUTE.CREATED', resource: { disputed_transactions: [{ seller_transaction_id: pay.provider_capture_id }] } };
+  const disputeId = f.fake.controls.openDispute(pay.provider_capture_id);
+  const event = { id: 'WH-1', event_type: 'CUSTOMER.DISPUTE.CREATED', resource: { dispute_id: disputeId, status: 'OPEN', disputed_transactions: [{ seller_transaction_id: pay.provider_capture_id }] } };
   assert.equal((await f.request('POST', '/v1/webhooks/paypal', event, null, null, headers('forged'))).data.code, 'INVALID_WEBHOOK');
   assert.equal((await f.request('POST', '/v1/webhooks/paypal', event, null, null, headers('FAKE_VERIFIED'))).status, 200);
   assert.equal((await f.request('POST', '/v1/webhooks/paypal', event, null, null, headers('FAKE_VERIFIED'))).status, 200, 'duplicate delivery is acknowledged');
@@ -306,7 +331,199 @@ test('PayPal webhooks: signature checked with PayPal, deduplicated, then canonic
   assert.equal(held.dispute_state, 'open');
   assert.equal((await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0].payout_state, 'blocked');
   assert.equal(f.fake.controls.calls.filter(x => x.op === 'sendPayout').length, 0, 'no payout while disputed');
-  assert.equal((await f.post(`/v1/purchases/${c.first_purchase_id ?? (await f.get(`/v1/competitions/${c.id}`, b)).data.first_purchase_id}/delivery-access`, undefined, b)).data.code, 'DELIVERY_LOCKED');
+  const purchaseId = (await f.get(`/v1/competitions/${c.id}`, b)).data.first_purchase_id;
+  assert.equal((await f.post(`/v1/purchases/${purchaseId}/delivery-access`, undefined, b)).data.code, 'DELIVERY_LOCKED');
+
+  // The buyer cancels the dispute. The event body claims the buyer won; the Disputes API re-read decides.
+  f.fake.controls.resolveDispute(disputeId, 'CANCELED_BY_BUYER');
+  await f.hook({ id: 'WH-2', event_type: 'CUSTOMER.DISPUTE.RESOLVED', resource: { dispute_id: disputeId, status: 'RESOLVED', dispute_outcome: { outcome_code: 'RESOLVED_BUYER_FAVOUR' } } });
+  await f.settle(); await f.advance(10);
+  assert.equal((await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data.dispute_state, 'won');
+  assert.equal((await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0].payout_state, 'paid', 'a buyer-cancelled dispute releases the payout');
+  assert.equal(f.fake.controls.calls.filter(x => x.op === 'sendPayout').length, 1);
+  assert.equal((await f.post(`/v1/purchases/${purchaseId}/delivery-access`, undefined, b)).status, 201);
+
+  // A second dispute on the same capture that the buyer wins holds everything again.
+  const second = f.fake.controls.openDispute(pay.provider_capture_id);
+  f.fake.controls.resolveDispute(second, 'RESOLVED_BUYER_FAVOUR');
+  await f.hook({ id: 'WH-3', event_type: 'CUSTOMER.DISPUTE.RESOLVED', resource: { dispute_id: second, status: 'RESOLVED' } });
+  await f.settle();
+  assert.equal((await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data.dispute_state, 'lost');
+  assert.equal((await f.post(`/v1/purchases/${purchaseId}/delivery-access`, undefined, b)).data.code, 'DELIVERY_LOCKED');
+});
+
+test('dispute outcomes: buyer-cancelled and denied are merchant-favourable; every dispute on the capture counts', () => {
+  const r = (outcome: string) => ({ status: 'RESOLVED', outcome });
+  assert.equal(disputeVerdict([r('CANCELED_BY_BUYER')], 'COMPLETED'), 'won');
+  assert.equal(disputeVerdict([r('DENIED')], 'COMPLETED'), 'won');
+  assert.equal(disputeVerdict([r('RESOLVED_SELLER_FAVOUR')], 'COMPLETED'), 'won');
+  assert.equal(disputeVerdict([r('RESOLVED_BUYER_FAVOUR')], 'COMPLETED'), 'lost');
+  assert.equal(disputeVerdict([r('ACCEPTED')], 'COMPLETED'), 'lost');
+  assert.equal(disputeVerdict([r('RESOLVED_WITH_PAYOUT')], 'COMPLETED'), 'won', 'PayPal paid the buyer itself; our capture is intact');
+  assert.equal(disputeVerdict([r('RESOLVED_WITH_PAYOUT')], 'REFUNDED'), 'lost');
+  assert.equal(disputeVerdict([r('SOMETHING_NEW')], 'COMPLETED'), 'lost', 'unknown outcomes keep the hold');
+  assert.equal(disputeVerdict([r('NONE')], 'COMPLETED'), 'none', 'closed without a decision');
+  assert.equal(disputeVerdict([r('NONE'), { status: 'WAITING_FOR_SELLER_RESPONSE', outcome: null }], 'COMPLETED'), 'open', 'the newer dispute decides');
+  assert.equal(disputeVerdict([r('CANCELED_BY_BUYER'), r('RESOLVED_BUYER_FAVOUR')], 'COMPLETED'), 'lost');
+  assert.equal(disputeVerdict([], 'COMPLETED'), 'none');
+});
+
+test('a dispute PayPal will not show us still holds the payout, and its RESOLVED body alone never releases it', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  const { c, pay } = await f.captured(b);
+  const resource = { dispute_id: 'PP-D-UNKNOWN', disputed_transactions: [{ seller_transaction_id: pay.provider_capture_id }] };
+  await f.hook({ id: 'WH-D-404', event_type: 'CUSTOMER.DISPUTE.CREATED', resource }); await f.settle();
+  assert.equal((await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data.dispute_state, 'open');
+  await f.hook({ id: 'WH-D-404b', event_type: 'CUSTOMER.DISPUTE.RESOLVED', resource: { ...resource, dispute_outcome: { outcome_code: 'RESOLVED_SELLER_FAVOUR' } } }); await f.settle();
+  assert.equal((await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data.dispute_state, 'open');
+});
+
+test('refund and reversal webhooks: capture from the up link, amounts re-read from PayPal, counted once', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  const { c, pick, pay } = await f.captured(b);
+  assert.equal(pay.capture_state, 'completed');
+  const capture = pay.provider_capture_id;
+
+  // A partial refund made in the PayPal dashboard. The event body's amount is wrong on purpose: only the re-read counts.
+  const r1 = f.fake.controls.refundOutside(capture, 500);
+  const refunded = { id: 'WH-REF-1', event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: { id: r1, status: 'COMPLETED', amount: { currency_code: 'USD', value: '21.23' }, links: refundLinks(r1, capture) } };
+  await f.hook(refunded); await f.hook(refunded); // redelivered
+  await f.settle();
+  let now = (await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data;
+  assert.deepEqual([now.refunded_minor, now.refund_state], [500, 'partially_refunded']);
+  assert.equal((await f.post(`/v1/purchases/${pick.id}/delivery-access`, undefined, b)).data.code, 'DELIVERY_LOCKED');
+  assert.equal((await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0].ledger_state, 'reversed');
+
+  // The same refund seen again under a new event ID (PayPal resends with new IDs sometimes) is still counted once.
+  await f.hook({ ...refunded, id: 'WH-REF-1b' }); await f.settle();
+  assert.equal((await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data.refunded_minor, 500);
+
+  // A chargeback: PAYMENT.CAPTURE.REVERSED, also a refund resource pointing up to the capture.
+  const r2 = f.fake.controls.reverseCapture(capture);
+  await f.hook({ id: 'WH-REV-1', event_type: 'PAYMENT.CAPTURE.REVERSED', resource: { id: r2, status: 'COMPLETED', links: refundLinks(r2, capture) } });
+  await f.settle();
+  now = (await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data;
+  assert.deepEqual([now.reversal_state, now.reversed_minor], ['reversed', 2123]);
+  assert.equal((await f.get(`/v1/purchases/${pick.id}`, b)).data.status, 'reversed');
+});
+
+test('webhook events are not lost: a failed PayPal re-read keeps the event queued and it is retried', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  const { c, pay } = await f.captured(b);
+  const r1 = f.fake.controls.refundOutside(pay.provider_capture_id, 2123);
+  f.fake.controls.failNext = { op: 'getRefund', error: new ProviderError('PayPal get refund unreachable: socket hang up', 'unknown') };
+  const event = { id: 'WH-LOST-1', event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: { id: r1, links: refundLinks(r1, pay.provider_capture_id) } };
+  await f.hook(event); await f.settle();
+  assert.equal((await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data.refund_state, 'none', 'not applied yet: PayPal could not be read');
+  // Read back from SQLite: the event is durably queued, not marked handled.
+  const persisted = () => f.store.collection<any>('webhook_event').get('WH-LOST-1')?.state;
+  assert.equal(persisted(), 'queued');
+  await f.advance(5); // backoff passes; the worker retries the queued event
+  const after = (await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data;
+  assert.deepEqual([after.refund_state, after.refunded_minor], ['refunded', 2123]);
+  assert.equal(persisted(), 'handled');
+  await f.hook(event); await f.settle(); // a late redelivery is acknowledged and changes nothing
+  assert.equal((await f.get(`/v1/payments/${c.initial_payment_id}`, b)).data.refunded_minor, 2123);
+});
+
+test('PAYMENT.AUTHORIZATION.CREATED (found by order ID) finishes an authorize call whose response was lost', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  const created = (await f.post('/v1/competitions', brief, b)).data;
+  const checkout = (await f.post(`/v1/competitions/${created.id}/checkout`, undefined, b)).data;
+  f.fake.controls.approve(checkout.provider_order_id);
+  f.fake.controls.loseNextResponse = 'authorizeOrder'; // PayPal authorizes, the response never arrives
+  const first = await f.post(`/v1/competitions/${created.id}/authorize`, undefined, b);
+  assert.equal(first.status, 503);
+  const c0 = (await f.get(`/v1/competitions/${created.id}`, b)).data;
+  assert.equal(c0.state, 'awaiting_authorization');
+  assert.equal((await f.get(`/v1/payments/${c0.initial_payment_id}`, b)).data.authorization_state, 'pending');
+
+  const authId = [...f.fake.auths.keys()][0];
+  await f.hook({ id: 'WH-AUTH-1', event_type: 'PAYMENT.AUTHORIZATION.CREATED', resource: { id: authId, status: 'CREATED', supplementary_data: { related_ids: { order_id: checkout.provider_order_id } } } });
+  await f.settle();
+  assert.equal((await f.get(`/v1/competitions/${created.id}`, b)).data.state, 'open');
+  const pay = (await f.get(`/v1/payments/${c0.initial_payment_id}`, b)).data;
+  assert.deepEqual([pay.authorization_state, pay.provider_authorization_id, pay.operation_state], ['authorized', authId, 'succeeded']);
+  assert.equal((await f.post(`/v1/competitions/${created.id}/authorize`, undefined, b)).status, 202, 'the buyer\'s retry sees it open');
+  assert.equal(f.fake.controls.calls.filter(x => x.op === 'authorizeOrder').length, 1);
+});
+
+test('a refused void is re-read: VOIDED, EXPIRED or CAPTURED instead of void_pending forever', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  const cases: [string, string, string, string | null][] = [
+    ['EXPIRED', 'expired', 'succeeded', null],
+    ['VOIDED', 'voided', 'succeeded', null],
+    ['CAPTURED', 'captured', 'failed', 'VOID_REFUSED_AUTHORIZATION_CAPTURED'],
+  ];
+  for (const [atPayPal, state, operation, code] of cases) {
+    const { c, payment } = await f.open(b);
+    f.fake.controls.setAuthorizationStatus(payment.provider_authorization_id, atPayPal);
+    assert.equal((await f.post(`/v1/competitions/${c.id}/rejection`, undefined, b)).status, 202);
+    await f.settle();
+    const pay = (await f.get(`/v1/payments/${payment.id}`, b)).data;
+    assert.deepEqual([pay.authorization_state, pay.operation_state, pay.last_error_code], [state, operation, code], atPayPal);
+  }
+  // Refused while PayPal still says CREATED: the hold is still there, so say so instead of void_pending.
+  const { c, payment } = await f.open(b);
+  f.fake.controls.failNext = { op: 'voidAuthorization', error: new ProviderError('PayPal 422 AUTHORIZATION_VOID_NOT_ALLOWED', 'definitive', 'AUTHORIZATION_VOID_NOT_ALLOWED', 422) };
+  await f.post(`/v1/competitions/${c.id}/rejection`, undefined, b); await f.settle();
+  const pay = (await f.get(`/v1/payments/${payment.id}`, b)).data;
+  assert.deepEqual([pay.authorization_state, pay.operation_state, pay.last_error_code], ['authorized', 'failed', 'AUTHORIZATION_VOID_NOT_ALLOWED']);
+});
+
+test('a payout whose response was lost is tracked, not failed; later PayPal outcomes get honest states', async t => {
+  const f = await fixture(t);
+  const b = await f.buyer();
+  f.fake.controls.loseNextResponse = 'sendPayout'; // PayPal creates the batch; the response times out
+  const { c } = await f.captured(b);
+  let alloc = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
+  assert.equal(alloc.payout_state, 'queued', 'outcome unknown: neither paid nor failed');
+  await f.advance(5); await f.advance(10);
+  alloc = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
+  assert.equal(f.fake.controls.payouts.size, 1, 'one batch at PayPal, never two');
+  assert.equal(alloc.payout_state, 'paid');
+  const batch = [...f.fake.controls.payouts.keys()][0];
+  assert.equal(alloc.provider_payout_id, batch);
+
+  // Payout events re-read the batch; the event's own transaction_status is ignored.
+  const steps: [string, string | null, string, string, RegExp | null][] = [
+    ['UNCLAIMED', null, 'PAYMENT.PAYOUTS-ITEM.UNCLAIMED', 'pending', /^UNCLAIMED/],
+    ['RETURNED', null, 'PAYMENT.PAYOUTS-ITEM.RETURNED', 'returned', /^RETURNED$/],
+    ['BLOCKED', 'RECEIVER_ACCOUNT_LOCKED: Receiver account is locked', 'PAYMENT.PAYOUTS-ITEM.BLOCKED', 'failed', /^BLOCKED: RECEIVER_ACCOUNT_LOCKED/],
+    ['REFUNDED', null, 'PAYMENT.PAYOUTS-ITEM.REFUNDED', 'refunded', /^REFUNDED$/],
+    ['REVERSED', null, 'PAYMENT.PAYOUTS-ITEM.SUCCEEDED', 'reversed', /^REVERSED$/],
+    ['SUCCESS', null, 'PAYMENT.PAYOUTS-ITEM.SUCCEEDED', 'paid', null],
+  ];
+  for (const [status, error, eventType, state, detail] of steps) {
+    f.fake.controls.setPayoutStatus(batch, status, error);
+    await f.hook({ id: `WH-PO-${status}`, event_type: eventType, resource: { payout_item_id: 'ITEM1', payout_batch_id: batch, transaction_status: 'SUCCESS' } });
+    await f.settle();
+    alloc = (await f.get(`/v1/competitions/${c.id}/settlement`, b)).data.allocations[0];
+    assert.equal(alloc.payout_state, state, status);
+    if (detail) assert.match(alloc.payout_detail, detail); else assert.equal(alloc.payout_detail, null);
+  }
+});
+
+test('payout statuses map to distinct states: SUCCESS paid, in-flight pending, RETURNED/REFUNDED/REVERSED their own, the rest failed', () => {
+  const states = Object.fromEntries(['SUCCESS', 'PENDING', 'PROCESSING', 'UNCLAIMED', 'ONHOLD', 'RETURNED', 'REFUNDED', 'REVERSED', 'BLOCKED', 'FAILED', 'DENIED', 'CANCELED']
+    .map(s => [s, payoutOutcome(s).state]));
+  assert.deepEqual(states, { SUCCESS: 'paid', PENDING: 'pending', PROCESSING: 'pending', UNCLAIMED: 'pending', ONHOLD: 'pending', RETURNED: 'returned', REFUNDED: 'refunded',
+    REVERSED: 'reversed', BLOCKED: 'failed', FAILED: 'failed', DENIED: 'failed', CANCELED: 'failed' });
+});
+
+test('webhook references: refund resources give the capture from links[rel=up]; no payer data is kept', () => {
+  const ref = eventRef({ id: 'WH', event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: { id: 'REF1', links: refundLinks('REF1', 'CAP 1'), payer: { email_address: 'x@example.com' } } });
+  assert.deepEqual([ref.resource_id, ref.up_capture_id, ref.order_id], ['REF1', 'CAP 1', null]);
+  assert.ok(!JSON.stringify(ref).includes('example.com'));
+  const auth = eventRef({ event_type: 'PAYMENT.AUTHORIZATION.CREATED', resource: { id: 'AUTH1', supplementary_data: { related_ids: { order_id: 'ORD1' } } } });
+  assert.deepEqual([auth.resource_id, auth.order_id], ['AUTH1', 'ORD1']);
+  const batch = eventRef({ event_type: 'PAYMENT.PAYOUTSBATCH.DENIED', resource: { batch_header: { payout_batch_id: 'B1' } } });
+  assert.equal(batch.payout_batch_id, 'B1');
 });
 
 test('permissions, gates and the attempts rule', async t => {

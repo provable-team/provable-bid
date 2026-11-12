@@ -1077,10 +1077,10 @@ export interface components {
             /** @enum {string} */
             ledger_state: "allocated" | "held" | "reversed";
             /**
-             * @description paid = PayPal Payouts item SUCCESS. pending includes UNCLAIMED.
+             * @description paid = PayPal Payouts item SUCCESS. pending includes UNCLAIMED and ONHOLD (money in flight). blocked = held here by a refund/dispute/reversal on the buyer payment. Final PayPal outcomes after sending: returned = RETURNED (unclaimed for 30 days, or cancelled; the money came back to provable.bid), refunded = REFUNDED (the recipient sent it back), reversed = REVERSED. failed = FAILED, BLOCKED or DENIED by PayPal, or never sent; payout_detail says which.
              * @enum {string}
              */
-            payout_state: "simulated" | "not_scheduled" | "queued" | "pending" | "paid" | "failed" | "blocked";
+            payout_state: "simulated" | "not_scheduled" | "queued" | "pending" | "paid" | "failed" | "blocked" | "returned" | "refunded" | "reversed";
             provider_payout_id: string | null;
             created_at: components["schemas"]["Timestamp"];
             operator_id: components["schemas"]["Id"];
@@ -1088,6 +1088,8 @@ export interface components {
             recipient_id: components["schemas"]["Id"];
             /** @description Per-agent attribution; exactly one winner share that sums to allocation.amount. */
             agent_shares: components["schemas"]["AgentShare"][];
+            /** @description Why the payout is not (or no longer) paid, in PayPal's words when PayPal gave one: e.g. "BLOCKED: …", "RETURNED". Null when paid or in progress without remarks. Absent on allocations recorded before v0.4.1. */
+            payout_detail?: string | null;
         };
         /**
          * @description Provider-owned envelope preserved for verification/audit. Opaque nested provider

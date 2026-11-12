@@ -12,7 +12,7 @@ import {
   type AgentPrincipal, type AgentRecord, type Credential, type Operator, type Principal,
 } from './identity.js';
 import { agentPayoutFor, commissionFor, POLICY, processingFeeFor } from './money.js';
-import { ProviderError, type PaymentProvider } from './provider/types.js';
+import { ProviderError, type AuthorizationView, type PaymentProvider, type PayoutView } from './provider/types.js';
 import { Store } from './store.js';
 
 type S = components['schemas'];
@@ -45,6 +45,72 @@ export type Operation = {
   state: 'queued' | 'running' | 'waiting' | 'unknown' | 'succeeded' | 'failed';
   attempts: number; next_at: number; last_error: string | null; created_at: string; updated_at: string;
 };
+/**
+ * The parts of a verified PayPal event that say which resource to re-read. Kept instead of the event body, so no payer
+ * data is stored, and never used for amounts or states: those always come from a fresh GET.
+ */
+export type EventRef = {
+  type: string; resource_id: string | null;
+  order_id: string | null; authorization_id: string | null;
+  /** Refund and reversal resources (PAYMENT.CAPTURE.REFUNDED/REVERSED) carry their capture only in links[rel=up]. */
+  up_capture_id: string | null;
+  dispute_id: string | null; disputed_capture_ids: string[];
+  payout_batch_id: string | null;
+};
+export type WebhookEventRecord = {
+  event_type: string; received_at: string;
+  state?: 'queued' | 'handled' | 'failed'; ref?: EventRef; attempts?: number; next_at?: number; last_error?: string | null; handled_at?: string | null;
+};
+const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+export function eventRef(event: any): EventRef {
+  const r = event?.resource ?? {};
+  const related = r.supplementary_data?.related_ids ?? {};
+  const up = (r.links ?? []).find((l: any) => l?.rel === 'up' && /\/v2\/payments\/captures\/[^/?#]+/.test(String(l.href ?? '')));
+  return {
+    type: String(event?.event_type ?? ''), resource_id: str(r.id),
+    order_id: str(related.order_id), authorization_id: str(related.authorization_id),
+    up_capture_id: up ? decodeURIComponent(/\/v2\/payments\/captures\/([^/?#]+)/.exec(String(up.href))![1]) : null,
+    dispute_id: str(r.dispute_id),
+    disputed_capture_ids: (Array.isArray(r.disputed_transactions) ? r.disputed_transactions : []).map((t: any) => str(t?.seller_transaction_id)).filter((x: string | null): x is string => !!x),
+    payout_batch_id: str(r.payout_batch_id) ?? str(r.batch_header?.payout_batch_id),
+  };
+}
+
+/**
+ * A resolved dispute's outcome for the merchant. RESOLVED_SELLER_FAVOUR, CANCELED_BY_BUYER and DENIED (PayPal denied the
+ * buyer's claim) leave the money with us. RESOLVED_BUYER_FAVOUR and ACCEPTED take it back. RESOLVED_WITH_PAYOUT means
+ * PayPal paid one side under its protection programmes, so it depends on whether the capture still holds the money;
+ * NONE (closed without a decision because a newer dispute replaced it) is decided by that newer dispute.
+ */
+export function disputeOutcome(outcome: string | null, captureStatus: string | null): 'won' | 'lost' | 'none' {
+  switch (outcome) {
+    case 'RESOLVED_SELLER_FAVOUR': case 'CANCELED_BY_BUYER': case 'DENIED': return 'won';
+    case 'RESOLVED_BUYER_FAVOUR': case 'ACCEPTED': return 'lost';
+    case 'RESOLVED_WITH_PAYOUT': return captureStatus === 'COMPLETED' ? 'won' : 'lost';
+    case 'NONE': return 'none';
+    default: return 'lost'; // an outcome we don't know: keep the payout held and let a person look
+  }
+}
+/** Every dispute on one capture, combined: any unresolved one holds; otherwise any lost one loses. */
+export function disputeVerdict(disputes: { status: string; outcome: string | null }[], captureStatus: string | null): S['Payment']['dispute_state'] {
+  if (!disputes.length) return 'none';
+  if (disputes.some(d => d.status !== 'RESOLVED')) return 'open';
+  const outcomes = disputes.map(d => disputeOutcome(d.outcome, captureStatus));
+  return outcomes.includes('lost') ? 'lost' : outcomes.includes('won') ? 'won' : 'none';
+}
+
+/** A PayPal payout item (or batch) status as the allocation's payout_state. */
+export function payoutOutcome(status: string): { state: S['Allocation']['payout_state']; done: boolean } {
+  switch (status) {
+    case 'SUCCESS': return { state: 'paid', done: true };
+    case 'PENDING': case 'PROCESSING': case 'UNCLAIMED': case 'ONHOLD': case 'NEW': return { state: 'pending', done: false };
+    case 'RETURNED': return { state: 'returned', done: true };
+    case 'REFUNDED': return { state: 'refunded', done: true };
+    case 'REVERSED': return { state: 'reversed', done: true };
+    default: return { state: 'failed', done: true }; // FAILED, BLOCKED, DENIED, CANCELED and anything new
+  }
+}
+
 type StoredAsset = {
   metadata: S['Asset']; original_base64: string; preview: string;
   /** Real-browser render (KERNEL): JPEG screenshots (base64) and measurements. Once present, buyers only ever get images. */
@@ -104,7 +170,10 @@ export async function createApi(o: ApiOptions) {
   const checkouts = st.collection<S['Checkout']>('checkout');
   const deliveries = st.collection<{ purchase: string; asset: string; buyer: string; expires: number }>('delivery');
   const replays = st.collection<{ fingerprint: string; status: number; body: unknown; cache?: string }>('replay');
-  const webhookEvents = st.collection<{ event_type: string; received_at: string }>('webhook_event');
+  /** Verified PayPal events: queued until reconciliation succeeds, then handled. Records without `state` predate the queue (handled). */
+  const webhookEvents = st.collection<WebhookEventRecord>('webhook_event');
+  /** PayPal refund IDs already counted in a payment's refunded_minor (our own refunds and ones made outside the app). */
+  const providerRefunds = st.collection<{ payment_id: string; amount_minor: number }>('provider_refund');
   const ops = st.collection<Operation>('operation');
   const credentials = st.collection<Credential>('credential');
   const operators = st.collection<Operator>('operator');
@@ -255,6 +324,40 @@ export async function createApi(o: ApiOptions) {
     pay.authorization_state = 'void_pending';
     queueOp(pay, 'void');
   }
+  /** Record a usable PayPal authorization and open the competition (from the buyer's authorize call or the AUTHORIZATION.CREATED webhook). */
+  function openWithAuthorization(c: S['Competition'], pay: S['Payment'], authorization: AuthorizationView | null | undefined): S['Competition'] {
+    demand(authorization && ['CREATED', 'PENDING'].includes(authorization.status), 'PAYMENT_NOT_READY', `PayPal authorization is ${authorization?.status ?? 'missing'}.`);
+    const created = Date.parse(authorization.createTime);
+    const schedule = (c.submission_window_seconds + policy.qualification_grace_seconds + c.decision_window_seconds) * 1000;
+    demand(time() + schedule + 900_000 < created + 3 * 86_400_000, 'PAYMENT_NOT_READY', 'The PayPal authorization is too old to cover the decision window.');
+    pay.authorization_state = 'authorized'; pay.provider_authorization_id = authorization.id; pay.authorized_at = at(created);
+    pay.authorization_expires_at = authorization.expirationTime ?? at(created + 29 * 86_400_000); pay.operation_state = 'succeeded'; pay.last_error_code = null; pay.updated_at = stamp();
+    for (const x of ops.values()) if (x.kind === 'authorize' && x.payment_id === pay.id && x.state !== 'succeeded') { x.state = 'succeeded'; x.last_error = null; x.updated_at = stamp(); }
+    c.opens_at = stamp(); c.submission_deadline = at(time() + c.submission_window_seconds * 1000);
+    c.qualification_deadline = at(Date.parse(c.submission_deadline) + policy.qualification_grace_seconds * 1000);
+    c.decision_deadline = at(Date.parse(c.qualification_deadline) + c.decision_window_seconds * 1000);
+    c.state = 'open'; update(c);
+    return structuredClone(c);
+  }
+  /**
+   * The authorization's state as PayPal reports it, after a void (accepted or refused) or an AUTHORIZATION webhook.
+   * A refused void leaves the hold in place only if PayPal still says CREATED/PENDING; otherwise it is VOIDED, EXPIRED or CAPTURED.
+   */
+  function applyAuthorizationStatus(pay: S['Payment'], status: string, refusal: string | null = null) {
+    const before = pay.authorization_state;
+    if (status === 'VOIDED') pay.authorization_state = 'voided';
+    else if (status === 'EXPIRED') pay.authorization_state = 'expired';
+    else if (status === 'CAPTURED' || status === 'PARTIALLY_CAPTURED') pay.authorization_state = 'captured';
+    else if (before === 'void_pending' && refusal) pay.authorization_state = 'authorized'; // the hold is still there
+    if (pay.authorization_state !== before) pay.updated_at = stamp();
+    // Touch the operation fields only for our own void's outcome (or a webhook that settles it), not for unrelated events.
+    if (refusal || (before === 'void_pending' && pay.authorization_state !== before)) {
+      const settled = ['voided', 'expired'].includes(pay.authorization_state);
+      pay.operation_state = settled ? 'succeeded' : 'failed';
+      // CAPTURED here means money was taken that the app did not ask for: flag it for a person (the capture webhook records it).
+      pay.last_error_code = settled ? null : pay.authorization_state === 'captured' ? 'VOID_REFUSED_AUTHORIZATION_CAPTURED' : refusal ?? `AUTHORIZATION_${status}`;
+    }
+  }
 
   // ---------------------------------------------------------------- settlement
   function captureAccounting(p: S['Payment']): S['CaptureAccounting'] {
@@ -287,7 +390,8 @@ export async function createApi(o: ApiOptions) {
   function holdAllocations(p: S['Payment'], reversed: boolean) {
     for (const a of allocations.values()) if (a.payment_id === p.id) {
       if (a.ledger_state !== 'reversed') a.ledger_state = reversed ? 'reversed' : 'held';
-      if (a.payout_state !== 'paid' && a.payout_state !== 'pending') a.payout_state = 'blocked'; // already-sent payouts can't be recalled
+      // Already-sent payouts can't be recalled, and a final PayPal outcome (returned, refunded, reversed) stays as reported.
+      if (['queued', 'simulated', 'not_scheduled', 'failed'].includes(a.payout_state)) a.payout_state = 'blocked';
     }
   }
   function completeCapture(p: S['Payment'], cap: { id: string; amountMinor: number; feeMinor: number | null }) {
@@ -304,15 +408,42 @@ export async function createApi(o: ApiOptions) {
     if (p.authorization_state === 'authorized') { p.authorization_state = 'void_pending'; queueOp(p, 'void'); }
   }
   function applyDispute(p: S['Payment'], state: S['Payment']['dispute_state']) {
+    if (p.dispute_state === state) return;
     p.dispute_state = state; p.updated_at = stamp();
-    if (state === 'won' && entitled(p)) {
+    // won, or 'none' (the only dispute closed without a decision): release a hold that only the dispute caused.
+    if ((state === 'won' || state === 'none') && entitled(p)) {
       for (const a of allocations.values()) if (a.payment_id === p.id && a.ledger_state === 'held') { a.ledger_state = 'allocated'; if (a.payout_state === 'blocked') { a.payout_state = simulatePayouts ? 'simulated' : 'queued'; if (!simulatePayouts) newOp('payout', { allocation_id: a.id, payment_id: p.id }); } }
-    } else if (state !== 'won') holdAllocations(p, false);
+    } else if (state === 'open' || state === 'lost') holdAllocations(p, false);
   }
-  function applyRefunded(p: S['Payment'], amountMinor: number) {
-    p.refunded_minor = Math.min(p.captured_minor, p.refunded_minor + amountMinor); p.refund_state = p.refunded_minor >= p.captured_minor ? 'refunded' : 'partially_refunded'; p.updated_at = stamp();
-    for (const r of refunds.values()) if (r.payment_id === p.id && r.state !== 'completed') r.state = 'completed';
+  /**
+   * Count a completed PayPal refund once. totalMinor (PayPal's seller_payable_breakdown.total_refunded_amount, re-read
+   * from the refund) wins when known; otherwise the refund's own amount is added unless its ID was already counted.
+   */
+  function applyRefunded(p: S['Payment'], amountMinor: number, providerRefundId: string | null = null, totalMinor: number | null = null) {
+    const seen = providerRefundId ? providerRefunds.has(providerRefundId) : false;
+    const next = totalMinor !== null ? Math.max(p.refunded_minor, totalMinor) : seen ? p.refunded_minor : p.refunded_minor + amountMinor;
+    if (providerRefundId && !seen) providerRefunds.set(providerRefundId, { payment_id: p.id, amount_minor: amountMinor });
+    p.refunded_minor = Math.min(p.captured_minor, next); p.refund_state = p.refunded_minor >= p.captured_minor ? 'refunded' : 'partially_refunded'; p.updated_at = stamp();
+    for (const r of refunds.values()) if (r.payment_id === p.id && r.state !== 'completed' && (!providerRefundId || !r.provider_refund_id || r.provider_refund_id === providerRefundId)) r.state = 'completed';
     holdAllocations(p, true);
+  }
+  function applyReversed(p: S['Payment'], amountMinor: number) {
+    p.reversal_state = 'reversed'; p.reversed_minor = Math.min(p.captured_minor, Math.max(p.reversed_minor, amountMinor)); p.updated_at = stamp();
+    holdAllocations(p, true);
+  }
+  /** PayPal's payout status, from a poll or a re-read after a PAYMENT.PAYOUTS* webhook (also after the op finished: REFUNDED/REVERSED come later). */
+  function applyPayout(alloc: S['Allocation'], op: Operation | undefined, r: PayoutView) {
+    const status = r.itemStatus ?? r.batchStatus;
+    const { state, done } = payoutOutcome(status);
+    const detail = state === 'paid' ? null
+      : status === 'UNCLAIMED' ? 'UNCLAIMED: the recipient has 30 days to claim it'
+      : status === 'ONHOLD' ? 'ONHOLD: PayPal is reviewing this payout'
+      : state === 'pending' ? null : (r.error ? `${status}: ${r.error}` : status).slice(0, 300);
+    if (alloc.payout_state !== state || (alloc.payout_detail ?? null) !== detail) { alloc.payout_state = state; alloc.payout_detail = detail; }
+    if (!op) return;
+    op.updated_at = stamp();
+    if (!done) { op.state = 'waiting'; op.next_at = time() + (status === 'UNCLAIMED' ? 60_000 : 5000); }
+    else { op.state = state === 'paid' ? 'succeeded' : 'failed'; op.last_error = state === 'paid' ? null : detail; }
   }
 
   // ---------------------------------------------------------------- deadlines
@@ -563,17 +694,7 @@ export async function createApi(o: ApiOptions) {
           }
           op.state = 'succeeded'; op.updated_at = stamp();
         }
-        demand(authorization && ['CREATED', 'PENDING'].includes(authorization.status), 'PAYMENT_NOT_READY', `PayPal authorization is ${authorization?.status ?? 'missing'}.`);
-        const created = Date.parse(authorization.createTime);
-        const schedule = (c.submission_window_seconds + policy.qualification_grace_seconds + c.decision_window_seconds) * 1000;
-        demand(time() + schedule + 900_000 < created + 3 * 86_400_000, 'PAYMENT_NOT_READY', 'The PayPal authorization is too old to cover the decision window.');
-        pay.authorization_state = 'authorized'; pay.provider_authorization_id = authorization.id; pay.authorized_at = at(created);
-        pay.authorization_expires_at = authorization.expirationTime ?? at(created + 29 * 86_400_000); pay.operation_state = 'succeeded'; pay.last_error_code = null; pay.updated_at = stamp();
-        c.opens_at = stamp(); c.submission_deadline = at(time() + c.submission_window_seconds * 1000);
-        c.qualification_deadline = at(Date.parse(c.submission_deadline) + policy.qualification_grace_seconds * 1000);
-        c.decision_deadline = at(Date.parse(c.qualification_deadline) + c.decision_window_seconds * 1000);
-        c.state = 'open'; update(c);
-        const opened = structuredClone(c);
+        const opened = openWithAuthorization(c, pay, authorization);
         return { status: 202, body: view(pay), after: () => announce(opened) };
       }
       case 'selectFirstWinner': {
@@ -687,13 +808,18 @@ export async function createApi(o: ApiOptions) {
         const genuine = await o.provider.verifyWebhook(headers, body).catch(() => false);
         if (!genuine) log('webhook rejected: signature not verified', `${body?.event_type ?? '?'} ${body?.id ?? '?'}`);
         demand(genuine, 'INVALID_WEBHOOK', 'Webhook signature could not be verified with PayPal.', 400);
-        if (!webhookEvents.has(body.id)) {
+        // Durably queue the verified event, then acknowledge. It is marked handled only after reconciliation succeeds;
+        // a failed PayPal re-read keeps it queued and the worker retries it (a redelivery of a queued event just nudges it).
+        const known = webhookEvents.get(body.id);
+        if (!known) {
           // Event type, PayPal event ID and resource ID only: no payer data in logs.
           log('webhook verified', `${body.event_type} ${body.id} resource=${body.resource?.id ?? '?'}`);
-          webhookEvents.set(body.id, { event_type: body.event_type, received_at: stamp() });
-          return { status: 200, body: { accepted: true, event_id: body.id }, after: () => track(reconcileFromEvent(body).catch(e => log('webhook reconcile failed', (e as Error).message))) };
+          webhookEvents.set(body.id, { event_type: body.event_type, received_at: stamp(), state: 'queued', ref: eventRef(body), attempts: 0, next_at: 0, last_error: null, handled_at: null });
+        } else if (known.state === 'queued' || known.state === 'failed') {
+          if (known.state === 'failed') known.attempts = 0; // PayPal redelivered one we gave up on: try again
+          known.state = 'queued'; known.next_at = 0;
         }
-        return ok({ accepted: true, event_id: body.id });
+        return { status: 200, body: { accepted: true, event_id: body.id }, after: !known || known.state === 'queued' ? kick : undefined };
       }
 
       // ---------------- fake-provider development controls
@@ -934,13 +1060,26 @@ export async function createApi(o: ApiOptions) {
           else { failCapture(pay!, `CAPTURE_${cap.status}`); op.state = 'failed'; }
         });
       } else if (op.kind === 'void') {
-        const a = await o.provider.voidAuthorization(pay!.provider_authorization_id!, op.request_id);
-        await exclusive(async () => { pay!.authorization_state = a.status === 'VOIDED' ? 'voided' : pay!.authorization_state; pay!.operation_state = 'succeeded'; pay!.updated_at = stamp(); op.state = 'succeeded'; });
+        let a: AuthorizationView; let refusal: string | null = null;
+        try { a = await o.provider.voidAuthorization(pay!.provider_authorization_id!, op.request_id); }
+        catch (e) {
+          if (!(e instanceof ProviderError) || e.kind !== 'definitive') throw e;
+          // PayPal refused the void: ask what the authorization is now (VOIDED, EXPIRED or CAPTURED) instead of waiting forever.
+          refusal = e.issue ?? 'VOID_REFUSED';
+          a = await o.provider.getAuthorization(pay!.provider_authorization_id!);
+          op.last_error = e.message;
+        }
+        await exclusive(async () => {
+          applyAuthorizationStatus(pay!, a.status, refusal);
+          op.state = refusal && !['voided', 'expired'].includes(pay!.authorization_state) ? 'failed' : 'succeeded'; op.updated_at = stamp();
+          if (op.state === 'failed') log(`void refused for ${pay!.id}`, `${refusal}; PayPal says the authorization is ${a.status}`);
+          tick();
+        });
       } else if (op.kind === 'refund') {
         const r = await o.provider.refundCapture(pay!.provider_capture_id!, refunds.get(op.refund_id!)!.amount.amount_minor, op.request_id);
         await exclusive(async () => {
           const refund = refunds.get(op.refund_id!)!; refund.provider_refund_id = r.id;
-          if (r.status === 'COMPLETED') { applyRefunded(pay!, refund.amount.amount_minor); refund.state = 'completed'; op.state = 'succeeded'; }
+          if (r.status === 'COMPLETED') { applyRefunded(pay!, refund.amount.amount_minor, r.id); refund.state = 'completed'; op.state = 'succeeded'; }
           else { refund.state = 'pending'; op.state = 'waiting'; op.next_at = time() + 10_000; }
         });
       } else if (op.kind === 'payout') {
@@ -948,19 +1087,18 @@ export async function createApi(o: ApiOptions) {
         if (alloc.payout_state === 'blocked') { await exclusive(async () => { op.state = 'failed'; op.last_error = 'Payout blocked by a refund/dispute hold.'; }); return; }
         if (!alloc.provider_payout_id) {
           const recipient = [...operators.values()].find(x => x.recipient_id === alloc.recipient_id);
-          if (!recipient?.paypal_payer_id) { await exclusive(async () => { alloc.payout_state = 'failed'; op.state = 'failed'; op.last_error = 'Operator has no verified PayPal account.'; }); return; }
+          if (!recipient?.paypal_payer_id) { await exclusive(async () => { alloc.payout_state = 'failed'; alloc.payout_detail = op.last_error = 'Operator has no verified PayPal account.'; op.state = 'failed'; }); return; }
           const c = competitions.get(alloc.competition_id)!;
           const r = await o.provider.sendPayout({ batchId: op.request_id.replace(/-/g, '').slice(0, 30), payerId: recipient.paypal_payer_id, amountMinor: alloc.amount.amount_minor,
             subject: 'You won a brief on provable.bid', note: `Your agent's site was selected for "${c.title}". Competition ${c.id}.` });
-          await exclusive(async () => { alloc.provider_payout_id = r.batchId; alloc.payout_state = 'pending'; op.state = 'waiting'; op.next_at = time() + 4000; });
+          await exclusive(async () => {
+            alloc.provider_payout_id = r.batchId; alloc.payout_state = 'pending'; op.state = 'waiting'; op.next_at = time() + 4000;
+            // A retry after a lost response: PayPal already had this sender_batch_id, so we track that batch instead of failing.
+            if (r.existing) log(`payout ${op.id}: PayPal already had batch ${r.batchId} for this sender_batch_id; tracking it`);
+          });
         } else {
           const r = await o.provider.getPayout(alloc.provider_payout_id);
-          const status = r.itemStatus ?? r.batchStatus;
-          await exclusive(async () => {
-            if (status === 'SUCCESS') { alloc.payout_state = 'paid'; op.state = 'succeeded'; }
-            else if (['PENDING', 'PROCESSING', 'UNCLAIMED', 'ONHOLD'].includes(status)) { op.state = 'waiting'; op.next_at = time() + (status === 'UNCLAIMED' ? 60_000 : 5000); }
-            else { alloc.payout_state = 'failed'; op.state = 'failed'; op.last_error = r.error ?? status; }
-          });
+          await exclusive(async () => applyPayout(alloc, op, r));
         }
       }
     } catch (e) {
@@ -972,7 +1110,12 @@ export async function createApi(o: ApiOptions) {
           op.state = 'failed';
           if (pay && (op.kind === 'capture_authorization' || op.kind === 'capture_order')) failCapture(pay, e instanceof ProviderError ? e.issue ?? 'DECLINED' : 'INTERNAL');
           if (pay && op.kind === 'void') { pay.operation_state = 'failed'; pay.last_error_code = e instanceof ProviderError ? e.issue : 'INTERNAL'; }
-          if (op.kind === 'payout') { const a = allocations.get(op.allocation_id!); if (a) a.payout_state = 'failed'; }
+          if (op.kind === 'payout') {
+            const a = allocations.get(op.allocation_id!);
+            // PayPal has a batch with our sender_batch_id but didn't say which: money may have moved, so don't call it failed.
+            if (a && e instanceof ProviderError && e.issue === 'DUPLICATE_SENDER_BATCH_ID') { a.payout_state = 'pending'; a.payout_detail = `Needs a manual check in PayPal: ${e.message}`.slice(0, 300); }
+            else if (a) { a.payout_state = 'failed'; a.payout_detail = (e as Error).message.slice(0, 300); }
+          }
           if (op.kind === 'refund') { const r = refunds.get(op.refund_id!); if (r) r.state = 'failed'; if (pay) pay.refund_state = 'failed'; }
         }
         log(`operation ${op.kind} ${op.id} ${op.state}`, op.last_error);
@@ -994,36 +1137,116 @@ export async function createApi(o: ApiOptions) {
     } catch (e) { await exclusive(async () => { op.next_at = backoff(op.attempts++); op.last_error = (e as Error).message; }); }
   }
 
-  /** Verified webhook: re-read the canonical PayPal resource and apply it. Never trust the event payload for money state. */
-  async function reconcileFromEvent(event: any) {
-    const type = String(event.event_type); const resource = event.resource ?? {};
-    if (type.startsWith('PAYMENT.CAPTURE.')) {
-      const pay = [...payments.values()].find(x => x.provider_capture_id === resource.id) ?? [...payments.values()].find(x => x.provider_order_id === resource.supplementary_data?.related_ids?.order_id);
-      if (!pay) return;
-      const cap = await o.provider.getCapture(resource.id);
+  /**
+   * Verified webhook: re-read the canonical PayPal resource and apply it. Never trust the event payload for money state:
+   * the event only says which resource to read. Throws if PayPal can't be read, so the event stays queued and is retried.
+   * Returns work to run after the state change is flushed (agent notifications).
+   */
+  async function reconcileFromEvent(ref: EventRef): Promise<(() => void) | void> {
+    const { type } = ref;
+    const paymentByCapture = (captureId: string | null) => captureId ? [...payments.values()].find(x => x.provider_capture_id === captureId) : undefined;
+    const paymentByOrder = (orderId: string | null) => orderId ? [...payments.values()].find(x => x.provider_order_id === orderId) : undefined;
+    const notFound = (e: unknown) => { if (e instanceof ProviderError && e.status === 404) return null; throw e; };
+
+    if (type === 'PAYMENT.CAPTURE.REFUNDED' || type === 'PAYMENT.CAPTURE.REVERSED') {
+      // The resource is a refund: no supplementary_data, and its capture only in links[rel=up]. Re-read both.
+      const refund = ref.resource_id ? await o.provider.getRefund(ref.resource_id).catch(notFound) : null;
+      const captureId = ref.up_capture_id ?? refund?.captureId ?? null;
+      const pay = paymentByCapture(captureId);
+      if (!pay || !captureId) return;
+      const cap = await o.provider.getCapture(captureId);
+      await exclusive(async () => {
+        const settled = refund?.status === 'COMPLETED';
+        if (type === 'PAYMENT.CAPTURE.REVERSED' || cap.status === 'REVERSED') {
+          if (cap.status === 'REVERSED' || settled) applyReversed(pay, settled ? refund!.amountMinor : pay.captured_minor);
+          else if (pay.reversal_state === 'none') { pay.reversal_state = 'pending'; pay.updated_at = stamp(); holdAllocations(pay, false); }
+        } else if (settled) applyRefunded(pay, refund!.amountMinor, refund!.id, refund!.totalRefundedMinor);
+        else if (cap.status === 'REFUNDED') applyRefunded(pay, 0, null, pay.captured_minor);
+        else if (cap.status === 'PARTIALLY_REFUNDED' && pay.refund_state === 'none') applyRefunded(pay, 0);
+      });
+    } else if (type.startsWith('PAYMENT.CAPTURE.')) {
+      const pay = paymentByCapture(ref.resource_id) ?? paymentByOrder(ref.order_id);
+      if (!pay || !ref.resource_id) return;
+      const cap = await o.provider.getCapture(ref.resource_id);
       await exclusive(async () => {
         if (cap.status === 'COMPLETED') completeCapture(pay, cap);
-        else if (['DECLINED', 'FAILED'].includes(cap.status)) failCapture(pay, `CAPTURE_${cap.status}`);
-        else if (['REFUNDED', 'PARTIALLY_REFUNDED'].includes(cap.status) && pay.refund_state !== 'refunded') applyRefunded(pay, cap.status === 'REFUNDED' ? pay.captured_minor : 0);
-        else if (cap.status === 'REVERSED') { pay.reversal_state = 'reversed'; pay.reversed_minor = pay.captured_minor; holdAllocations(pay, true); }
+        else if (['DECLINED', 'FAILED'].includes(cap.status)) { if (pay.capture_state !== 'failed') failCapture(pay, `CAPTURE_${cap.status}`); }
+        else if (cap.status === 'PENDING' && !pay.provider_capture_id) pay.provider_capture_id = cap.id;
+        else if (cap.status === 'REFUNDED') applyRefunded(pay, 0, null, pay.captured_minor);
+        else if (cap.status === 'PARTIALLY_REFUNDED' && pay.refund_state === 'none') applyRefunded(pay, 0);
+        else if (cap.status === 'REVERSED') applyReversed(pay, pay.captured_minor);
       });
     } else if (type.startsWith('PAYMENT.AUTHORIZATION.')) {
-      const pay = [...payments.values()].find(x => x.provider_authorization_id === resource.id);
-      if (!pay) return;
-      const a = await o.provider.getAuthorization(resource.id);
-      await exclusive(async () => { if (a.status === 'VOIDED') pay.authorization_state = 'voided'; else if (a.status === 'EXPIRED') pay.authorization_state = 'expired'; tick(); });
+      if (!ref.resource_id) return;
+      // CREATED can arrive while our own authorize call timed out: find the payment by order ID and finish opening it.
+      const pay = [...payments.values()].find(x => x.provider_authorization_id === ref.resource_id) ?? paymentByOrder(ref.order_id);
+      if (!pay || (pay.provider_authorization_id && pay.provider_authorization_id !== ref.resource_id)) return;
+      const a = await o.provider.getAuthorization(ref.resource_id);
+      return exclusive(async () => {
+        const c = competitions.get(pay.competition_id);
+        if (c && !c.opens_at && c.state === 'awaiting_authorization' && pay.purpose === 'initial' && ['none', 'pending', 'failed'].includes(pay.authorization_state)) {
+          try {
+            const opened = openWithAuthorization(c, pay, a);
+            log(`competition ${c.id} opened from PAYMENT.AUTHORIZATION webhook`, a.id);
+            return () => announce(opened);
+          } catch (e) {
+            if (!(e instanceof Fault)) throw e;
+            log(`authorization ${a.id} from webhook not usable`, e.message); // the buyer's own authorize call reports why
+            return;
+          }
+        }
+        applyAuthorizationStatus(pay, a.status); tick();
+      });
     } else if (type.startsWith('CUSTOMER.DISPUTE.')) {
-      // Disputes API needs an extra scope; the verified event is the source here.
-      const captureId = resource.disputed_transactions?.[0]?.seller_transaction_id;
-      const pay = [...payments.values()].find(x => x.provider_capture_id === captureId);
+      // Re-read from the Disputes API (the app's own token can; no extra scope). Every dispute on the capture counts.
+      const definitive = (e: unknown) => e instanceof ProviderError && e.kind === 'definitive';
+      let dispute: Awaited<ReturnType<PaymentProvider['getDispute']>> | null = null;
+      try { dispute = ref.dispute_id ? await o.provider.getDispute(ref.dispute_id) : null; }
+      catch (e) {
+        if (!definitive(e)) throw e;
+        // PayPal won't show us this dispute: the signed event still proves one exists, so hold (never release on the body alone).
+        const held = ref.disputed_capture_ids.map(paymentByCapture).find(Boolean);
+        if (held && (held.dispute_state === 'none' || held.dispute_state === 'won')) await exclusive(async () => applyDispute(held, 'open'));
+        log(`dispute ${ref.dispute_id} not readable; ${held ? 'payment held' : 'no matching payment'}`, (e as Error).message);
+        return;
+      }
+      const captureIds = dispute?.captureIds.length ? dispute.captureIds : ref.disputed_capture_ids;
+      const pay = captureIds.map(paymentByCapture).find(Boolean);
       if (!pay) return;
-      const outcome = String(resource.dispute_outcome?.outcome_code ?? '');
-      await exclusive(async () => applyDispute(pay, type.endsWith('RESOLVED') ? (outcome.includes('SELLER') ? 'won' : 'lost') : 'open'));
+      // The list adds the other disputes on the capture; if PayPal refuses the filter, decide from this dispute alone.
+      const listed = await o.provider.listDisputes(pay.provider_capture_id!).catch(e => { if (definitive(e) && dispute) return []; throw e; });
+      const all = new Map(listed.map(d => [d.id, d]));
+      if (dispute) all.set(dispute.id, dispute);
+      if (!all.size) return;
+      const cap = [...all.values()].some(d => d.outcome === 'RESOLVED_WITH_PAYOUT') ? await o.provider.getCapture(pay.provider_capture_id!) : null;
+      const verdict = disputeVerdict([...all.values()], cap?.status ?? null);
+      await exclusive(async () => applyDispute(pay, verdict));
     } else if (type.startsWith('PAYMENT.PAYOUTS-ITEM.') || type.startsWith('PAYMENT.PAYOUTSBATCH.')) {
-      const batch = resource.payout_batch_id ?? resource.batch_header?.payout_batch_id;
-      const alloc = [...allocations.values()].find(x => x.provider_payout_id === batch);
-      const op = alloc && [...ops.values()].find(x => x.kind === 'payout' && x.allocation_id === alloc.id && x.state === 'waiting');
-      if (op) { op.next_at = 0; kick(); }
+      const alloc = ref.payout_batch_id ? [...allocations.values()].find(x => x.provider_payout_id === ref.payout_batch_id) : undefined;
+      if (!alloc) return;
+      // Re-read even after the op finished: RETURNED, REFUNDED and REVERSED arrive after SUCCESS/UNCLAIMED.
+      const r = await o.provider.getPayout(alloc.provider_payout_id!);
+      await exclusive(async () => applyPayout(alloc, [...ops.values()].filter(x => x.kind === 'payout' && x.allocation_id === alloc.id).at(-1), r));
+    }
+  }
+
+  /** Queued webhook events, oldest first. Marked handled only once reconcile succeeded; failures back off and retry. */
+  async function processWebhookEvents() {
+    const due = [...webhookEvents.entries()].filter(([, e]) => e.state === 'queued' && e.ref && (e.next_at ?? 0) <= time())
+      .sort((a, b) => a[1].received_at.localeCompare(b[1].received_at));
+    for (const [eventId, e] of due) {
+      try {
+        const after = await reconcileFromEvent(e.ref!);
+        await exclusive(async () => { e.state = 'handled'; e.handled_at = stamp(); e.last_error = null; });
+        if (after) after();
+      } catch (err) {
+        await exclusive(async () => {
+          e.attempts = (e.attempts ?? 0) + 1; e.last_error = (err as Error).message;
+          // After ~20 minutes of failures stop; PayPal's own redelivery (up to 3 days) re-queues it.
+          if (e.attempts >= 25) { e.state = 'failed'; log(`webhook ${eventId} gave up`, e.last_error); }
+          else { e.next_at = backoff(e.attempts); log(`webhook ${eventId} reconcile failed, will retry`, e.last_error); }
+        });
+      }
     }
   }
 
@@ -1037,7 +1260,8 @@ export async function createApi(o: ApiOptions) {
         rerun = false;
         await exclusive(async () => { tick(); });
         void evaluatePending();
-        const due = [...ops.values()].filter(x => ['queued', 'unknown', 'waiting'].includes(x.state) && x.next_at <= time() && x.kind !== 'create_order' && x.kind !== 'authorize')
+        await processWebhookEvents();
+        const due =[...ops.values()].filter(x => ['queued', 'unknown', 'waiting'].includes(x.state) && x.next_at <= time() && x.kind !== 'create_order' && x.kind !== 'authorize')
           .sort((a, b) => a.created_at.localeCompare(b.created_at));
         for (const op of due) await (op.state === 'waiting' ? pollWaitingCapture(op) : runOperation(op));
       } while (rerun);

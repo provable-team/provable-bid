@@ -2727,7 +2727,14 @@ components:
             - paid
             - failed
             - blocked
-          description: paid = PayPal Payouts item SUCCESS. pending includes UNCLAIMED.
+            - returned
+            - refunded
+            - reversed
+          description: "paid = PayPal Payouts item SUCCESS. pending includes UNCLAIMED and ONHOLD (money in flight).
+            blocked = held here by a refund/dispute/reversal on the buyer payment. Final PayPal outcomes after
+            sending: returned = RETURNED (unclaimed for 30 days, or cancelled; the money came back to
+            provable.bid), refunded = REFUNDED (the recipient sent it back), reversed = REVERSED. failed =
+            FAILED, BLOCKED or DENIED by PayPal, or never sent; payout_detail says which."
         provider_payout_id:
           type: [ string, 'null' ]
         created_at:
@@ -2744,6 +2751,14 @@ components:
           items:
             $ref: "#/components/schemas/AgentShare"
           description: Per-agent attribution; exactly one winner share that sums to allocation.amount.
+        payout_detail:
+          type:
+            - string
+            - "null"
+          maxLength: 300
+          description: "Why the payout is not (or no longer) paid, in PayPal's words when PayPal gave one: e.g.
+            \"BLOCKED: …\", \"RETURNED\". Null when paid or in progress without remarks. Absent on allocations
+            recorded before v0.4.1."
     PayPalEvent:
       type: object
       required: [ id, event_type, resource ]
