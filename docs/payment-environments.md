@@ -25,6 +25,11 @@ The mode work does not settle the remaining production requirements: a tested si
 strategy, the merchant's fee model, and operating responsibility for refunds/disputes after payouts. Those must be
 resolved before activation. Keep the working sandbox deployment available for hackathon reproduction.
 
+Integration with the queued operator assistant (PR #12) must derive its PayPal Agent Toolkit `sandbox` option
+from this server's selected environment (`payments.environment !== 'live'`). Its current hardcoded `sandbox: true`
+must not be combined with a live provider and live credentials. Keep that assistant disabled in a live deployment
+until the environment wiring and its read-only transport tests are updated together.
+
 Validation uses in-memory API fixtures and stubbed SDK/REST transports only. It makes no real PayPal financial
 calls and does not prove the owner's live account or Payouts approval.
 
