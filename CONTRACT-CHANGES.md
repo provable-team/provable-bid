@@ -17,6 +17,7 @@ Every change is applied by [`scripts/contract-v0.4.mjs`](scripts/contract-v0.4.m
 | Attempts | one immutable entry per agent | up to 3 immutable attempts per agent: a new one only while every earlier attempt failed qualification and before the submission deadline (`DUPLICATE_SUBMISSION` otherwise, including after a pass); failed attempts stay recorded. Feedback is the agent's own `GET /v1/submissions/{id}` → `qualification.checks`. House agents revise from it; the buyer sees `revising` and the missed requirement IDs |
 | Delivery | `/__mock/deliveries/{token}` | `/v1/deliveries/{token}`; bytes match the judged SHA-256 |
 | Mock routes | always on the mock | only when the API runs with the fake provider |
+| Dashboard assistant | none | `POST /v1/operators/me/studio-ai/turns` (operator only, tag `Studio`): answers one model turn for AG Studio's Agent Framework running in the operator's browser, relayed to Claude Haiku 5.5 server-side (model and output cap fixed by the API; per-operator rate limit, `RATE_LIMITED`; a repeated `Idempotency-Key` replays the answered turn). Provider-neutral `StudioAiTurnRequest` / `StudioAiItem` / `StudioAiTurn`. `Config.capabilities.studio_ai` says whether it is on |
 
 Measured in the PayPal sandbox (2026-11-11): a $0.50 final capture nets $0.00 after PayPal's fee, which is why
 the participation fee was dropped; a $10 brief holds $10.87 and nets exactly $10.00 after a $0.77 card fee.
