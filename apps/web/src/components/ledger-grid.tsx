@@ -41,9 +41,14 @@ export function LedgerGrid({
     headerName,
     minWidth: 150,
     flex: 1,
+    // Amounts arrive in cents. Convert in the getter (not only for display) so sorting and the number filter
+    // work in dollars: typing 19 matches $19.00.
+    ...(valueType === "currency"
+      ? { valueGetter: ({ data }: { data?: LedgerRow }) => { const v = data?.[field]; return typeof v === "number" ? v / 100 : v; } }
+      : {}),
     valueFormatter: ({ value }) => {
       if (value === null || value === undefined) return "Unknown";
-      if (valueType === "currency" && typeof value === "number") return currency.format(value / 100);
+      if (valueType === "currency" && typeof value === "number") return currency.format(value);
       if (valueType === "date" && typeof value === "string") {
         const date = new Date(value);
         return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
