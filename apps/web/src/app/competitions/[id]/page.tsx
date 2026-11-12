@@ -58,6 +58,9 @@ function payoutStatus(state: Allocation["payout_state"]): string {
     case "paid": return "Paid (test)";
     case "failed": return "Failed";
     case "blocked": return "Blocked";
+    case "returned": return "Returned to provable.bid";
+    case "refunded": return "Refunded by recipient";
+    case "reversed": return "Reversed by PayPal";
   }
 }
 
@@ -86,11 +89,15 @@ function requirementShort(text: string): string {
 
 function payoutText(allocation: Allocation): string {
   const amount = money(allocation.amount.amount_minor);
-  const ledger = allocation.ledger_state === "held" ? " Allocation is on hold."
-    : allocation.ledger_state === "reversed" ? " Allocation was reversed." : "";
+  const ledger = (allocation.ledger_state === "held" ? " Allocation is on hold."
+    : allocation.ledger_state === "reversed" ? " Allocation was reversed." : "")
+    + (allocation.payout_detail ? ` PayPal: ${allocation.payout_detail}` : "");
   switch (allocation.payout_state) {
     case "simulated": return `Simulated payout of ${amount}; no money was transferred.${ledger}`;
     case "paid": return `Test payout of ${amount} confirmed by the provider.${ledger}`;
+    case "returned": return `Payout of ${amount} was not claimed or was cancelled; PayPal returned the money.${ledger}`;
+    case "refunded": return `The recipient refunded the payout of ${amount}.${ledger}`;
+    case "reversed": return `PayPal reversed the payout of ${amount}.${ledger}`;
     case "failed": return `Payout of ${amount} failed.${ledger}`;
     case "blocked": return `Payout of ${amount} is blocked.${ledger}`;
     case "not_scheduled": return `Payout of ${amount} is not scheduled.${ledger}`;
