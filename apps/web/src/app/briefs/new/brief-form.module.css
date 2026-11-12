@@ -117,7 +117,15 @@
 .section :global(.field) input:focus,
 .section :global(.field) textarea:focus,
 .section :global(.field) select:focus {
-  outline: 2px solid #a0aa6b;
+  outline: 2px solid #657b19;
+  outline-offset: 2px;
+}
+/* The price input has no border of its own: ring the whole $ … USD box instead. */
+.section :global(.field) .budgetInput input:focus {
+  outline: none;
+}
+.budgetInput:focus-within {
+  outline: 2px solid #657b19;
   outline-offset: 2px;
 }
 .section :global(.field) small,
@@ -164,6 +172,12 @@
   text-decoration: underline;
   text-underline-offset: 5px;
   cursor: pointer;
+  position: relative;
+}
+.textButton::after {
+  content: "";
+  position: absolute;
+  inset: -6px -4px;
 }
 .hint {
   margin: 14px 0 0;
@@ -300,7 +314,7 @@
 }
 .version {
   font-size: 10px;
-  color: #68725b;
+  color: #5e6747;
   margin: 16px 0 0;
   letter-spacing: 0.2px;
 }
@@ -332,7 +346,7 @@
   font-size: 10px;
   text-align: center;
   line-height: 1.6;
-  color: #6b735f;
+  color: #5e6747;
   margin: 13px 0 0;
 }
 @media (max-width: 1050px) {
@@ -416,5 +430,13 @@
   }
   .summaryCard {
     padding: 23px;
+  }
+}
+@media (max-width: 600px) {
+  /* iOS Safari zooms the page when a focused field is under 16px. */
+  .section :global(.field) input,
+  .section :global(.field) textarea,
+  .section :global(.field) select {
+    font-size: 16px;
   }
 }

@@ -3,7 +3,7 @@
 :root {
   --paper: #f6f5ef;
   --ink: #20221d;
-  --muted: #707168;
+  --muted: #66675e;
   --line: #dddfd4;
   --accent: #d6ef73;
   --white: #fffef9;
@@ -138,6 +138,11 @@ svg {
 }
 .button:hover:not(:disabled) {
   transform: translateY(-1px);
+}
+/* Pressed: the hover lift settles back down so a click feels registered. */
+.button:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 0.06s;
 }
 .button.primary {
   background: var(--accent);
@@ -277,6 +282,19 @@ svg {
 .back-link:hover {
   color: var(--ink);
 }
+/* Small text controls keep their look but get a hit area of at least 24px (WCAG 2.5.8). */
+.back-link,
+.text-button,
+.mode-banner button {
+  position: relative;
+}
+.back-link::after,
+.text-button::after,
+.mode-banner button::after {
+  content: "";
+  position: absolute;
+  inset: -8px -4px;
+}
 .skip-link {
   position: fixed;
   z-index: 100;
@@ -409,6 +427,7 @@ svg {
   color: var(--ink);
   max-height: calc(100dvh - 32px);
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .connection-dialog::backdrop,
 .decision-dialog::backdrop {
@@ -434,6 +453,28 @@ svg {
 }
 .decision-dialog .button {
   flex: 1;
+}
+/* Dialogs settle in instead of popping; closing stays instant. Only when motion is welcome. */
+@media (prefers-reduced-motion: no-preference) {
+  .connection-dialog[open],
+  .decision-dialog[open] {
+    animation: dialog-in 0.2s ease-out;
+  }
+  .connection-dialog[open]::backdrop,
+  .decision-dialog[open]::backdrop {
+    animation: backdrop-in 0.2s ease-out;
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
 }
 .loading-page,
 .detail-loading {
@@ -769,6 +810,7 @@ svg {
 }
 .qualified-line > span:last-child {
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .choose-button {
   margin-top: 16px;
@@ -782,6 +824,12 @@ svg {
 }
 .choose-button:not(:disabled):hover {
   background: #3b4131;
+}
+.choose-button svg {
+  transition: transform 0.18s ease-out;
+}
+.choose-button:not(:disabled):hover svg {
+  transform: translateX(3px);
 }
 .choose-button:disabled {
   background: #e8eadf;
@@ -802,6 +850,14 @@ svg {
 }
 .scene-detail summary::-webkit-details-marker {
   display: none;
+}
+/* The + turns into a × while the checks are open. */
+.detail-toggle {
+  display: inline-block;
+  transition: transform 0.2s ease-out;
+}
+.scene-detail[open] .detail-toggle {
+  transform: rotate(45deg);
 }
 .scene-detail .text-preview {
   font-size: 10px;
@@ -1054,7 +1110,7 @@ svg {
 }
 .terms-label {
   font-size: 8px;
-  color: #8a907d;
+  color: var(--muted);
   display: block;
   margin-top: 17px;
 }
@@ -1065,7 +1121,7 @@ svg {
 }
 .mock-note strong {
   font-size: 10px;
-  color: #72785e;
+  color: #666c55;
   font-weight: 500;
 }
 .mock-note p {
@@ -1128,7 +1184,7 @@ svg {
 }
 .agent-run small {
   font-size: 8px;
-  color: #8b907f;
+  color: var(--muted);
 }
 .run-status {
   font-size: 8px;
@@ -1633,6 +1689,12 @@ svg {
   .connection-dialog .field-help {
     font-size: 10px;
   }
+  /* iOS Safari zooms the page when a focused field is under 16px. */
+  .field input,
+  .field textarea,
+  .field select {
+    font-size: 16px;
+  }
 }
 
 /* ---- v0.4: website previews, judge checklist, payouts, operators ---- */
@@ -1678,6 +1740,18 @@ svg {
   color: var(--muted);
   cursor: pointer;
 }
+.viewport-toggle button {
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+/* The pill clips overflow, so the usual 4px-offset ring was cut off: draw it inside the button. */
+.viewport-toggle button:focus-visible {
+  outline-offset: -3px;
+}
+.viewport-toggle button[aria-pressed="false"]:hover {
+  color: var(--ink);
+}
 .viewport-toggle button[aria-pressed="true"] {
   background: var(--ink);
   color: var(--paper);
@@ -1708,6 +1782,12 @@ svg {
   color: var(--muted);
   margin: 10px 0 0;
 }
+.operators-page {
+  padding-top: clamp(24px, 4vw, 38px);
+}
+.operators-page h1 {
+  margin-top: 14px;
+}
 .operators-page h1 em {
   font-style: italic;
 }
@@ -1720,6 +1800,18 @@ svg {
 }
 .operator-card h2 {
   margin-top: 0;
+}
+.operator-card > h2 {
+  margin-bottom: 20px;
+}
+/* One action per agent row, aligned to the row's end like the run status on the competition page. */
+.operator-card .agent-run > .button {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.operator-card .ledger-grid + .field-help,
+.operator-studio {
+  margin-top: 24px;
 }
 .operator-steps {
   margin: 0 0 20px;
@@ -1780,4 +1872,20 @@ svg {
   max-width: min(100%, 300px);
   border-left: 1px solid var(--line);
   border-right: 1px solid var(--line);
+}
+
+/* ---- ledger grids (settlement, operator allocations) ---- */
+.ledger-number {
+  font-variant-numeric: tabular-nums;
+}
+/* Ledger states arrive lowercase (held, allocated); show them sentence-case like the payout column. */
+.ledger-status::first-letter {
+  text-transform: uppercase;
+}
+.ledger-status-danger {
+  color: #8a3b25;
+}
+/* autoHeight reserves ~150px of body for an empty-grid overlay; these grids are never rendered empty. */
+.ledger-grid .ag-layout-auto-height .ag-grid-scrolling-rows {
+  min-height: 0;
 }

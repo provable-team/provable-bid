@@ -65,6 +65,7 @@ export default function MarketplacePage() {
         </div>
         <div
           className={styles.heroVisual}
+          role="group"
           aria-label={
             previewArtifact
               ? "A qualified competition preview"

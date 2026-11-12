@@ -487,14 +487,14 @@ export default function CompetitionPage({
               className={`status-dot ${comp.state === "open" ? "" : "offline"}`}
             />
             {comp.state.replaceAll("_", " ")}
-            <span className="eyebrow-separator">/</span>Single-page website
+            <span className="eyebrow-separator" aria-hidden="true">/</span>Single-page website
           </div>
           <h1>{comp.title}</h1>
           <p className="competition-deck">
             One brief. Finished websites. Pay only for the one you pick.
           </p>
         </div>
-        <div className="agent-stack" aria-label="Registered agents">
+        <div className="agent-stack" role="group" aria-label="Registered agents">
           {agents.filter((a) => a.status === "available").slice(0, 3).map((agent) => (
             <AgentAvatar key={agent.id} agent={agent} size={44} />
           ))}
@@ -558,7 +558,7 @@ export default function CompetitionPage({
           </section>
           {owner && (
             <>
-              <div className="competition-tabs" aria-label="Competition views">
+              <div className="competition-tabs" role="group" aria-label="Competition views">
                 {(["work", "brief", "agents", "settlement"] as const).map((key) => (
                   <button
                     key={key}
@@ -670,8 +670,8 @@ export default function CompetitionPage({
                                       : `Outside agent · ${agent?.operator_name ?? "independent operator"}`}
                                   </span>
                                 </div>
-                                <span className="entry-number">
-                                  0{index + 1}
+                                <span className="entry-number" aria-hidden="true">
+                                  {String(index + 1).padStart(2, "0")}
                                 </span>
                               </div>
                               <h3>{submission.title}</h3>
@@ -687,7 +687,7 @@ export default function CompetitionPage({
                                 <details className="scene-detail">
                                   <summary>
                                     How it was checked{" "}
-                                    <span aria-hidden="true">+</span>
+                                    <span className="detail-toggle" aria-hidden="true">+</span>
                                   </summary>
                                   <ul className="check-list">
                                     {submission.qualification.checks.map((check) => (
@@ -875,8 +875,8 @@ export default function CompetitionPage({
                       { field: "commission", headerName: "Commission", valueType: "currency" },
                       { field: "fee", headerName: "Provider fee", valueType: "currency" },
                       { field: "payout", headerName: "Agent allocation", valueType: "currency" },
-                      { field: "payoutStatus", headerName: "Payout status" },
-                      { field: "ledgerStatus", headerName: "Ledger status" },
+                      { field: "payoutStatus", headerName: "Payout status", valueType: "status" },
+                      { field: "ledgerStatus", headerName: "Ledger status", valueType: "status" },
                     ]}
                     rows={[...new Set([
                       ...settlement.accounting.map((item) => item.payment_id),
@@ -1033,6 +1033,8 @@ export default function CompetitionPage({
       <dialog
         ref={dialog}
         className="decision-dialog"
+        aria-labelledby="decision-title"
+        aria-describedby="decision-summary"
         onClose={() => setDecision(null)}
       >
         <div className="section-heading">
@@ -1051,14 +1053,14 @@ export default function CompetitionPage({
             <Icon name="close" />
           </button>
         </div>
-        <h2>
+        <h2 id="decision-title">
           {decision?.kind === "reject"
             ? "None of these work for you?"
             : decision?.kind === "additional"
               ? "Make this one yours, too."
               : "Found your favorite?"}
         </h2>
-        <p>
+        <p id="decision-summary">
           {decision?.kind === "reject"
             ? "This closes your brief and releases your PayPal hold. You pay nothing, and no originals are delivered."
             : decision?.kind === "additional"

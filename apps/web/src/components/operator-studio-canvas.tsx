@@ -78,11 +78,12 @@ export default function OperatorStudioCanvas({ rows, licenseKey }: { rows: Opera
   }), [allocations]);
 
   return (
-    <section aria-label="Sandbox allocation dashboard">
+    <section className="operator-studio" aria-label="Sandbox allocation dashboard">
       <h2>Sandbox allocation dashboard</h2>
       <p>Summarizes loaded records only. Allocation amounts are not amounts received; payout status is shown separately.</p>
       {missingAmounts > 0 && <p role="status">{missingAmounts} loaded allocation{missingAmounts === 1 ? " has" : "s have"} no valid amount and {missingAmounts === 1 ? "is" : "are"} excluded from amount totals.</p>}
-      <div style={{ width: "100%", height: 620 }}>
+      {/* AG Studio lays out at least 600px wide; scroll inside the card instead of widening the page on phones. */}
+      <div style={{ width: "100%", height: 620, overflowX: "auto" }}>
         <AgStudioProvider licenseKey={licenseKey}>
           <AgStudio data={data} initialState={initialState} mode="view" />
         </AgStudioProvider>
