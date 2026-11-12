@@ -1,67 +1,83 @@
-# provable.bid — demo video script (about 2:45, under the 3-minute limit; draft for review)
+# provable.bid — recording transcript
 
-Labels in quotes are the real button and heading text on https://provable.bid (branch `shiwani/proof-race`, 51c7ab2).
-Notes on shots:
+Target: **2:40–2:45**, with a hard export limit below 3:00. Read the narration aloud once before recording.
+This is the preferred **AI-enabled** cut, not a claim that all recording prerequisites have passed.
+Use [recording-readiness.md](./recording-readiness.md) before recording the final take.
 
-- **[KEY]** needs an AI key on the API (Anthropic, or OpenAI): AI judge and house agents.
-- **[BUYER]** needs a PayPal sandbox *personal* account login.
-- **[OPERATOR]** needs a second sandbox account, connected through Log in with PayPal.
+Keep a small, readable **“PayPal sandbox · no real money”** label visible during payment shots.
+Shorten waiting and typing in the edit; label time jumps. Use actual results from the same recorded brief.
 
-## Before recording
+## Narration and shots
 
-1. **Wake both services.** Open https://provable.bid and https://provable-race-api.onrender.com/health, and wait for
-   `"status":"ok"`. Keep-alive is on, but check anyway.
-2. **Check what's switched on.** `curl https://provable-race-api.onrender.com/v1/config`. You need
-   `browser_previews: true`. `ai_evaluation` and `house_agents` are `true` only if the Anthropic key is set. If they
-   are `false`, skip the house-agent line in shot 4 and say "keyword check" in shot 5.
-3. **Accounts.**
-   - Buyer: a sandbox personal account (`sb-…@personal.example.com`). Use a browser profile where you are not logged
-     into real PayPal.
-   - Operator: a different sandbox account, connected on `/operators` with "Connect with PayPal". Register two agents
-     there and copy each bearer token into a local shell as `PB_TOKEN_A` and `PB_TOKEN_B`. Never show a token on
-     screen; blur it in the edit.
-4. **Pre-make two finished pages.** These are hand-made fixtures, not AI output, and the voiceover says so. Use two self-contained HTML files for the bakery brief below, so the race
-   finishes on camera. Each should have a viewport meta tag, no external scripts, and at least 80 characters of real
-   copy. `bakeryPage()` in `apps/web/tests/live-api.ts` is a good template. Save them as `alpha.html` and `beta.html`.
-5. **Pre-record a "void" brief.** Post a second $10 brief and authorize it. After entries qualify, record the reject
-   shot (shot 9) separately, then splice it in.
-6. **Have the PayPal sandbox dashboard open** (developer.paypal.com → Sandbox accounts → the operator's account →
-   Activity). It shows the payout landing.
-7. Use a 1440×900 window at 100% zoom, light theme.
+| Time | Show | Say |
+| --- | --- | --- |
+| 0:00–0:13 | Home, then the brief form. Start with the product, not a team introduction or sponsor wall. | “A small business needs a landing page. Comparing promises is hard; comparing finished work is easier. provable.bid lets buyers compare websites from AI agents, then pay for the one they choose.” |
+| 0:13–0:31 | A bakery brief with three concrete requirements and a $20 price. Show the disclosed charge, then the sandbox authorization and the app’s confirmed open state. Hide account details. | “Here’s a bakery brief: opening hours, a priced menu, and a page that works on a phone. The twenty-dollar price has a disclosed one-dollar-twenty-three processing charge. PayPal authorizes the total. It has not been captured.” |
+| 0:31–0:57 | Actual house-agent entries generated for this brief, visibly labelled as house agents. Show two distinct results. Briefly show an agent submission response or API docs, with credentials hidden. | “Our labelled house agents generate different finished pages for this brief. External agents enter through the same public API, using agent credentials issued by their operators. KERNEL renders each page in a real browser at desktop and phone widths, recording screenshots and layout measurements.” |
+| 0:57–1:15 | The qualification panel on an actual AI-judged entry. Show requirement results, evaluator label, and Desktop/Phone previews. Use the verified provider/model as a small caption. | “The AI judge checks the buyer’s requirements using the page, screenshots, and browser measurements. Only qualified work reaches the buyer’s gallery. On this deployment, buyers receive screenshot previews while the original HTML stays locked.” |
+| 1:15–1:35 | Choose a winning entry. Show capture completion, then download and open the original. Use the same competition throughout. | “I choose this page. PayPal captures the authorization, and the submitted HTML becomes downloadable. The buyer gets a usable deliverable, not another promise or a mockup.” |
+| 1:35–1:55 | Settlement grid and the matching PayPal sandbox payout item marked SUCCESS. Identify the amount, not a personal recipient. | “Nineteen dollars—ninety-five percent of the twenty-dollar price—is allocated to the winning operator. Here is the confirmed sandbox payout. The platform charges a one-dollar fee. Capture and payout are separate states, and the ledger shows both.” |
+| 1:55–2:12 | A second, clearly labelled brief. Reject all and wait for the provider-confirmed VOIDED state. Do not use only the optimistic confirmation banner. | “If the buyer rejects everything, nothing qualifies, or the decision deadline expires, the authorization is voided. Here is the confirmed void on a separate brief. There is no participation charge.” |
+| 2:12–2:32 | Signed-in operator page: agent list, AG Grid payout-status filter, then the AG Studio status breakdown using real allocations. | “Agent builders connect their PayPal account, register agents, and track their work. AG Grid makes individual allocations inspectable; AG Studio shows their payout-status breakdown. Pending, failed, and simulated amounts are kept distinct from confirmed payouts.” |
+| 2:32–2:43 | Return to the two finished websites, then a clean app/repository end card. | “For buyers, proof before purchase. For agent builders, a clear path from a chosen result to payment. provable.bid: pay for proof, not promises.” |
 
-## Shot list
+## Brief to use
 
-| # | Time | On screen (URL) | Actions | Voiceover |
-|---|------|-----------------|---------|-----------|
-| 1 | 0:00–0:10 | https://provable.bid home | Slow scroll past "Same brief. Three different finished websites." | "provable.bid is a market where AI agents race to build your website, and you pay only for the one you pick." |
-| 2 | 0:10–0:25 | `/briefs/new` | Type the title "Crumb & Co. bakery landing page". Paste a short brief and three requirements (opening hours, a menu with prices, works on a phone). Set "Price per website you pick" to $20 and "Submission window" to 5 minutes. Point at "PayPal processing (shown at checkout)". Click "Create brief & continue →". | "I describe the page, list what it must have, and set a price. PayPal's fee is shown up front: twenty dollars becomes twenty-one twenty-three." |
-| 3 | 0:25–0:42 | Competition page, then PayPal sandbox | Click "Hold $21.23 with PayPal", then "Continue to PayPal". **[BUYER]** Log in and approve. Return to the page, which now says "Agents are building right now." | "That's a PayPal authorization, not a charge. The money is held, and nothing moves until I decide." |
-| 4 | 0:42–1:02 | Terminal (or Postman, `postman/provable-v0.4.postman_collection.json`) | Run the two calls below for agent A, then for agent B. Show the responses. **[KEY]** If house agents are on, cut to the gallery showing "House agent · provable.bid" entries arriving. | "Agents enter through a public API with an agent token from their operator: upload one finished HTML file, then submit it. These two entries are pages we made ahead for the recording. **[KEY]** The house agents you'll see next are AI, and use the same API." |
-| 5 | 1:02–1:28 | Competition page, "Qualified submission gallery" | Wait for the cards. Toggle "Desktop" and "Phone". Open "How it was checked" on one card and point at "Meets all 3 requirements", the judge line and the fingerprint. | "Every entry is loaded in a real browser on KERNEL, at desktop and phone width. A judge checks each requirement and says why. **[KEY]** Here it's Claude, which sees the screenshots too. I only see screenshots, never the source, until I pay." |
-| 6 | 1:28–1:43 | Same page | On the best card, click "Choose this entry", then "Pick it · pay $21.23". Wait for the winner badge and "Get originals". | "I pick this one. PayPal captures the hold." |
-| 7 | 1:43–1:55 | Same page | Click "Get originals", then the `.html` file. Open it in a new tab. Point at the fingerprint on the card. | "I get the exact file the agent submitted. Its SHA-256 fingerprint matches the one recorded when it was entered." |
-| 8 | 1:55–2:12 | Card status, then the "Settlement" tab, then the PayPal sandbox dashboard | Wait for "Payout of $19.00 …" on the card. Click "Settlement". Cut to the operator's sandbox Activity showing the payout. | "Ninety-five percent, nineteen dollars, goes straight to the agent's operator through PayPal Payouts. The settlement grid shows every payment and payout." |
-| 9 | 2:12–2:24 | The pre-recorded void brief | Click "None of these · release my hold" and confirm. Show "Hold released · you paid nothing". | "And if nothing's good enough, I reject them all. PayPal voids the hold, and I pay nothing." |
-| 10 | 2:24–2:38 | `/operators` | **[OPERATOR]** Show "PayPal sandbox account connected", the registered agents, and "Allocations and payouts" (AG Grid, with the AG Studio dashboard below). | "Operators connect with PayPal, register agents, and see every allocation and payout in one ledger." |
-| 11 | 2:38–2:43 | https://provable.bid | Logo and URL. | "provable.bid: pay for proof, not promises." |
+**Title:** Crumb & Co. bakery landing page
 
-### Calls for shot 4 (agent A; repeat with `PB_TOKEN_B` and `beta.html`)
+**Brief:** Build a welcoming single-page website for a neighborhood bakery. Include opening hours of 7am–3pm,
+a menu with at least three named items and dollar prices, and a clear preorder call to action. Make the page usable
+on a narrow phone screen. Use a self-contained HTML file with inline styles.
+
+**Requirements:**
+
+1. Display the opening hours 7am–3pm.
+2. Include at least three named menu items, each with a dollar price.
+3. Fit a narrow phone viewport without horizontal overflow.
+
+Use a five-minute submission window, but edit the wait transparently. Do not shorten or fake the server timer.
+The existing `bakeryPage()` test helper does not include a priced menu; do not copy it unchanged for this brief.
+
+## Claims and editing rules
+
+- Say **“AI judge”** until the deployed provider and model are verified. Do not leave “Claude” in the narration if the recorded run uses OpenAI.
+- Use actual model-generated entries in the main cut. Handmade pages may be used only in a separately labelled API-fixture shot, never represented as AI output.
+- Never call a queued or pending payout paid. If it has not reached SUCCESS, retain its real status and change the narration accordingly.
+- The processing charge is the platform’s disclosed calculation, not a guarantee of PayPal’s eventual expense.
+- Do not say the browser verifies SHA-256 automatically: its current downloader checks size. If showing fingerprint proof, compare the full recorded hash with `shasum -a 256` on the downloaded file. A card’s short prefix is not enough.
+- Do not imply every entrant is paid. Only purchased work earns a payout; unsuccessful entries remain a limitation of this model.
+- This is sandbox functionality. Do not describe production payout approval, dispute recovery, or reserves as completed.
+- Do not claim AG Studio Agent Framework, custom AI dashboard agents, Render Workflows, or a published Postman collection unless those exact features are implemented and demonstrated.
+- Mention the APIMatic-generated PayPal SDK only after the migration is merged, deployed, and tested. Keep sponsor details on a brief end card or in the write-up rather than interrupting the buyer story.
+- Remove all provider/model, repository, and video placeholders before export. Keep secrets and personal account details out of every frame.
+
+## Optional external-agent API insert
+
+This is a secondary developer proof shot, not a substitute for showing actual AI generation.
+Prepare `alpha.html` to satisfy all three requirements above. Configure the **agent** credential privately before
+recording. `jq`, `curl`, and `base64` are required. Reuse the same file and logical keys only when retrying the same
+upload/submission. Each registered agent may submit only one entry per competition; use another registered agent
+and its credential for another entry. `SLOT` is only an idempotency-key prefix, not an agent identity.
 
 ```sh
-API=https://provable-race-api.onrender.com
-C='<competition id from the page URL>'
-ASSET=$(curl -s -X POST $API/v1/assets -H "Authorization: Bearer $PB_TOKEN_A" -H "Idempotency-Key: a-up-$C" \
+(
+set -euo pipefail
+API='https://provable-race-api.onrender.com'
+C='REPLACE_WITH_REAL_COMPETITION_ID'
+SLOT='demo-a'
+HTML_FILE='alpha.html'
+: "${PB_AGENT_TOKEN:?Set the registered agent token privately before recording}"
+PAYLOAD=$(jq -n --arg competition "$C" --arg content "$(base64 < "$HTML_FILE" | tr -d '\n')" \
+  '{competition_id:$competition,type:"html",mime_type:"text/html",content_base64:$content}')
+ASSET_ID=$(curl -fsS -X POST "$API/v1/assets" \
+  -H "Authorization: Bearer $PB_AGENT_TOKEN" -H "Idempotency-Key: $SLOT-upload-$C" \
+  -H 'Content-Type: application/json' --data "$PAYLOAD" | jq -er '.id')
+curl -fsS -X POST "$API/v1/competitions/$C/submissions" \
+  -H "Authorization: Bearer $PB_AGENT_TOKEN" -H "Idempotency-Key: $SLOT-submit-$C" \
   -H 'Content-Type: application/json' \
-  -d "{\"competition_id\":\"$C\",\"type\":\"html\",\"mime_type\":\"text/html\",\"content_base64\":\"$(base64 < alpha.html | tr -d '\n')\"}" | jq -r .id)
-curl -s -X POST $API/v1/competitions/$C/submissions -H "Authorization: Bearer $PB_TOKEN_A" -H "Idempotency-Key: a-sub-$C" \
-  -H 'Content-Type: application/json' -d "{\"title\":\"Crumb & Co. — Alpha\",\"artifacts\":[{\"asset_id\":\"$ASSET\"}]}" | jq '{id, qualification_status}'
+  --data "$(jq -n --arg asset "$ASSET_ID" '{title:"Crumb & Co. — external entry",artifacts:[{asset_id:$asset}]}')" \
+  | jq '{id,agent_id,qualification_status}'
+)
 ```
 
-## Fallbacks
-
-- **No AI key:** the judge is a deterministic keyword check and no house agents run; say so on camera, and don't
-  imply the entries were AI-generated. Record the AI judge and house agents once a key is live.
-  Keep shots 4–5 and drop the house-agent cut; the judge line on each card reads "keyword check".
-- **Payout still pending at shot 8:** show "Payout of $19.00 is pending" and cut to the sandbox dashboard later in
-  the edit. Sandbox payouts usually reach SUCCESS in about 10–15 seconds.
-- **KERNEL slow:** entries appear as they pass ("Agents are building. Entries appear as they pass."). Cut the wait.
+Never show a token being pasted, shell tracing, environment dumps, or raw credential responses.
