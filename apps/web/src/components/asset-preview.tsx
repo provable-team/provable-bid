@@ -30,6 +30,26 @@ export function AssetPreview({
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [width, setWidth] = useState(0);
   const box = useRef<HTMLDivElement>(null);
+  const [frameFocused, setFrameFocused] = useState(false);
+  // Focus inside a sandboxed frame matches no CSS selector in the parent page, so
+  // track it from the window's blur/focus to draw a visible keyboard focus ring.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const active = document.activeElement;
+        setFrameFocused(active?.tagName === "IFRAME" && active.parentElement === box.current);
+      }, 0);
+    };
+    window.addEventListener("blur", update);
+    window.addEventListener("focus", update);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("blur", update);
+      window.removeEventListener("focus", update);
+    };
+  }, []);
 
   useEffect(() => {
     const el = box.current;
@@ -76,7 +96,7 @@ export function AssetPreview({
   const vw = VIEWPORTS[viewport];
   const scale = width ? Math.min(1, width / vw) : 1;
   return (
-    <div ref={box} className={`site-preview ${className}`}>
+    <div ref={box} className={`site-preview ${className}${frameFocused ? " frame-focused" : ""}`}>
       {state?.error ? (
         <div className="preview-placeholder">
           <Icon name="lock" />
@@ -86,7 +106,9 @@ export function AssetPreview({
           </button>
         </div>
       ) : !state?.src || !width ? (
-        <div className="preview-placeholder skeleton" aria-label="Loading protected preview" />
+        <div className="preview-placeholder skeleton" role="status">
+          <span className="visually-hidden">Loading protected preview</span>
+        </div>
       ) : state.image ? (
         <div className={`shot-scroll ${viewport}`}>
           {/* Screenshot from a real browser; scroll to see the whole page. */}

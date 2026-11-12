@@ -18,7 +18,7 @@ export function SiteChrome() {
   }, [settings]);
   return (
     <>
-      <div className="mode-banner">
+      <aside className="mode-banner" aria-label="Payment mode">
         <span className={`status-dot ${config ? "" : "offline"}`} />
         {config?.mode === "mock"
           ? "Demo mode · simulated PayPal payments"
@@ -30,10 +30,10 @@ export function SiteChrome() {
         <button onClick={() => dialog.current?.showModal()}>
           Connection settings <span aria-hidden="true">↗</span>
         </button>
-      </div>
+      </aside>
       <header className="site-header">
-        <Link href="/" className="wordmark" aria-label="provable.bid home">
-          <span className="brand-symbol">
+        <Link href="/" className="wordmark">
+          <span className="brand-symbol" aria-hidden="true">
             p<span>↗</span>
           </span>
           provable<span className="wordmark-dot">.</span>bid

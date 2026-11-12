@@ -3,7 +3,7 @@
 :root {
   --paper: #f6f5ef;
   --ink: #20221d;
-  --muted: #707168;
+  --muted: #66675e;
   --line: #dddfd4;
   --accent: #d6ef73;
   --white: #fffef9;
@@ -277,6 +277,21 @@ svg {
 .back-link:hover {
   color: var(--ink);
 }
+/* Small text controls keep their look but get a hit area of at least 24px (WCAG 2.5.8). */
+.back-link,
+.text-button,
+.mode-banner button,
+.entry-comparison th a {
+  position: relative;
+}
+.back-link::after,
+.text-button::after,
+.mode-banner button::after,
+.entry-comparison th a::after {
+  content: "";
+  position: absolute;
+  inset: -8px -4px;
+}
 .skip-link {
   position: fixed;
   z-index: 100;
@@ -285,9 +300,11 @@ svg {
   padding: 10px;
   background: var(--accent);
   transform: translateY(-150%);
+  opacity: 0;
 }
 .skip-link:focus {
   transform: none;
+  opacity: 1;
 }
 .mode-banner {
   height: 31px;
@@ -811,7 +828,7 @@ svg {
 }
 .entry-number {
   margin-left: auto;
-  color: #a6aa9d;
+  color: var(--muted);
   font-size: 10px;
 }
 .submission-body h3 {
@@ -1206,7 +1223,7 @@ svg {
 }
 .terms-label {
   font-size: 8px;
-  color: #8a907d;
+  color: #696d5f;
   display: block;
   margin-top: 17px;
 }
@@ -1217,7 +1234,7 @@ svg {
 }
 .mock-note strong {
   font-size: 10px;
-  color: #72785e;
+  color: #686d56;
   font-weight: 500;
 }
 .mock-note p {
@@ -1280,7 +1297,7 @@ svg {
 }
 .agent-run small {
   font-size: 8px;
-  color: #8b907f;
+  color: #686c5f;
 }
 .run-status {
   font-size: 8px;
@@ -1814,6 +1831,15 @@ svg {
   transform-origin: top left;
   background: #fff;
 }
+/* The scaled preview frame clips its own outline; draw the focus ring over it instead. */
+.site-preview.frame-focused::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 3px #657b19;
+  pointer-events: none;
+  z-index: 1;
+}
 .site-preview > .preview-placeholder {
   height: 100%;
 }
@@ -1901,8 +1927,26 @@ svg {
   color: var(--muted);
   margin: 10px 0 0;
 }
+.operators-page {
+  padding-top: clamp(28px, 4vw, 52px);
+}
 .operators-page h1 em {
   font-style: italic;
+}
+/* AG Grid's pager wraps on phones instead of running out of the card. */
+.operator-card .ag-paging-panel {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 48px;
+  row-gap: 4px;
+  padding-block: 8px;
+}
+.operator-card .ag-paging-button {
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .operator-card {
   border: 1px solid var(--line);

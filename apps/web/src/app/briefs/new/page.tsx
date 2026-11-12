@@ -95,6 +95,8 @@ export default function PostBriefPage() {
   const [error, setError] = useState<string | null>(null);
   const [storageError, setStorageError] = useState(false);
   const [selectedExample, setSelectedExample] = useState("");
+  // Inline field errors appear after the first submit attempt and clear as fields are fixed.
+  const [showErrors, setShowErrors] = useState(false);
 
   useEffect(() => {
     const example = findDesignExample(new URLSearchParams(window.location.search).get("example"));
@@ -110,6 +112,7 @@ export default function PostBriefPage() {
     setAcceptedVersion(null);
     setBusy(false);
     setError(null);
+    setShowErrors(false);
     setStorageError(false);
     async function restore() {
       try {
@@ -157,14 +160,29 @@ export default function PostBriefPage() {
   const frozen = draft.pending !== null;
   const policy = config?.policy;
   const percent = (basisPoints: number) => `${basisPoints / 100}%`;
+  const termsAccepted = Boolean(config && acceptedVersion === config.terms_version);
+  // Submit stays enabled while the form is usable; missing fields and the terms
+  // box are explained inline on submit instead of a silently disabled button.
   const canCreate = Boolean(
-    draftReady &&
-      config &&
-      api &&
-      !busy &&
-      !storageError &&
-      (frozen || acceptedVersion === config.terms_version),
+    draftReady && config && api && !busy && !storageError,
   );
+  const fieldErrors = {
+    title: !frozen && !draft.title.trim() ? "Give your brief a title." : null,
+    brief: !frozen && !draft.brief.trim() ? "Describe what you would love to see." : null,
+    budget: !frozen && cents === null ? "Enter a price between $10.00 and $5,000.00." : null,
+    terms: !frozen && !termsAccepted ? "Tick the box to accept the terms before continuing." : null,
+  };
+  const emptyRequirements = frozen
+    ? []
+    : draft.requirements.filter((item) => !item.description.trim()).map((item) => item.id);
+  const shown = (message: string | null) => (showErrors ? message : null);
+  const invalidIds = [
+    fieldErrors.title && "brief-title",
+    fieldErrors.brief && "creative-brief",
+    ...emptyRequirements.map((id) => `requirement-${id}`),
+    fieldErrors.budget && "budget",
+    fieldErrors.terms && "accept-terms",
+  ].filter((id): id is string => Boolean(id));
 
   function update<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((previous) => ({ ...previous, [key]: value }));
@@ -208,16 +226,14 @@ export default function PostBriefPage() {
     event.preventDefault();
     if (!api || !config || !canCreate) return;
     setError(null);
-    if (
-      !frozen &&
-      (cents === null ||
-        !draft.title.trim() ||
-        !draft.brief.trim() ||
-        draft.requirements.some((item) => !item.description.trim()))
-    ) {
+    if (invalidIds.length) {
+      setShowErrors(true);
       setError(
-        "Add a title, a brief, checkable requirements, and a price between $10.00 and $5,000.00.",
+        invalidIds.length === 1 && fieldErrors.terms
+          ? "Accept the terms to create your brief."
+          : `${invalidIds.length} ${invalidIds.length === 1 ? "field needs" : "fields need"} attention before your brief can be created.`,
       );
+      document.getElementById(invalidIds[0])?.focus();
       return;
     }
     const body: CreateCompetition = draft.pending ?? {
@@ -326,7 +342,7 @@ export default function PostBriefPage() {
         </div>
       )}
 
-      <form className={styles.layout} onSubmit={submit}>
+      <form className={styles.layout} onSubmit={submit} noValidate>
         <div className={styles.form}>
           <fieldset
             disabled={!draftReady || busy || frozen}
@@ -363,18 +379,22 @@ export default function PostBriefPage() {
                   name="title"
                   autoComplete="off"
                   required
+                  aria-invalid={Boolean(shown(fieldErrors.title))}
+                  aria-describedby={shown(fieldErrors.title) ? "brief-title-error" : undefined}
                   maxLength={120}
                   value={draft.title}
                   onChange={(event) => update("title", event.target.value)}
                   placeholder="e.g. Event poster for a neighborhood jazz night"
                 />
+                {shown(fieldErrors.title) && <small id="brief-title-error" className={styles.fieldError}>{fieldErrors.title}</small>}
               </label>
               <label className="field" htmlFor="creative-brief">
                 <span id="creative-brief-label">What would you love to see?</span>
                 <textarea
                   id="creative-brief"
                   aria-labelledby="creative-brief-label"
-                  aria-describedby="creative-brief-help"
+                  aria-describedby={shown(fieldErrors.brief) ? "creative-brief-error creative-brief-help" : "creative-brief-help"}
+                  aria-invalid={Boolean(shown(fieldErrors.brief))}
                   name="brief"
                   required
                   maxLength={5000}
@@ -383,6 +403,7 @@ export default function PostBriefPage() {
                   onChange={(event) => update("brief", event.target.value)}
                   placeholder="What you need, the exact text and dimensions, the feel, colours, and anything to avoid."
                 />
+                {shown(fieldErrors.brief) && <small id="creative-brief-error" className={styles.fieldError}>{fieldErrors.brief}</small>}
                 <small id="creative-brief-help">
                   Be specific about the outcome. Each agent brings its own
                   style. Include the facts and text the design must use. Links alone do not
@@ -411,6 +432,8 @@ export default function PostBriefPage() {
                       <input
                         id={`requirement-${requirement.id}`}
                         required
+                        aria-invalid={showErrors && emptyRequirements.includes(requirement.id)}
+                        aria-describedby={showErrors && emptyRequirements.includes(requirement.id) ? `requirement-${requirement.id}-error` : undefined}
                         maxLength={500}
                         value={requirement.description}
                         onChange={(event) =>
@@ -425,6 +448,11 @@ export default function PostBriefPage() {
                         }
                         placeholder="e.g. Shows the opening hours"
                       />
+                      {showErrors && emptyRequirements.includes(requirement.id) && (
+                        <small id={`requirement-${requirement.id}-error`} className={styles.fieldError}>
+                          Describe this check, or remove it.
+                        </small>
+                      )}
                     </label>
                     {draft.requirements.length > 1 && (
                       <button
@@ -476,7 +504,8 @@ export default function PostBriefPage() {
                   <input
                     id="budget"
                     aria-labelledby="budget-label budget-currency"
-                    aria-describedby="budget-help"
+                    aria-describedby={shown(fieldErrors.budget) ? "budget-error budget-help" : "budget-help"}
+                    aria-invalid={Boolean(shown(fieldErrors.budget))}
                     name="budget"
                     type="number"
                     inputMode="decimal"
@@ -489,6 +518,7 @@ export default function PostBriefPage() {
                   />
                   <span id="budget-currency">USD</span>
                 </div>
+                {shown(fieldErrors.budget) && <small id="budget-error" className={styles.fieldError}>{fieldErrors.budget}</small>}
                 <small id="budget-help">
                   From $10. Pick more than one if you like; each is the same price.
                 </small>
@@ -617,10 +647,11 @@ export default function PostBriefPage() {
             {!frozen && (
               <label className={styles.consent}>
                 <input
+                  id="accept-terms"
                   type="checkbox"
-                  checked={Boolean(
-                    config && acceptedVersion === config.terms_version,
-                  )}
+                  aria-invalid={Boolean(shown(fieldErrors.terms))}
+                  aria-describedby={shown(fieldErrors.terms) ? "accept-terms-error" : undefined}
+                  checked={termsAccepted}
                   disabled={!draftReady || !config || busy}
                   onChange={(event) =>
                     setAcceptedVersion(
@@ -634,6 +665,9 @@ export default function PostBriefPage() {
                   I accept these terms, including the processing fee on each purchase.
                 </span>
               </label>
+            )}
+            {!frozen && shown(fieldErrors.terms) && (
+              <p id="accept-terms-error" className={styles.fieldError}>{fieldErrors.terms}</p>
             )}
             <button
               type="submit"

@@ -10,7 +10,7 @@ import type {
 } from "@provable/api-client";
 import { useApi } from "@/components/api-provider";
 import { AssetPreview } from "@/components/asset-preview";
-import { AgentAvatar, Countdown } from "@/components/ui";
+import { AgentAvatar, Countdown, Icon } from "@/components/ui";
 import {
   ApiError,
   money,
@@ -223,7 +223,8 @@ export function CompetitionCard({
       <Link
         href={`/competitions/${competition.id}`}
         className={styles.previewLink}
-        aria-label={`View ${competition.title}`}
+        // The title link below goes to the same page; keep one tab stop per card.
+        tabIndex={-1}
       >
         {image ? (
           <AssetPreview
@@ -283,7 +284,12 @@ export function CompetitionCard({
           <span>per selected entry</span>
         </div>
         <div className={styles.cardFooter}>
-          <Countdown
+          {competition.state === "closed" || competition.state === "cancelled" ? (
+            <span className="countdown">
+              <Icon name="clock" size={15} />
+              <span>{competition.state === "closed" ? "Closed" : "Cancelled"}</span>
+            </span>
+          ) : <Countdown
             deadline={
               competition.state === "open"
                 ? competition.submission_deadline
@@ -291,7 +297,7 @@ export function CompetitionCard({
             }
             serverTime={competition.server_time}
             label={competition.state === "open" ? "Submissions" : "Decision"}
-          />
+          />}
           <Link
             href={`/competitions/${competition.id}`}
             className={styles.textLink}

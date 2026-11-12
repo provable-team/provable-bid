@@ -13,7 +13,7 @@ export function JudgeTake({ qualification }: { qualification: Qualification }) {
   const text = narrative?.overall_verdict ?? qualification.reason;
   if (!text) return null;
   return (
-    <section className="judge-take" aria-label={ai ? "AI judge's take, advisory" : "Keyword check summary, advisory"}>
+    <div className="judge-take">
       <p className="judge-take-label">
         <Icon name="spark" size={13} />
         <span>
@@ -22,7 +22,7 @@ export function JudgeTake({ qualification }: { qualification: Qualification }) {
       </p>
       <p className="judge-take-verdict">{text}</p>
       {narrative?.best_for && <p className="judge-take-fit">{narrative.best_for}</p>}
-    </section>
+    </div>
   );
 }
 
