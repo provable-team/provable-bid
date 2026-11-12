@@ -74,35 +74,68 @@ export function ApiProvider({
   const [connectionVersion, setConnectionVersion] = useState(0);
   useEffect(() => {
     let next = defaults();
+    let fromConnection = false;
     try {
       const stored = sessionStorage.getItem("provable.connection");
-      if (stored) next = validateSettings(JSON.parse(stored) as Settings);
+      if (stored) {
+        next = validateSettings(JSON.parse(stored) as Settings);
+        fromConnection = Boolean(next.token);
+      }
       if (!next.token) next.token = localStorage.getItem(buyerKey(next.baseUrl)) ?? "";
     } catch {
       /* A session without storage can browse; commands require storage. */
     }
-    if (next.token) {
+    // First visit: the API issues an anonymous buyer session. PayPal identifies the payer at checkout.
+    const newSession = () =>
+      fetch(`${next.baseUrl}/v1/buyer-sessions`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        cache: "no-store",
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((session: { token: string }) => {
+          try {
+            localStorage.setItem(buyerKey(next.baseUrl), session.token);
+          } catch {
+            /* Without storage the session lasts for this page only. */
+          }
+          setSettings({ ...next, token: session.token });
+        })
+        .catch(() => setSettings({ ...next, token: "" }))
+        .finally(() => setReady(true));
+    if (!next.token) {
+      void newSession();
+      return;
+    }
+    if (fromConnection) {
       setSettings(next);
       setReady(true);
       return;
     }
-    // First visit: the API issues an anonymous buyer session. PayPal identifies the payer at checkout.
-    fetch(`${next.baseUrl}/v1/buyer-sessions`, {
-      method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+    // A saved buyer session can outlive the API's data (e.g. a redeploy on an ephemeral disk). Any authenticated
+    // route answers 401 for an unknown token, so probe one and start a fresh session instead of failing every command.
+    fetch(`${next.baseUrl}/v1/purchases/pur_session_check`, {
+      headers: { Authorization: `Bearer ${next.token}` },
       cache: "no-store",
     })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((session: { token: string }) => {
-        try {
-          localStorage.setItem(buyerKey(next.baseUrl), session.token);
-        } catch {
-          /* Without storage the session lasts for this page only. */
+      .then((r) => {
+        if (r.status !== 401) {
+          setSettings(next);
+          setReady(true);
+          return;
         }
-        setSettings({ ...next, token: session.token });
+        try {
+          localStorage.removeItem(buyerKey(next.baseUrl));
+        } catch {
+          /* nothing stored */
+        }
+        next = { ...next, token: "" };
+        void newSession();
       })
-      .catch(() => setSettings(next))
-      .finally(() => setReady(true));
+      .catch(() => {
+        setSettings(next);
+        setReady(true);
+      });
   }, []);
   const api = useMemo(() => {
     setCommandNamespace(`${settings.baseUrl}\n${settings.token}`);

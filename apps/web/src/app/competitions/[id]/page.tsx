@@ -599,8 +599,9 @@ export default function CompetitionPage({
                       </h2>
                       <p>
                         Only entries that pass every requirement appear here.
-                        Previews are watermarked and sandboxed; the clean
-                        original file downloads when you buy it.
+                        {config?.capabilities.browser_previews
+                          ? " Previews are screenshots from a real browser; the original file downloads when you buy it."
+                          : " Previews are watermarked and sandboxed; the clean original file downloads when you buy it."}
                       </p>
                     </div>
                   </div>
@@ -903,8 +904,9 @@ export default function CompetitionPage({
               <div className="gallery-footnote">
                 <Icon name="lock" size={15} />
                 <span>
-                  Watermarked, sandboxed previews. The clean original
-                  downloads once PayPal confirms your payment.
+                  {config?.capabilities.browser_previews
+                    ? "Screenshot previews only. The original downloads once PayPal confirms your payment."
+                    : "Watermarked, sandboxed previews. The clean original downloads once PayPal confirms your payment."}
                 </span>
               </div>
             </>
