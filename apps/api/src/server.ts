@@ -5,7 +5,7 @@ import { claudeEvaluator, claudeHouseAgent, heuristicEvaluator } from './claude.
 import { HOUSE_AGENTS } from './identity.js';
 import { fakeProvider } from './provider/fake.js';
 import { paypalProvider } from './provider/paypal.js';
-import { Store } from './store.js';
+import { PgStore, Store, type DocStore } from './store.js';
 
 // Configuration (all optional for local dev with the fake provider):
 //   PAYMENTS=paypal|fake          real PayPal sandbox or the in-memory fake (default: paypal if keys are set)
@@ -16,7 +16,8 @@ import { Store } from './store.js';
 //   HOUSE_OPERATOR_PAYER_ID       verified sandbox PayPal account that receives house-agent payouts
 //   ADMIN_TOKEN                   service credential for refunds/reconcile
 //   PAYPAL_TEST_CARD_CHECKOUT=1   sandbox only: pay with PayPal's test card instead of a PayPal login (scripted demos)
-//   DATABASE_PATH                 SQLite file (default ./data/api.db)
+//   DATABASE_URL                  Postgres (Neon, pooled) for durable state; DATABASE_URL_UNPOOLED (direct) runs the schema.
+//   DATABASE_PATH                 SQLite file when DATABASE_URL is unset (default ./data/api.db; ephemeral on Render free)
 //   KEEP_ALIVE_URLS               comma-separated URLs pinged every 9 min (Render free plan sleeps after 15 min idle);
 //                                 set to the web app's URL, while the web app pings this API's /health
 const env = process.env;
@@ -32,7 +33,9 @@ const provider = usePayPal
   : fakeProvider({ webOrigin, autoApprove: true }).provider;
 const anthropic = env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 const aiLabel = anthropic ? 'claude' : 'off (heuristic judge, no house agents)';
-const store = new Store(env.DATABASE_PATH ?? 'data/api.db');
+const store: DocStore = env.DATABASE_URL
+  ? await PgStore.open(env.DATABASE_URL, env.DATABASE_URL_UNPOOLED)
+  : new Store(env.DATABASE_PATH ?? 'data/api.db');
 
 const api = await createApi({
   store, provider, webOrigin, apiOrigin,
@@ -52,6 +55,6 @@ const pinger = keepAlive.length
   ? setInterval(() => { for (const url of keepAlive) void fetch(url, { signal: AbortSignal.timeout(60_000) }).catch(() => {}); }, 9 * 60_000)
   : null;
 pinger?.unref();
-api.app.addHook('onClose', async () => { clearInterval(timer); if (pinger) clearInterval(pinger); store.close(); });
+api.app.addHook('onClose', async () => { clearInterval(timer); if (pinger) clearInterval(pinger); await store.close(); });
 await api.app.listen({ host, port });
-console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? 'kernel' : 'off (HTML previews)'} · web: ${webOrigin}`);
+console.log(`provable.bid API on ${apiOrigin} (listening ${host}:${port}) · payments: ${provider.mode} · AI: ${aiLabel} · browser: ${env.KERNEL_API_KEY ? 'kernel' : 'off (HTML previews)'} · store: ${env.DATABASE_URL ? 'postgres' : 'sqlite'} · web: ${webOrigin}`);

@@ -12,7 +12,7 @@ import {
 } from './identity.js';
 import { agentPayoutFor, commissionFor, POLICY, processingFeeFor } from './money.js';
 import { ProviderError, type PaymentProvider } from './provider/types.js';
-import { Store } from './store.js';
+import type { DocStore } from './store.js';
 
 type S = components['schemas'];
 
@@ -48,7 +48,7 @@ type StoredAsset = {
 };
 
 export interface ApiOptions {
-  store: Store;
+  store: DocStore;
   provider: PaymentProvider;
   evaluator: EvaluatorAdapter;
   /** The web app (buyer frontend); PayPal returns buyers here, operators land here after login. */
@@ -124,7 +124,7 @@ export async function createApi(o: ApiOptions) {
   }
   // Anything left "running" when the process stopped has an unknown provider outcome: retry it with the same request ID.
   for (const op of ops.values()) if (op.state === 'running') { op.state = 'unknown'; op.next_at = 0; }
-  st.flush();
+  await st.flush();
 
   // ---------------------------------------------------------------- helpers
   const view = <T extends object>(value: T): T => structuredClone({ ...value, server_time: stamp() });
@@ -209,7 +209,7 @@ export async function createApi(o: ApiOptions) {
     if (!op) op = newOp('create_order', { payment_id: pay.id });
     op.state = 'running'; op.attempts++; op.updated_at = stamp();
     pay.operation_id = op.id; pay.operation_state = 'running';
-    st.flush(); // persist the PayPal-Request-Id before PayPal sees it
+    await st.flush(); // persist the PayPal-Request-Id before PayPal sees it
     const returnTo = `${webOrigin}/competitions/${c.id}`;
     const kind = pay.purpose === 'initial' ? 'authorize' : 'purchase';
     try {
@@ -368,7 +368,7 @@ export async function createApi(o: ApiOptions) {
     let release!: () => void;
     tail = new Promise<void>(r => { release = r; });
     await previous;
-    try { return await fn(); } finally { st.flush(); release(); }
+    try { return await fn(); } finally { try { await st.flush(); } finally { release(); } }
   }
 
   function page(items: any[], query: any, decorate = true) {
@@ -529,7 +529,7 @@ export async function createApi(o: ApiOptions) {
           let op = [...ops.values()].find(x => x.kind === 'authorize' && x.payment_id === pay.id && x.state !== 'failed');
           if (!op) op = newOp('authorize', { payment_id: pay.id });
           op.state = 'running'; op.attempts++; pay.operation_id = op.id; pay.operation_state = 'running'; pay.authorization_state = 'pending';
-          st.flush();
+          await st.flush();
           try { authorization = await o.provider.authorizeOrder(pay.provider_order_id, op.request_id); }
           catch (e) {
             if (e instanceof ProviderError && e.issue === 'ORDER_ALREADY_AUTHORIZED') authorization = (await o.provider.getOrder(pay.provider_order_id)).authorization;
