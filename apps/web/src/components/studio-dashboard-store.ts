@@ -63,7 +63,9 @@ export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict" | "t
 /**
  * Debounced saving. `schedule` takes Studio's current state on every change; after `delayMs` of quiet the latest one
  * is saved, one request at a time, against the version last saved (the API refuses a stale one: another window saved
- * meanwhile). A failed save keeps its Idempotency-Key, so retrying the same state cannot apply it twice.
+ * meanwhile). A save whose outcome is unknown (network error, 5xx) stays the pending command: before any newer state
+ * is sent it is replayed with the same Idempotency-Key, body and version, so the API either applies it once or returns
+ * the result it already committed, and only a 409 after that replay is a real conflict.
  */
 export function createAutosaver({ account, version, delayMs = SAVE_DELAY_MS, onStatus, saved }: {
   account: DashboardAccount;
@@ -78,45 +80,59 @@ export function createAutosaver({ account, version, delayMs = SAVE_DELAY_MS, onS
   let current = version;
   let lastJson = saved ? JSON.stringify(saved) : null;
   let pending: string | null = null;
-  let attempt: { json: string; key: string } | null = null;
+  /** A sent save whose outcome is unknown; replayed exactly (key, body, version) before anything newer. */
+  let unresolved: { json: string; key: string; body: string } | null = null;
   let failed: string | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let running: Promise<void> | null = null;
   let stopped = false;
 
-  async function send(json: string) {
-    // A retry of the same state (after an unknown outcome) reuses its key, so the API returns the first result.
-    if (!attempt || attempt.json !== json) attempt = { json, key: crypto.randomUUID() };
+  type Outcome = "saved" | "unknown" | "conflict" | "rejected";
+  async function put(command: { json: string; key: string; body: string }): Promise<Outcome> {
     onStatus("saving");
     try {
       const response = await fetchImpl(`${account.baseUrl.replace(/\/$/, "")}/v1/operators/me/studio-dashboard`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${account.token}`, "Idempotency-Key": attempt.key },
-        body: `{"state":${json},"version":${current}}`,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${account.token}`, "Idempotency-Key": command.key },
+        body: command.body,
         // Lets a save started as the page closes finish (browsers cap keepalive bodies at 64 KB).
-        keepalive: json.length < 60_000,
+        keepalive: command.body.length < 60_000,
       });
       if (!response.ok) {
         const { status } = await problem(response);
-        if (status < 500) attempt = null;
-        failed = json;
-        if (status === 409) { stopped = true; onStatus("conflict"); return; }
+        if (status >= 500) { unresolved = command; return "unknown"; }
+        if (unresolved === command) unresolved = null;
+        if (status === 409) { stopped = true; onStatus("conflict"); return "conflict"; }
         onStatus(status === 413 ? "too-large" : "error");
-        return;
+        return "rejected";
       }
       const result = await response.json() as SaveResult;
-      current = result.version; lastJson = json; attempt = null; failed = null;
-      if (!pending) onStatus("saved");
+      current = result.version; lastJson = command.json;
+      if (unresolved === command) unresolved = null;
+      return "saved";
     } catch {
-      failed = json;
-      onStatus("error");
+      unresolved = command;
+      return "unknown";
     }
+  }
+
+  async function send(json: string) {
+    // First settle a save whose outcome is unknown: same key, same body (and so the same base version).
+    if (unresolved) {
+      const outcome = await put(unresolved);
+      if (outcome === "unknown") { failed = json; onStatus("error"); return; }
+      if (outcome === "conflict") { failed = json; return; }
+    }
+    if (json === lastJson) { failed = null; if (!pending) onStatus("saved"); return; }
+    const outcome = await put({ json, key: crypto.randomUUID(), body: `{"state":${json},"version":${current}}` });
+    if (outcome === "saved") { failed = null; if (!pending) onStatus("saved"); return; }
+    failed = json;
+    if (outcome === "unknown") onStatus("error");
   }
 
   async function drain() {
     while (pending && !stopped) {
       const json = pending; pending = null;
-      if (json === lastJson) { onStatus("saved"); continue; }
       await send(json);
     }
   }
@@ -134,7 +150,7 @@ export function createAutosaver({ account, version, delayMs = SAVE_DELAY_MS, onS
       const kept = persistableState(state);
       if (!kept) return;
       const json = JSON.stringify(kept);
-      if (json === lastJson && !running && !pending) return; // nothing changed (e.g. Studio re-checked its state on load)
+      if (json === lastJson && !running && !pending && !unresolved) return; // nothing changed (e.g. Studio re-checked its state on load)
       if (new TextEncoder().encode(json).length > DASHBOARD_MAX_BYTES) { pending = null; onStatus("too-large"); return; }
       pending = json;
       if (timer) clearTimeout(timer);

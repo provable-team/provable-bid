@@ -95,3 +95,67 @@ test("the autosaver retries an unknown outcome with the same key, stops on a con
   assert.equal(statuses.at(-1), "too-large");
   assert.equal(keys.length, 3);
 });
+
+test("a save whose response was lost is replayed with its key, body and version before the newer state; no false conflict", async () => {
+  // A stand-in for the API's rules: replay the latest save for the same key and body, else require the current version.
+  let server = { version: 0, key: null as string | null, body: null as string | null, state: null as unknown };
+  const requests: { key: string; version: number; state: unknown }[] = [];
+  let gate!: () => void; const released = new Promise<void>((resolve) => { gate = resolve; });
+  const respond = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    const key = (init.headers as Record<string, string>)["Idempotency-Key"]; const body = String(init.body); const parsed = JSON.parse(body);
+    requests.push({ key, version: parsed.version, state: parsed.state });
+    let result: Response;
+    if (server.key === key) result = server.body === body ? respond(200, { version: server.version, updated_at: "t", server_time: "t" }) : respond(409, { code: "IDEMPOTENCY_CONFLICT" });
+    else if (parsed.version !== server.version) result = respond(409, { code: "INVALID_STATE" });
+    else { server = { version: server.version + 1, key, body, state: parsed.state }; result = respond(200, { version: server.version, updated_at: "t", server_time: "t" }); }
+    if (requests.length === 1) { await released; throw new TypeError("connection reset"); } // A commits, its response is lost
+    return result;
+  }) as unknown as typeof fetch;
+  const statuses: SaveStatus[] = [];
+  const saver = createAutosaver({ account: { baseUrl: "http://api.test", token: "t", fetchImpl }, version: 0, delayMs: 5, onStatus: (s) => statuses.push(s) });
+  const a = { pages: [page({ layout: { rowHeight: 10 } })] };
+  const b = { pages: [page({ layout: { rowHeight: 20 } })] };
+  saver.schedule(a);
+  const first = saver.flush();
+  await wait(5);
+  assert.equal(requests.length, 1, "A is in flight");
+  saver.schedule(b); // a newer edit arrives while A's outcome is still unknown
+  gate();
+  await first;
+  await saver.flush();
+  await wait(20);
+  assert.deepEqual(requests.map((r) => r.version), [0, 0, 1], "A replayed at its own version, then B at A's version");
+  assert.equal(requests[1].key, requests[0].key, "the replay reuses A's Idempotency-Key");
+  assert.deepEqual(requests[1].state, requests[0].state, "and A's body");
+  assert.notEqual(requests[2].key, requests[0].key);
+  assert.equal(server.version, 2); assert.deepEqual(server.state, b);
+  assert.equal(saver.version, 2);
+  assert.ok(!statuses.includes("conflict"), statuses.join());
+  assert.equal(statuses.at(-1), "saved");
+
+  // Saving goes on afterwards.
+  saver.schedule({ pages: [page({ layout: { rowHeight: 30 } })] });
+  await saver.flush();
+  assert.equal(server.version, 3);
+});
+
+test("an unresolved save is still replayed when the state returns to the last saved one", async () => {
+  let calls = 0; const keys: string[] = [];
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    keys.push((init.headers as Record<string, string>)["Idempotency-Key"]);
+    if (++calls === 1) throw new TypeError("network down");
+    return new Response(JSON.stringify({ version: 2, updated_at: "t", server_time: "t" }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const statuses: SaveStatus[] = [];
+  const loaded = { pages: [page()] };
+  const saver = createAutosaver({ account: { baseUrl: "http://api.test", token: "t", fetchImpl }, version: 1, saved: loaded, delayMs: 5, onStatus: (s) => statuses.push(s) });
+  saver.schedule({ pages: [page({ layout: { rowHeight: 10 } })] });
+  await saver.flush();
+  assert.equal(statuses.at(-1), "error");
+  saver.schedule(loaded); // back to the loaded state, but the server may hold the edit
+  await saver.flush();
+  assert.equal(keys[1], keys[0], "the unknown save is settled first");
+  assert.equal(keys.length, 3, "then the loaded state is saved over it");
+  assert.equal(statuses.at(-1), "saved");
+});
