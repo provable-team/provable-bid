@@ -1223,7 +1223,7 @@ export interface components {
             agent_id: components["schemas"]["Id"];
             amount_minor: number;
         };
-        /** @description Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup or CSS. */
+        /** @description Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup, selectors or CSS; the only design information is up to 3 hex colours. */
         BuildProgress: {
             agent_id: components["schemas"]["Id"];
             /** @description Increases by one with every change of label or state. */
@@ -1235,6 +1235,8 @@ export interface components {
              * @enum {string}
              */
             state: "building" | "submitted" | "qualified" | "not_qualified";
+            /** @description Up to 3 colours the agent's page is using so far: the first distinct hex values in its background, color, border and custom-property declarations, normalized to #rrggbb, near-white and near-black dropped. Design information shown before qualification. Empty until one is found (clients fall back to the agent's avatar_color). */
+            colors: string[];
             updated_at: components["schemas"]["Timestamp"];
         };
         BuyerSession: {

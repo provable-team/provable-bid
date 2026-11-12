@@ -6,7 +6,7 @@ import type { components } from '../../../packages/api-client/src/schema.js';
 import { operations, resolve, validator, validateResponse } from '../../../scripts/contract.js';
 import type { PageRenderer, RenderResult } from './browser.js';
 import { gateHtml, prepareHtml } from './html.js';
-import { safeLabel, STEP } from './progress.js';
+import { safeColors, safeLabel, STEP } from './progress.js';
 import {
   HOUSE_AGENTS, HOUSE_OPERATOR_ID, hashToken, newSecret, newToken, resolvePrincipal,
   type AgentPrincipal, type AgentRecord, type Credential, type Operator, type Principal,
@@ -742,19 +742,23 @@ export async function createApi(o: ApiOptions) {
   const buildProgress = new Map<string, Map<string, Progress>>(); // competition ID → agent ID → latest step
   const progressInterval = o.progressIntervalMs ?? 1000;
   const buildProgressFor = (competitionId: string): S['BuildProgress'][] =>
-    [...(buildProgress.get(competitionId)?.values() ?? [])].map(({ agent_id, step, label, state, updated_at }) => ({ agent_id, step, label, state, updated_at }));
-  function setProgress(competitionId: string, agentId: string, label: string, state: S['BuildProgress']['state'], submissionId: string | null = null) {
+    [...(buildProgress.get(competitionId)?.values() ?? [])].map(({ agent_id, step, label, state, colors, updated_at }) => ({ agent_id, step, label, state, colors: [...colors], updated_at }));
+  function setProgress(competitionId: string, agentId: string, label: string, state: S['BuildProgress']['state'], submissionId: string | null = null, colors?: string[]) {
     let byAgent = buildProgress.get(competitionId);
     if (!byAgent) buildProgress.set(competitionId, byAgent = new Map());
     const cur = byAgent.get(agentId);
-    byAgent.set(agentId, { agent_id: agentId, step: (cur?.step ?? -1) + 1, label, state, updated_at: stamp(), at: time(), submission_id: submissionId ?? cur?.submission_id ?? null });
+    byAgent.set(agentId, { agent_id: agentId, step: (cur?.step ?? -1) + 1, label, state, colors: colors ?? cur?.colors ?? [], updated_at: stamp(), at: time(), submission_id: submissionId ?? cur?.submission_id ?? null });
   }
-  function reportProgress(competitionId: string, agentId: string, raw: string, immediate = false) {
+  function reportProgress(competitionId: string, agentId: string, raw: string, immediate = false, rawColors?: unknown) {
     const label = safeLabel(raw);
+    const colors = safeColors(rawColors); // only exact #rrggbb strings ever leave the server
     const cur = buildProgress.get(competitionId)?.get(agentId);
-    if (!label || (cur && (cur.state !== 'building' || cur.label === label))) return;
-    if (cur && !immediate && time() - cur.at < progressInterval) return; // at most one update per interval per agent
-    setProgress(competitionId, agentId, label, 'building');
+    if (cur && cur.state !== 'building') return;
+    // New colours are kept straight away (at most 3 changes per run); they never move the step on their own.
+    if (cur && colors.length > cur.colors.length) { cur.colors = colors; cur.updated_at = stamp(); }
+    if (!label || cur?.label === label) return;
+    if (cur && !immediate && time() - cur.at < progressInterval) return; // at most one step per interval per agent
+    setProgress(competitionId, agentId, label, 'building', null, colors.length > (cur?.colors.length ?? 0) ? colors : undefined);
   }
   /** After evaluation: an honest end state for a house agent's placeholder, or none if the check could not finish. */
   function settleProgress(s: S['Submission']) {
@@ -789,7 +793,7 @@ export async function createApi(o: ApiOptions) {
           }
           return s;
         },
-        progress: (label, opts) => reportProgress(c.id, agentId, label, opts?.immediate),
+        progress: (label, opts) => reportProgress(c.id, agentId, label, opts?.immediate, opts?.colors),
       });
     } catch (e) { log(`house agent ${agentId} on ${c.id} failed`, (e as Error).message); }
     finally {

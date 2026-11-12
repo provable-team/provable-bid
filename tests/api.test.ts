@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import type { AgentAdapter, EvaluatorAdapter } from '../packages/agent-interface/src/index.js';
 import { createApi } from '../apps/api/src/app.js';
 import { heuristicEvaluator, streamingHouseAgent } from '../apps/api/src/claude.js';
-import { progressTracker } from '../apps/api/src/progress.js';
+import { colorTracker, progressTracker } from '../apps/api/src/progress.js';
 import type { PageRenderer } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
 import { agentPayoutFor, paypalCheckoutFee, processingFeeFor } from '../apps/api/src/money.js';
@@ -369,7 +369,8 @@ test('house agents enter every competition through the public API, labelled as h
 
 // A house agent's streamed page: the build steps shown to the buyer come from its structure, never its content.
 const streamedPage = `Here is the page.\n<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crumb &amp; Co.</title><style>body{font-family:Georgia,serif;margin:0}.cta{background:#b5522b;color:#fff}
+<title>Crumb &amp; Co.</title><style>:root{--brand:#2F5D8A;--ink:#111}body{font-family:Georgia,serif;margin:0;color:#222;background:#fffdf8}
+.cta{background:#b5522b;color:#fff;box-shadow:0 0 4px #ff00aa}.card{border:1px solid #3a7d44}.extra{color:#c0ffee}
 @media (max-width:600px){.grid{display:block}}</style></head><body>
 <header><nav><a href="#story">Our story</a></nav></header>
 <div class="hero"><h1>Warm cardamom buns since 1987</h1><p>Sourdough proofed for two full days.</p></div>
@@ -377,7 +378,9 @@ const streamedPage = `Here is the page.\n<!doctype html><html lang="en"><head><m
 ${'<p>The rye loaves sell out by nine on Saturdays, so come early.</p>'.repeat(6)}</section>
 <section id="when"><h2>Opening hours</h2><p>Tuesday to Sunday, 7am to 3pm. Closed Mondays.</p></section>
 <a class="cta" href="#preorder">Pre-order now</a><footer><p>Corner of Elm and 4th.</p></footer></body></html>`;
-const secrets = ['cardamom', 'Sourdough', 'Ilse', 'rye loaves', 'Georgia', '#b5522b', 'max-width', 'Tuesday', 'Elm and 4th', '<', '>'];
+const secrets = ['cardamom', 'Sourdough', 'Ilse', 'rye loaves', 'Georgia', 'font-family', '--brand', 'cta', 'max-width', 'Tuesday', 'Elm and 4th', '#ff00aa', '#c0ffee', '<', '>', ';', ':root'];
+// The only design information that may leave the server: the first 3 usable hex colours in colour declarations.
+const pageColors = ['#2f5d8a', '#b5522b', '#3a7d44'];
 
 test('build progress: coarse steps from the stream structure; requirement words only when the stream has them', () => {
   const step = progressTracker(brief.requirements);
@@ -392,6 +395,20 @@ test('build progress: coarse steps from the stream structure; requirement words 
   const other = progressTracker([{ description: 'Has a menu with prices.' }]);
   assert.equal(other(`<!doctype html><body><section>${'x'.repeat(500)}</section>`), 'adding a section');
   assert.equal(progressTracker([{ description: 'Has a menu with prices.' }])('<!doctype html><body><section class="menu"><h2>Cakes</h2>'), 'adding the menu');
+});
+
+test('build colours: the first 3 usable hex values in colour declarations, normalized, never half-streamed', () => {
+  const colors = colorTracker();
+  let last: string[] = [];
+  for (let i = 0; i <= streamedPage.length + 5; i += 5) {
+    last = colors(streamedPage.slice(0, i));
+    assert.ok(last.every(c => /^#[0-9a-f]{6}$/.test(c) && pageColors.includes(c)), `only whole, usable colours: ${last}`);
+  }
+  assert.deepEqual(last, pageColors, 'near-black #111/#222, near-white #fff/#fffdf8 and non-colour properties are skipped');
+  const split = colorTracker();
+  assert.deepEqual(split('.a{color:#b55'), [], 'a hex value cut off by the stream is not read');
+  assert.deepEqual(split('.a{color:#b5522b}'), ['#b5522b']);
+  assert.deepEqual(colorTracker()('<p>#123456 in text</p><div class="#654321">'), [], 'hex in text or attributes is not a colour declaration');
 });
 
 test('house agents report live build steps to the buyer only, and the steps never contain the page', async t => {
@@ -422,9 +439,13 @@ test('house agents report live build steps to the buyer only, and the steps neve
   assert.equal(seen.at(-1).build_progress[0].state, 'qualified');
   const indexes = steps.map((s: any) => s.step);
   assert.deepEqual(indexes, [...indexes].sort((x, y) => x - y), 'step indexes only increase');
+  assert.deepEqual(seen.at(-1).build_progress[0].colors, pageColors);
   for (const s of steps) {
-    assert.deepEqual(Object.keys(s).sort(), ['agent_id', 'label', 'state', 'step', 'updated_at']);
-    for (const secret of secrets) assert.ok(!s.label.includes(secret), `label "${s.label}" leaks "${secret}"`);
+    assert.deepEqual(Object.keys(s).sort(), ['agent_id', 'colors', 'label', 'state', 'step', 'updated_at']);
+    assert.ok(s.colors.every((c: string) => pageColors.includes(c)), `only the page's own colours: ${s.colors}`);
+    // Nothing else from the stream: drop the allowed colours, then no fragment of the page may remain.
+    const rest = JSON.stringify(s).replace(/"#[0-9a-f]{6}"/g, '""');
+    for (const secret of secrets) assert.ok(!rest.includes(secret), `${rest} leaks "${secret}"`);
   }
   // Only the buyer who owns the competition sees it; agents, other buyers and anonymous callers never do.
   assert.equal((await f.get(`/v1/competitions/${c.id}`, ann.token)).data.build_progress, undefined);

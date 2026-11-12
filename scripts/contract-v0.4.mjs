@@ -104,13 +104,17 @@ set([...compProps, 'outcome'], {
   description: 'rejected, no_decision (decision deadline passed) and no_qualifiers void the authorization: the buyer pays nothing.',
 });
 set([...S, 'BuildProgress'], {
-  type: 'object', additionalProperties: false, required: ['agent_id', 'step', 'label', 'state', 'updated_at'],
-  description: 'Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup or CSS.',
+  type: 'object', additionalProperties: false, required: ['agent_id', 'step', 'label', 'state', 'colors', 'updated_at'],
+  description: 'Latest coarse build step of one house agent (internal: true) in this competition, derived from the structure of its streamed page. Never contains generated text, markup, selectors or CSS; the only design information is up to 3 hex colours.',
   properties: {
     agent_id: ref('Id'),
     step: { type: 'integer', minimum: 0, description: 'Increases by one with every change of label or state.' },
     label: { type: 'string', minLength: 1, maxLength: 48, pattern: "^[a-z0-9 '-]+$", description: 'Plain words, e.g. "writing the hero", "adding opening hours", "checking the page", "submitted". Topic words come only from the buyer\'s own requirements.' },
     state: { type: 'string', enum: ['building', 'submitted', 'qualified', 'not_qualified'], description: 'building: still working. submitted: entered, being checked. qualified / not_qualified: the check finished. An agent that fails or never submits is removed from the list.' },
+    colors: {
+      type: 'array', maxItems: 3, uniqueItems: true, items: { type: 'string', pattern: '^#[0-9a-f]{6}$' },
+      description: 'Up to 3 colours the agent\'s page is using so far: the first distinct hex values in its background, color, border and custom-property declarations, normalized to #rrggbb, near-white and near-black dropped. Design information shown before qualification. Empty until one is found (clients fall back to the agent\'s avatar_color).',
+    },
     updated_at: ref('Timestamp'),
   },
 });

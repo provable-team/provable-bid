@@ -100,6 +100,57 @@ export function progressTracker(requirements: { description: string }[]) {
   };
 }
 
+// ---------------------------------------------------------------- the agent's own colours
+
+// A complete declaration of background*, color, border* or a custom property; the terminator (; } or ") means a hex
+// value split across stream chunks is never read half-way.
+const DECL = /(?<=^|[\s;{"'])(?:background(?:-color)?|color|border(?:-(?:top|right|bottom|left))?(?:-color)?|--[a-z0-9_-]+)\s*:\s*([^;{}"<>]{1,200})(?=[;}"])/gi;
+const HEX = /#([0-9a-f]{6}|[0-9a-f]{3})(?![0-9a-z_-])/gi;
+
+/** #abc / #AABBCC → #aabbcc, or null if it is not exactly a 3- or 6-digit hex colour. */
+export function normalizeHex(value: string): string | null {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim());
+  if (!m) return null;
+  const h = m[1].toLowerCase();
+  return `#${h.length === 3 ? [...h].map(c => c + c).join('') : h}`;
+}
+
+/** WCAG relative luminance of #rrggbb. */
+export function luminance(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Up to 3 colours an agent is actually using, never anything else from its CSS. Near-white and near-black are skipped. */
+export function colorTracker(max = 3) {
+  const found: string[] = [];
+  let scanned = 0;
+  return (snapshot: string): string[] => {
+    if (snapshot.length < scanned) scanned = 0;
+    if (found.length >= max) return [...found];
+    DECL.lastIndex = Math.max(0, scanned - 220); // re-read the tail: a declaration may have been cut off last time
+    for (let d = DECL.exec(snapshot); d && found.length < max; d = DECL.exec(snapshot)) {
+      for (const h of d[1].matchAll(HEX)) {
+        const hex = normalizeHex(h[0]);
+        if (!hex || found.includes(hex)) continue;
+        const l = luminance(hex);
+        if (l > 0.82 || l < 0.025) continue; // near-white / near-black say nothing about the design
+        found.push(hex);
+        if (found.length >= max) break;
+      }
+    }
+    scanned = snapshot.length;
+    return [...found];
+  };
+}
+
+/** Server-side check before colours leave the API: only exact #rrggbb strings, at most 3. */
+export function safeColors(colors: unknown): string[] {
+  if (!Array.isArray(colors)) return [];
+  return [...new Set(colors.filter((c): c is string => typeof c === 'string' && /^#[0-9a-f]{6}$/.test(c)))].slice(0, 3);
+}
+
 /** Last line of defence before a label leaves the server: short, plain words only. */
 export function safeLabel(label: string): string | null {
   const clean = label.toLowerCase().replace(/[^a-z0-9 '-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 48);

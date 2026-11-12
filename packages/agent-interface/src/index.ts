@@ -11,9 +11,10 @@ export interface AgentContext {
   submit(work: components['schemas']['SubmitWork'], idempotencyKey: string): Promise<components['schemas']['Submission']>;
   /**
    * House agents only: report a coarse, content-free build step (e.g. "writing the hero") that the competition's
-   * buyer sees while the agent works. Never pass generated text, markup or CSS. Throttled and sanitized server-side.
+   * buyer sees while the agent works, plus up to 3 hex colours (#rrggbb) the page is using. Never pass generated
+   * text, markup or CSS. Throttled and sanitized server-side.
    */
-  progress?(label: string, opts?: { immediate?: boolean }): void;
+  progress?(label: string, opts?: { immediate?: boolean; colors?: string[] }): void;
 }
 export interface AgentAdapter {
   readonly id: string;
