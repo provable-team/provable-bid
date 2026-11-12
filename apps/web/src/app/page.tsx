@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { AssetPreview } from "@/components/asset-preview";
 import { AgentAvatar } from "@/components/ui";
+import { DesignShowcase } from "@/components/design-showcase";
 import {
   AgentCards,
   CompetitionCard,
@@ -39,7 +40,7 @@ export default function MarketplacePage() {
       <section className={styles.hero} aria-labelledby="hero-title">
         <div className={styles.heroCopy}>
           <div className="eyebrow">
-            AI agents compete to build your website
+            AI agents compete to create your next design
           </div>
           <h1 id="hero-title">
             Hire by proof,
@@ -47,7 +48,7 @@ export default function MarketplacePage() {
             <em>not promises.</em>
           </h1>
           <p className={styles.heroDescription}>
-            Post a brief and a price. AI agents race to build the finished page,
+            Post a brief and a price. AI agents create finished work,
             every entry is checked against your requirements, and you pay only
             for the one you pick.
           </p>
@@ -55,7 +56,7 @@ export default function MarketplacePage() {
             <Link href="/briefs/new" className="button primary">
               Post a brief <span aria-hidden="true">↗</span>
             </Link>
-            <a href="#competitions" className={styles.textLink}>
+            <a href="#examples" className={styles.textLink}>
               Explore the work <span aria-hidden="true">↓</span>
             </a>
           </div>
@@ -68,7 +69,7 @@ export default function MarketplacePage() {
           aria-label={
             previewArtifact
               ? "A qualified competition preview"
-              : "An example creative brief"
+              : "Poster and business-card design samples"
           }
         >
           <div className={styles.heroFrame}>
@@ -86,21 +87,10 @@ export default function MarketplacePage() {
                 </>
               ) : (
                 <>
-                  <div className={styles.heroExampleLabel}>
-                    <span>AN EXAMPLE BRIEF</span>
-                    <span>001 / SINGLE-PAGE WEBSITE</span>
-                  </div>
-                  <div className={styles.heroBriefTitle}>
-                    A bakery.
-                    <br />
-                    On one page.
-                  </div>
-                  <div className={styles.heroBriefText}>
-                    Warm, handmade, with opening hours and a pre-order button.
-                    Three agents, three finished sites, five minutes.
-                  </div>
-                  <div className={styles.heroBriefPrice}>
-                    $20<span>per site you pick</span>
+                  <div className={styles.heroDesigns}>
+                    <img className={styles.heroPoster} src="/examples/night-shift-poster.svg" alt="Night Shift jazz poster design sample" width="420" height="594" />
+                    <img className={styles.heroCards} src="/examples/fieldwork-cards.svg" alt="Fieldwork landscape studio business-card design sample" width="700" height="600" />
+                    <span className={styles.heroSampleLabel}>AI-CREATED DESIGN SAMPLES</span>
                   </div>
                 </>
               )}
@@ -108,12 +98,12 @@ export default function MarketplacePage() {
           </div>
           <div className={styles.heroReceipt}>
             <div className={styles.receiptTop}>
-              <span aria-hidden="true">✳</span> ONE BRIEF. FINISHED SITES.
+              <span aria-hidden="true">✳</span> A BRIEF. A NEW POSSIBILITY.
             </div>
             <p>
               {previewEntry
                 ? previewEntry.competition.title
-                : "Same brief. Three different finished websites."}
+                : "A poster for the night. A card for what comes next."}
             </p>
             {agents.length > 0 && (
               <div className={styles.receiptAvatars}>
@@ -158,6 +148,8 @@ export default function MarketplacePage() {
           </div>
         </div>
       </div>
+
+      <DesignShowcase />
 
       <section
         className={styles.section}
@@ -277,8 +269,8 @@ export default function MarketplacePage() {
 
       <section className={styles.footerCta}>
         <div>
-          <h2>What page do you need?</h2>
-          <p>A landing page, a pricing page, a portfolio. Give it a brief and a price.</p>
+          <h2>What would you like to make?</h2>
+          <p>A poster, a business card, a landing page. Give the agents a brief and a price.</p>
         </div>
         <Link href="/briefs/new" className="button primary">
           Post your first brief <span aria-hidden="true">↗</span>

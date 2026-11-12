@@ -8,6 +8,7 @@ import type { components } from "@provable/api-client";
 import { useApi } from "@/components/api-provider";
 import { ApiError, command, money } from "@/lib/api";
 import styles from "./brief-form.module.css";
+import { designExamples, findDesignExample } from "@/lib/design-examples";
 
 type CreateCompetition = components["schemas"]["CreateCompetition"];
 type Requirement = components["schemas"]["Requirement"];
@@ -93,6 +94,12 @@ export default function PostBriefPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [storageError, setStorageError] = useState(false);
+  const [selectedExample, setSelectedExample] = useState("");
+
+  useEffect(() => {
+    const example = findDesignExample(new URLSearchParams(window.location.search).get("example"));
+    if (example) setSelectedExample(example.id);
+  }, []);
 
   // Keep uncertain commands under the same API/account as their idempotency key.
   // Only the digest is stored; the buyer credential remains in session memory.
@@ -178,6 +185,21 @@ export default function PostBriefPage() {
         { id: "req_story", description: "Has a short section about the family story." },
         { id: "req_mobile", description: "Works on a 375px-wide phone screen without horizontal scrolling." },
       ],
+    }));
+    setError(null);
+  }
+
+  function applyDesignBrief() {
+    const example = findDesignExample(selectedExample);
+    if (!example || frozen || busy || !draftReady) return;
+    setDraft((previous) => ({
+      ...previous,
+      title: example.briefTitle,
+      brief: example.brief,
+      requirements: example.requirements.map((description, index) => ({
+        id: `req_design_${index + 1}`,
+        description,
+      })),
     }));
     setError(null);
   }
@@ -272,7 +294,7 @@ export default function PostBriefPage() {
             <em>the unexpected.</em>
           </h1>
           <p>
-            Describe the page. Agents build it, finished, in minutes. Pick the
+            Describe your design. Agents create the finished work. Pick the
             one you love.
           </p>
         </div>
@@ -323,6 +345,17 @@ export default function PostBriefPage() {
                   Try the bakery brief ↗
                 </button>
               </div>
+              <div className={styles.templatePicker}>
+                <label htmlFor="design-example">Or start with a design brief</label>
+                <div>
+                  <select id="design-example" value={selectedExample} onChange={(event) => setSelectedExample(event.target.value)}>
+                    <option value="">Choose a poster or business card</option>
+                    {designExamples.map((example) => <option key={example.id} value={example.id}>{example.title} — {example.kind}</option>)}
+                  </select>
+                  <button className="button secondary small" type="button" disabled={!selectedExample} onClick={applyDesignBrief}>Use this brief ↗</button>
+                </div>
+                <small>Fictional starting points. Replace the sample details with your own. Applying a brief replaces your current title, description and requirements, and keeps your price.</small>
+              </div>
               <label className="field" htmlFor="brief-title">
                 <span>Give your brief a title</span>
                 <input
@@ -333,7 +366,7 @@ export default function PostBriefPage() {
                   maxLength={120}
                   value={draft.title}
                   onChange={(event) => update("title", event.target.value)}
-                  placeholder="e.g. Landing page for a neighborhood bakery"
+                  placeholder="e.g. Event poster for a neighborhood jazz night"
                 />
               </label>
               <label className="field" htmlFor="creative-brief">
@@ -348,12 +381,13 @@ export default function PostBriefPage() {
                   rows={6}
                   value={draft.brief}
                   onChange={(event) => update("brief", event.target.value)}
-                  placeholder="Who the page is for, the sections you need, the feel (e.g. warm and handmade), colours, anything to avoid."
+                  placeholder="What you need, the exact text and dimensions, the feel, colours, and anything to avoid."
                 />
                 <small id="creative-brief-help">
                   Be specific about the outcome. Each agent brings its own
-                  style. Include the facts the page must use. Links alone do not
-                  supply their contents.
+                  style. Include the facts and text the design must use. Links alone do not
+                  supply their contents. Work is delivered as a self-contained HTML page;
+                  ask for inline SVG and a print layout for posters or cards.
                 </small>
               </label>
             </section>
@@ -436,7 +470,7 @@ export default function PostBriefPage() {
                 <span>03</span> Set the pace & price
               </h2>
               <label className="field" htmlFor="budget">
-                <span id="budget-label">Price per website you pick</span>
+                <span id="budget-label">Price per design you pick</span>
                 <div className={styles.budgetInput}>
                   <span aria-hidden="true">$</span>
                   <input

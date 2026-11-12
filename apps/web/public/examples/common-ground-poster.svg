@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1020" viewBox="0 0 720 1020" role="img" aria-labelledby="title desc">
+  <title id="title">Common Ground — a fictional neighbourhood food festival</title>
+  <desc id="desc">A cobalt, cream and citrus poster with oversized Common Ground lettering, a geometric carrot, leafy shapes and a sliced orange. A fictional neighbourhood food festival on Saturday 22 May 2027, 10:00 to 17:00, at the fictional Riverside Green in Bristol. Growers, street food and a long lunch. Information at example.com/commonground. AI-created concept artwork.</desc>
+  <rect width="720" height="1020" fill="#fff6dd"/>
+  <g fill="#174bf5" font-family="Arial, Helvetica, sans-serif">
+    <path d="M30 30H690V990H30Z" fill="none" stroke="#174bf5" stroke-width="2"/>
+    <text x="49" y="65" font-size="12" letter-spacing="1.7">THE NEIGHBOURHOOD IS THE MAIN INGREDIENT.</text>
+    <text x="43" y="181" font-size="118" font-weight="900" letter-spacing="-7.8" textLength="628" lengthAdjust="spacingAndGlyphs">COMMON</text>
+    <text x="43" y="284" font-size="118" font-weight="900" letter-spacing="-7.8" textLength="628" lengthAdjust="spacingAndGlyphs">GROUND</text>
+    <text x="49" y="318" font-size="14" letter-spacing="3.4">A NEIGHBOURHOOD FOOD FESTIVAL</text>
+  </g>
+  <g>
+    <path d="M130 454C37 432 48 355 63 347c72-2 114 45 109 104" fill="#174bf5"/>
+    <path d="M169 446c-9-70 33-100 69-112 41 55 1 111-45 128" fill="#174bf5"/>
+    <path d="M192 466c31-76 100-93 133-77-6 73-66 111-125 102" fill="#174bf5"/>
+    <path d="m92 458 225-35-57 353Z" fill="#ff773c" stroke="#174bf5" stroke-width="3"/>
+    <path d="m117 501 77-12m-40 69 71-11m-32 69 58-9m-25 66 40-6" stroke="#174bf5" stroke-width="7"/>
+    <circle cx="482" cy="553" r="166" fill="#ffca32" stroke="#174bf5" stroke-width="4"/>
+    <circle cx="482" cy="553" r="136" fill="#ff773c" stroke="#fff6dd" stroke-width="13"/>
+    <path d="M482 417v272M346 553h272m-232-96 192 192m0-192L386 649" stroke="#fff6dd" stroke-width="10"/>
+    <circle cx="482" cy="553" r="16" fill="#fff6dd"/>
+    <path d="M483 387c-7-55 31-94 75-99 10 55-26 96-75 99Z" fill="#174bf5"/>
+    <path d="M316 723c37-69 88-66 133-25 43-35 109-34 142 20-56 64-215 91-275 5Z" fill="#174bf5"/>
+    <path d="M348 723c61 4 127 3 208-5" stroke="#fff6dd" stroke-width="3" fill="none"/>
+    <g transform="rotate(-12 98 750)">
+      <circle cx="98" cy="750" r="60" fill="#174bf5"/>
+      <text x="98" y="737" fill="#fff6dd" font-family="Georgia, 'Times New Roman', serif" font-size="23" font-style="italic" text-anchor="middle">grown</text>
+      <text x="98" y="764" fill="#fff6dd" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" text-anchor="middle">LOCAL</text>
+    </g>
+  </g>
+  <g fill="#174bf5" font-family="Arial, Helvetica, sans-serif">
+    <path d="M49 814H671" stroke="#174bf5" stroke-width="2"/>
+    <text x="49" y="856" font-size="31" font-weight="800" letter-spacing="-1">SATURDAY 22 MAY 2027</text>
+    <text x="49" y="887" font-size="20" font-weight="700">10:00–17:00 / RIVERSIDE GREEN, BRISTOL</text>
+    <text x="49" y="921" font-size="16" letter-spacing=".4">GROWERS · STREET FOOD · ONE VERY LONG LUNCH</text>
+    <text x="49" y="952" font-size="14" font-weight="700" letter-spacing="1">EXAMPLE.COM/COMMONGROUND</text>
+    <text x="49" y="976" font-size="9.5" letter-spacing=".75">AI-CREATED CONCEPT · FICTIONAL FESTIVAL &amp; VENUE</text>
+  </g>
+</svg>
