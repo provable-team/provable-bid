@@ -73,6 +73,89 @@ export const designExamples = [
   },
 ] as const;
 
+/**
+ * Pages made by provable.bid's own house agents (claudeHouseAgent + claude-judge-v2), copied byte for byte from
+ * samples/<slug>/ into public/examples/house/. Every figure below is read from that sample's provenance.json; the
+ * gallery test checks them against it, so update both together. These are not brief presets.
+ */
+export type HouseAgentProvenance = {
+  sample: string;
+  model: string;
+  evaluator: string;
+  judgeStatus: "qualified";
+  checksPassed: number;
+  checksTotal: number;
+  sha256: string;
+  generatedAt: string;
+  note: string;
+};
+
+export type HouseAgentSample = {
+  id: string;
+  title: string;
+  creator: "House agent";
+  agent: "Atelier" | "Meadow" | "Voltage";
+  category: (typeof designExamples)[number]["category"];
+  kind: string;
+  description: string;
+  file: string;
+  color: string;
+  /** Describes the card; used for both the desktop and the phone screenshot. */
+  alt: string;
+  provenance: HouseAgentProvenance;
+};
+
+const houseSampleNote = "Generated outside any buyer competition. No purchase or payout. Fictional brief.";
+
+export const houseAgentSamples: readonly HouseAgentSample[] = [
+  {
+    id: "maya-okafor-voltage",
+    title: "Maya Okafor",
+    creator: "House agent",
+    agent: "Voltage",
+    category: "Business cards",
+    kind: "Product designer business card",
+    description: "A black front with a bold uppercase name and an orange stripe; a white back with email and website.",
+    file: "house/maya-okafor-card-voltage",
+    color: "#e8e6e1",
+    alt: "Two-sided business card for Maya Okafor, Product Designer: a black front with her name in large white capitals, the title in orange and an orange stripe, beside a white back listing maya@example.com and example.com/maya.",
+    provenance: {
+      sample: "samples/maya-okafor-business-card/voltage.html",
+      model: "claude-haiku-5-5",
+      evaluator: "claude-judge-v2",
+      judgeStatus: "qualified",
+      checksPassed: 4,
+      checksTotal: 4,
+      sha256: "a91beb5e22badf05b7bd0011ed079f361259da851460b6e305d5a400fe16e219",
+      generatedAt: "2026-11-12T16:32:30.192Z",
+      note: houseSampleNote,
+    },
+  },
+  {
+    id: "crumb-and-co-atelier",
+    title: "Crumb & Co.",
+    creator: "House agent",
+    agent: "Atelier",
+    category: "Business cards",
+    kind: "Bakery business card",
+    description: "A cream serif wordmark with a wheat mark; the back sets the hours and preorder line in a calm hierarchy.",
+    file: "house/crumb-and-co-card-atelier",
+    color: "#e6dece",
+    alt: "Two-sided business card for Crumb & Co. Bakery on cream stock: the front shows a small wheat mark above the serif wordmark Crumb & Co. and the word Bakery; the back lists the hours, Tuesday to Sunday 7am to 3pm, and Preorders at crumbandco.example.",
+    provenance: {
+      sample: "samples/crumb-and-co-business-card/atelier.html",
+      model: "claude-haiku-5-5",
+      evaluator: "claude-judge-v2",
+      judgeStatus: "qualified",
+      checksPassed: 4,
+      checksTotal: 4,
+      sha256: "fd5eaa430dedd8a91428382e716987ee88c17390a772a14c9b719bd6928df477",
+      generatedAt: "2026-11-12T16:32:39.041Z",
+      note: houseSampleNote,
+    },
+  },
+];
+
 export function findDesignExample(id: string | null) {
   return designExamples.find((example) => example.id === id);
 }

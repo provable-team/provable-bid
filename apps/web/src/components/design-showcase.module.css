@@ -27,6 +27,14 @@
 .projectFooter > span { color: #737965; }
 .projectFooter a { text-decoration: none; color: #323d28; font-weight: 600; }
 .projectFooter a:hover { text-decoration: underline; }
+.house .artwork { padding: 52px 24px 56px; }
+.house .artwork picture { display: contents; }
+.house .artwork img { filter: drop-shadow(0 10px 14px #111a1418); }
+.houseBadge { background: #253024; color: #f8f8ee; }
+.houseLabel { display: inline-block; margin: 10px 0 0; padding: 4px 8px; border: 1px solid #253024; border-radius: 30px; font-size: 10px; letter-spacing: .4px; color: #253024; }
+.provenance { color: #6a6e5f; font-size: 11px; line-height: 1.6; margin: -6px 0 16px; overflow-wrap: anywhere; }
+.provenance code { font-size: 10.5px; }
+.links { display: flex; flex-wrap: wrap; gap: 14px; }
 .note { font-size: 11px; line-height: 1.7; color: #747867; max-width: 720px; margin: 29px 0 0; }
 @media (max-width: 700px) {
   .section { padding-top: 45px; }
