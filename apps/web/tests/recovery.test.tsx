@@ -58,10 +58,9 @@ async function mountCompetition(
   );
   const requests: { method: string; path: string }[] = [];
   globalThis.fetch = async (input, init) => {
-    const request = new Request(
-      input instanceof Request ? input.clone() : input,
-      init,
-    );
+    // Inspect the actual transport Request. Node's cloned Requests can lose their abort link after GC
+    // (nodejs/undici#4068), and this interceptor only reads the URL/method, never the request body.
+    const request = input instanceof Request ? input : new Request(input, init);
     requests.push({
       method: request.method,
       path: new URL(request.url).pathname,
@@ -168,17 +167,15 @@ test(
   { timeout: 15000 },
   async (t) => {
     let stall = false;
-    let stalledRequest: Request | undefined;
-    let finishLate: ((response: Response) => void) | undefined;
+    const stalledRequests: { request: Request; finishLate: (response: Response) => void }[] = [];
     const view = await mountCompetition(t, (request) => {
       if (
         stall &&
         request.method === "GET" &&
         /^\/v1\/competitions\/[^/]+$/.test(new URL(request.url).pathname)
       ) {
-        stalledRequest = request;
         return new Promise((resolve) => {
-          finishLate = resolve;
+          stalledRequests.push({ request, finishLate: resolve });
         });
       }
     });
@@ -200,7 +197,10 @@ test(
         ),
       "stalled refresh reports its deadline",
     );
-    assert.equal(stalledRequest?.signal.aborted, true);
+    // Polling continues after an error: the latest poll may still be live when React shows an earlier timeout.
+    // Keep the request and resolver together so the cancellation and late-response checks cover the same poll.
+    const timedOutRequest = stalledRequests.find(({ request }) => request.signal.aborted);
+    assert.ok(timedOutRequest, "the timed-out transport was aborted");
     assert.equal(
       view.button("Hold $21.23 with PayPal")?.disabled,
       true,
@@ -223,7 +223,7 @@ test(
       "refresh can resume after timeout",
     );
     await act(async () => {
-      finishLate?.(
+      timedOutRequest.finishLate(
         Response.json({
           ...view.competition,
           title: "Stale response after timeout",
