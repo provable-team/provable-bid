@@ -2028,7 +2028,7 @@ svg {
 }
 
 /* Building phase: one placeholder card per house agent at work. Only coarse step words and the agent's own colours,
-   never any of the page. The sketch fills in one line per real build step. */
+   never any of the page. The canvas shows the blocks its page really has. */
 .building-card {
   border-style: dashed;
   border-color: color-mix(in srgb, var(--spot-a) 40%, #cbd0ba);
@@ -2040,50 +2040,167 @@ svg {
   justify-content: center;
   background: color-mix(in srgb, var(--spot-c) 8%, #eceee3);
 }
+/* The canvas mirrors the agent's real page: its blocks in order and to scale, in the agent's colours. */
+.build-canvas {
+  position: absolute;
+  inset: 0;
+  padding: 7% 11% 12%;
+  --chip: var(--spot-a);
+}
 .build-sketch {
-  position: relative;
-  width: 64%;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.build-sketch.is-empty {
+  border: 1px dashed color-mix(in srgb, var(--spot-a) 35%, #c3c8b2);
+  border-radius: 4px;
+}
+.sk {
+  --bar: color-mix(in srgb, var(--spot-a) 32%, transparent);
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  gap: 5px;
+  padding: 1.6% 3%;
   overflow: hidden;
-}
-.build-sketch i {
-  display: block;
-  grid-column: 1 / -1;
-  height: 7px;
   border-radius: 3px;
-  border: 1px dashed #c3c8b2;
-  transition: background 0.6s ease, border-color 0.6s ease, box-shadow 0.6s ease;
+  border: 1px solid color-mix(in srgb, var(--spot-c) 40%, #cbd0ba);
+  background: var(--fill, color-mix(in srgb, var(--spot-c) 14%, var(--white)));
+  transition: flex-grow 0.6s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+  animation: sk-in 0.5s ease-out;
 }
-.build-sketch i:nth-child(1) { height: 9px; }
-.build-sketch i:nth-child(2) { height: 42px; }
-.build-sketch i:nth-child(3) { width: 72%; }
-.build-sketch i:nth-child(4) { width: 48%; }
-.build-sketch i:nth-child(5),
-.build-sketch i:nth-child(6),
-.build-sketch i:nth-child(8),
-.build-sketch i:nth-child(9) {
-  grid-column: auto;
-  height: 22px;
+@keyframes sk-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
-.build-sketch i:nth-child(7) { width: 66%; }
-.build-sketch i:nth-child(10) { height: 11px; }
-.build-sketch i.on {
-  border-style: solid;
-  border-color: color-mix(in srgb, var(--spot-c) 50%, #cbd0ba);
-  background: color-mix(in srgb, var(--spot-c) 22%, var(--white));
+.sk.now {
+  border-color: var(--spot-a);
+  box-shadow: 0 0 0 1px var(--spot-a), 0 0 14px color-mix(in srgb, var(--spot-a) 45%, transparent);
 }
-.build-sketch i.now {
-  border-color: var(--spot-c);
-  background: color-mix(in srgb, var(--spot-c) 62%, var(--white));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--spot-c) 70%, transparent);
+.sk i,
+.sk span > i {
+  display: block;
+  min-height: 2px;
+  border-radius: 2px;
+  background: var(--bar);
+}
+.sk .sk-chip {
+  background: var(--chip);
+  border-radius: 999px;
+}
+.sk-nav,
+.sk-footer {
+  align-items: center;
+}
+.sk-logo {
+  flex: none;
+  width: 7%;
+  height: 60%;
+  border-radius: 50% !important;
+}
+.sk-links {
+  display: flex;
+  gap: 5%;
+  flex: 1;
+  height: 30%;
+  margin-left: 4%;
+}
+.sk-links i {
+  width: 12%;
+  height: 100%;
+}
+.sk-nav .sk-chip {
+  width: 15%;
+  height: 55%;
+  margin-left: auto;
+}
+.sk-hero,
+.sk-section,
+.sk-faq,
+.sk-form,
+.sk-table {
+  flex-direction: column;
+  justify-content: center;
+}
+.sk-title {
+  width: 70%;
+  height: 14%;
+}
+.sk-title.sk-short {
+  width: 46%;
+}
+.sk-line {
+  width: 56%;
+  height: 7%;
+}
+.sk-hero .sk-chip {
+  width: 22%;
+  height: 13%;
+  margin-top: 2%;
+}
+.sk-heading {
+  flex: none;
+  width: 34%;
+  height: 7px;
+}
+.sk-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 5px;
+}
+.sk .sk-tile {
+  flex: 1;
+  height: 100%;
+  background: color-mix(in srgb, var(--spot-c) 30%, var(--white));
+  border: 1px solid color-mix(in srgb, var(--spot-c) 45%, transparent);
+  animation: sk-in 0.5s ease-out;
+}
+.sk .sk-q {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  background: color-mix(in srgb, var(--spot-c) 24%, var(--white));
+  border: 1px solid color-mix(in srgb, var(--spot-c) 40%, transparent);
+}
+.sk .sk-field {
+  flex: 1;
+  width: 72%;
+  min-height: 0;
+  background: var(--white);
+  border: 1px solid color-mix(in srgb, var(--spot-c) 50%, transparent);
+}
+.sk-form .sk-chip {
+  flex: none;
+  width: 20%;
+  height: 8px;
+}
+.sk-tr {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 3px;
+}
+.sk-tr i {
+  flex: 1;
+}
+.sk-footer .sk-line {
+  width: 40%;
+  height: 30%;
+}
+.is-building .build-sketch {
+  position: relative;
 }
 .is-building .build-sketch::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--spot-c) 35%, transparent) 50%, transparent 70%);
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--spot-c) 30%, transparent) 50%, transparent 70%);
   transform: translateX(-100%);
   animation: build-sweep 2.4s ease-in-out infinite;
 }

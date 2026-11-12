@@ -15,6 +15,7 @@ import type {
 import { useApi } from "@/components/api-provider";
 import { AssetPreview } from "@/components/asset-preview";
 import { agentPalette, ArrivalSpotlight, CardSpot } from "@/components/arrival-spotlight";
+import { BuildCanvas } from "@/components/build-canvas";
 import {
   AgentAvatar,
   Countdown,
@@ -66,21 +67,6 @@ function buildStatus(p: BuildProgress): string {
   if (p.state === "not_qualified") return "Didn't qualify";
   return p.label.charAt(0).toUpperCase() + p.label.slice(1);
 }
-
-/** Where on a page sketch a build step belongs (0 top … 1 bottom), so the cursor moves with the real step. */
-function buildRegion(p: BuildProgress): number {
-  const l = p.label;
-  if (p.state !== "building" || l.startsWith("finishing") || l.startsWith("checking")) return 0.45;
-  if (l.includes("header")) return 0.05;
-  if (l.includes("setting up") || l.includes("planning") || l.includes("styles")) return 0.12;
-  if (l.includes("hero")) return 0.25;
-  if (l.includes("phones")) return 0.95;
-  if (l.includes("footer")) return 0.88;
-  if (l.includes("interactions")) return 0.75;
-  return 0.6; // a section: hours, menu, pre-order…
-}
-
-const SKETCH_LINES = 10;
 
 function payoutText(allocation: Allocation): string {
   const amount = money(allocation.amount.amount_minor);
@@ -302,6 +288,34 @@ export default function CompetitionPage({
       if (reload.current === load) reload.current = null;
     };
   }, [api, id, config, requestTimeoutMs]);
+
+  // While house agents build, refresh only their progress (one small request) so each card's cursor follows the block
+  // being written within about a second, instead of waiting for the full 2.5 s reload.
+  const buildingNow = !!snapshot?.owner && snapshot.competition.state === "open" &&
+    (snapshot.competition.build_progress ?? []).some((p) => p.state === "building");
+  useEffect(() => {
+    if (!buildingNow || !config) return;
+    const controller = new AbortController();
+    let busy = false;
+    const timer = setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const r = await api.GET("/v1/competitions/{competition_id}", { params: { path: { competition_id: id } }, signal: controller.signal });
+        const progress = r.data?.build_progress;
+        if (progress && !controller.signal.aborted)
+          setSnapshot((prev) => (prev && prev.competition.id === id ? { ...prev, competition: { ...prev.competition, build_progress: progress } } : prev));
+      } catch {
+        /* the full reload reports errors */
+      } finally {
+        busy = false;
+      }
+    }, 700);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [buildingNow, api, id, config]);
 
   async function act(name: string, operation: () => Promise<unknown>) {
     if (busy || !snapshot?.owner || !config || connectionError || stale) return;
@@ -842,7 +856,6 @@ export default function CompetitionPage({
                       {building.map((p) => {
                         const agent = agents.find((a) => a.id === p.agent_id);
                         const status = buildStatus(p);
-                        const region = buildRegion(p);
                         return (
                           <article
                             className={`submission-card building-card is-${p.state}`}
@@ -852,22 +865,12 @@ export default function CompetitionPage({
                             style={agentPalette(p.colors, agent?.avatar_color)}
                           >
                             <div className="submission-art building-art" aria-hidden="true">
-                              {p.state !== "not_qualified" && (
-                                <CardSpot
-                                  // Where on the page this real step belongs; alternate sides so each new step visibly moves.
-                                  x={0.28 + ((region * 7) % 1) * 0.3 + (p.step % 2) * 0.1}
-                                  y={0.1 + region * 0.78}
-                                  pulse={p.step}
-                                  label={`${agent?.name || "House agent"} · ${p.state === "submitted" ? "submitted" : p.label}`}
-                                />
-                              )}
-                              <div className="build-sketch">
-                                {/* One line fills in per real build step: a progress indicator, never content. */}
-                                {Array.from({ length: SKETCH_LINES }, (_, i) => {
-                                  const filled = p.state === "building" ? Math.min(p.step, SKETCH_LINES) : SKETCH_LINES;
-                                  return <i key={i} className={i < filled ? (i === filled - 1 && p.state === "building" ? "on now" : "on") : ""} />;
-                                })}
-                              </div>
+                              {/* The blocks this agent's page really has so far, in order and to scale; never content. */}
+                              <BuildCanvas
+                                progress={p}
+                                cursor={p.state !== "not_qualified"}
+                                label={`${agent?.name || "House agent"} · ${p.state === "submitted" ? "submitted" : p.label}`}
+                              />
                               <span className="preview-badge">
                                 {p.state === "building" ? "Building · live" : p.state === "submitted" ? "Submitted" : "Not shown"}
                               </span>

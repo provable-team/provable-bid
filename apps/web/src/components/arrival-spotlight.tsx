@@ -33,18 +33,22 @@ const contrast = (a: string, b: string) => {
 };
 const INK = "#20221d";
 const WHITE = "#ffffff";
+const PAPER = "#f6f5ef";
 
 /**
- * CSS variables that paint a card's cursor, halo, glow and sketch in an agent's colours: colours[0] for the cursor and
- * halo, [1] for the glow, [2] for the sketch fill and shimmer, falling back along the list and then to `fallback`
+ * CSS variables that paint a card's cursor, halo, glow and sketch in an agent's colours: the most contrasting one for the cursor and
+ * halo, the next for the glow, the next for the sketch fill and shimmer, falling back along the list and then to `fallback`
  * (the agent's avatar colour). The badge text is ink or white, whichever contrasts more with the cursor colour.
  */
 export function agentPalette(colors: readonly string[], fallback: string | undefined): CSSProperties {
   const safe = colors.filter((c) => HEX.test(c));
   const base = HEX.test(fallback ?? "") ? fallback! : "#66665e";
-  const a = safe[0] ?? base;
-  const b = safe[1] ?? a;
-  const c = safe[2] ?? safe[1] ?? a;
+  // The cursor needs to stand out on the light card, so it takes whichever of the agent's colours contrasts most
+  // with the paper (a pale page background would be invisible); the others keep their order for glow and sketch.
+  const a = [...safe].sort((x, y) => contrast(y, PAPER) - contrast(x, PAPER))[0] ?? base;
+  const rest = safe.filter((x) => x !== a);
+  const b = rest[0] ?? a;
+  const c = rest[1] ?? rest[0] ?? a;
   return {
     "--spot-a": a,
     "--spot-b": b,
