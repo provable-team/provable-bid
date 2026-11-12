@@ -147,8 +147,8 @@ const PRINT_CSS_PROBE = `(() => {
  * 3 mm of the edge of the page-sized box holding it (or past it), and its font size. Also fixed-size clipping boxes
  * whose content is bigger than the box, and the page-sized boxes themselves (outermost only: one per printed page).
  * For blank-print detection: the characters of visible text (non-zero box, not hidden, not under an opacity-0 ancestor,
- * not pushed off the page sideways) and the painted artwork area (visible svg/img/canvas/video, and boxes whose
- * background prints because print-color-adjust is exact).
+ * not pushed off the page sideways) and the painted artwork area (visible svg/img/canvas/video, and boxes other than
+ * html/body with a non-transparent background colour or image).
  * The preview watermark (a fixed overlay at the top z-index) is ignored.
  */
 export const PRINT_SCAN = `(({ pageW, pageH }) => {
@@ -220,7 +220,7 @@ export const PRINT_SCAN = `(({ pageW, pageH }) => {
     if (!shown(el)) continue;
     const s = cs(el), tag = el.tagName.toLowerCase();
     const art = tag === 'svg' || tag === 'img' || tag === 'canvas' || tag === 'video'
-      || ((s.printColorAdjust === 'exact' || s.webkitPrintColorAdjust === 'exact') && (s.backgroundImage !== 'none' || !/^(transparent|rgba\(.*,\s*0\))$/.test(s.backgroundColor)));
+      || (s.backgroundImage !== 'none' || !/^(transparent|rgba\(.*,\s*0\))$/.test(s.backgroundColor));
     if (!art || (tag !== 'svg' && el.closest('svg')) || faded(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.width > 0.5 && r.height > 0.5 && onPage(r)) painted += Math.min(r.width, viewW) * r.height;
@@ -250,8 +250,9 @@ export const PRINT_BUDGET_MS = 5_000;
 /** Fewer visible characters than this across all printed pages counts as no text. */
 export const BLANK_PRINT_MIN_CHARS = 20;
 /**
- * Blank print: (near) no visible text and no artwork worth the name (painted area under 5% of one page). A page whose
- * print CSS hides its content wrapper prints an empty sheet while page count and size still pass.
+ * Blank print: (near) no visible text AND no painted content worth the name (visible svg/img/canvas/video and
+ * backgrounds under 5% of one page). Image- or vector-only art is not blank. A page whose print CSS hides its content
+ * wrapper prints an empty sheet while page count and size still pass.
  */
 export const printBlank = (scan: { chars: number; painted: number; pageArea: number }) =>
   scan.chars < BLANK_PRINT_MIN_CHARS && scan.painted < 0.05 * Math.max(1, scan.pageArea);
@@ -388,7 +389,7 @@ async function openEntry(context: BrowserContext, html: string, note: (kind: 'co
  * Network: https images, fonts and stylesheets may load (the page is meant to look real); anything else that leaves
  * the page (fetch/XHR, scripts, frames, navigation) is blocked and reported. Each message is recorded once.
  */
-export async function renderInBrowser(browser: Browser, html: string, { sequential = false } = {}): Promise<RenderResult> {
+export async function renderInBrowser(browser: Browser, html: string, { sequential = false, print = true } = {}): Promise<RenderResult> {
   const consoleErrors: string[] = [];
   const blockedRequests: string[] = [];
   const note = (kind: 'console' | 'blocked', text: string) => {
@@ -429,7 +430,7 @@ export async function renderInBrowser(browser: Browser, html: string, { sequenti
   // 4. Print, only when the markup has print CSS: its own load at desktop size, then print media (see measurePrint).
   //    Bounded and never fatal: a failure is recorded as `checked: false` and the render goes on.
   const printPass = async (): Promise<PrintMeasurement> => {
-    if (!mayHavePrintCss(html)) return { checked: false };
+    if (!print || !mayHavePrintCss(html)) return { checked: false };
     try { return await pass(DESKTOP, page => boundedPrint(page))(); }
     catch (e) { return { checked: false, error: `print measurement failed: ${((e as Error)?.message ?? String(e)).split('\n')[0].slice(0, 160)}` }; }
   };
@@ -456,6 +457,21 @@ export interface KernelRendererOptions {
   replays?: boolean;
   /** How long to offer the replay link after recording (default 20 h, inside the Developer plan's 1-day retention). */
   replayRetentionHours?: number;
+  /** Test seams: the KERNEL client and the CDP connection (default: the real SDK and chromium.connectOverCDP). */
+  client?: Pick<Kernel, 'browsers'>;
+  connect?: (cdpUrl: string) => Promise<Browser>;
+}
+
+/** The print pass alone, in its own browser: what a recorded replay session must never run (it removes the watermark). */
+export async function printInBrowser(browser: Browser, html: string): Promise<PrintMeasurement> {
+  if (!mayHavePrintCss(html)) return { checked: false };
+  const context = await browser.newContext(DESKTOP);
+  try {
+    const { page } = await openEntry(context, html, () => {});
+    return await boundedPrint(page);
+  } catch (e) {
+    return { checked: false, error: `print measurement failed: ${((e as Error)?.message ?? String(e)).split('\n')[0].slice(0, 160)}` };
+  } finally { await context.close().catch(() => {}); }
 }
 
 /**
@@ -463,11 +479,27 @@ export interface KernelRendererOptions {
  * (app plus the caller's IDs), creation takes the caller's abort signal, and the session is always deleted.
  */
 export function kernelRenderer(apiKey: string, options: KernelRendererOptions = {}): PageRenderer {
-  const kernel = new Kernel({ apiKey });
+  const kernel = options.client ?? new Kernel({ apiKey });
+  const connect = options.connect ?? ((url: string) => chromium.connectOverCDP(url, { timeout: 20_000 }));
   const retentionMs = (options.replayRetentionHours ?? 20) * 3_600_000;
   /** Deletes active sessions carrying all these tags: used when creation was aborted before its ID came back. */
   const deleteTagged = async (tags: Record<string, string>) => {
     for await (const b of kernel.browsers.list({ tags, status: 'active' })) await kernel.browsers.deleteByID(b.session_id).catch(() => {});
+  };
+  /** The print pass in a separate headless KERNEL session that is never recorded. Never rejects. */
+  const unrecordedPrint = async (html: string, tags: Record<string, string>, signal?: AbortSignal): Promise<PrintMeasurement> => {
+    let id: string | undefined, b: Browser | undefined;
+    try {
+      const s = await kernel.browsers.create({ headless: true, timeout_seconds: 60, tags: { ...tags, pass: 'print' } }, { signal });
+      id = s.session_id;
+      b = await connect(s.cdp_ws_url);
+      return await printInBrowser(b, html);
+    } catch (e) {
+      return { checked: false, error: `print measurement failed: ${((e as Error)?.message ?? String(e)).split('\n')[0].slice(0, 160)}` };
+    } finally {
+      await b?.close().catch(() => {});
+      if (id) await kernel.browsers.deleteByID(id).catch(() => {});
+    }
   };
   return {
     name: 'kernel',
@@ -491,9 +523,11 @@ export function kernelRenderer(apiKey: string, options: KernelRendererOptions = 
       signal?.addEventListener('abort', abort, { once: true });
       try {
         // Inside try, so a failed connection still deletes the session instead of leaving it until its timeout.
-        browser = await chromium.connectOverCDP(session.cdp_ws_url, { timeout: 20_000 });
-        // With a replay recording, one pass at a time so the video shows each window in turn.
-        const result = await renderInBrowser(browser, html, { sequential: !!options.replays });
+        browser = await connect(session.cdp_ws_url);
+        // With a replay recording, one pass at a time so the video shows each window in turn. The print pass removes the
+        // preview watermark, so it never runs in a recorded session: it gets its own headless session, without a replay.
+        const result = await renderInBrowser(browser, html, { sequential: !!options.replays, print: !options.replays });
+        if (options.replays && mayHavePrintCss(html)) result.print = await unrecordedPrint(html, sessionTags, signal);
         let replay: RenderResult['replay'];
         if (session.replay) {
           const id = session.replay.replay_id;

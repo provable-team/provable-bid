@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
-import { parsePageSize, renderInBrowser } from '../apps/api/src/browser.js';
+import { kernelRenderer, parsePageSize, renderInBrowser } from '../apps/api/src/browser.js';
 import { previewHtml } from '../apps/api/src/html.js';
 
 const CHROME = process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
@@ -140,11 +140,58 @@ test('print: print CSS that hides the content wrapper is a blank print, even tho
   }
 });
 
-test('print: artwork with little text is not blank', { skip }, async () => {
-  const r = await renderInBrowser(browser, doc(VIEWPORT + '<style>@page{size:A3 portrait;margin:0}@media print{body{margin:0}svg{width:297mm;height:400mm}}</style>',
-    '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#c33"/></svg><p>Jazz</p>'));
+test('print: vector-only or image-only art with no text is not blank', { skip }, async () => {
+  const css = '<style>@page{size:A3 portrait;margin:0}@media print{body{margin:0}.art{display:block;width:297mm;height:420mm}}</style>';
+  const svg = await renderInBrowser(browser, doc(VIEWPORT + css, '<svg class="art" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#c33"/></svg>'));
+  assert.equal(svg.print!.checked, true);
+  assert.ok(!svg.print!.issues!.some(i => /blank/.test(i)), JSON.stringify(svg.print!.issues));
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const img = await renderInBrowser(browser, doc(VIEWPORT + css, `<img class="art" alt="" src="${pixel}">`));
+  assert.ok(!img.print!.issues!.some(i => /blank/.test(i)), JSON.stringify(img.print!.issues));
+  const block = await renderInBrowser(browser, doc(VIEWPORT + css, '<div class="art" style="background:#1d2340"></div>'));
+  assert.ok(!block.print!.issues!.some(i => /blank/.test(i)), 'a painted background is content');
+});
+
+test('print with replays: the print pass never runs in the recorded session; it gets its own headless session', { skip }, async () => {
+  const calls: string[] = [];
+  const sessions: { id: string; replay: boolean; contexts: number }[] = [];
+  const fake = {
+    browsers: {
+      create: async (opts: { headless?: boolean; start_replay?: boolean }) => {
+        const id = `s${sessions.length + 1}`;
+        sessions.push({ id, replay: !!opts.start_replay, contexts: 0 });
+        calls.push(`create ${id} headless=${!!opts.headless} replay=${!!opts.start_replay}`);
+        return { session_id: id, cdp_ws_url: id, ...(opts.start_replay ? { replay: { replay_id: `r_${id}`, replay_view_url: `https://replays.example/${id}` } } : {}) };
+      },
+      replays: {
+        stop: async (id: string) => { calls.push(`stop ${id}`); },
+        list: async () => [],
+      },
+      deleteByID: async (id: string) => { calls.push(`delete ${id}`); },
+      list: async function* () {},
+    },
+  };
+  // Each session is a fresh local Chrome; count the contexts (passes) each one opens.
+  const connect = async (id: string) => {
+    const b = await chromium.launch({ executablePath: CHROME, headless: true, ignoreDefaultArgs: ['--hide-scrollbars'] });
+    const session = sessions.find(x => x.id === id)!;
+    const newContext = b.newContext.bind(b);
+    b.newContext = (async (...a: Parameters<Browser['newContext']>) => { session.contexts++; return newContext(...a); }) as Browser['newContext'];
+    return b;
+  };
+  const renderer = kernelRenderer('test', { replays: true, client: fake as never, connect });
+  const r = await renderer.render(previewHtml(doc(VIEWPORT + POSTER_CSS('font-size:14pt'), POSTER_BODY.replace('<div class="art"></div>', '<div class="art" style="height:200mm"></div>'))));
+  assert.equal(sessions.length, 2, calls.join('; '));
+  assert.deepEqual(sessions.map(x => [x.replay, x.contexts]), [[true, 3], [false, 1]], 'desktop, focus and phone are recorded; print runs alone, unrecorded');
+  assert.ok(calls.includes('create s2 headless=true replay=false'), calls.join('; '));
+  assert.ok(calls.includes('delete s1') && calls.includes('delete s2'), 'both sessions are deleted');
   assert.equal(r.print!.checked, true);
-  assert.ok(!r.print!.issues!.some(i => /blank/.test(i)), JSON.stringify(r.print!.issues));
+  assert.deepEqual(r.print!.issues, []);
+  assert.equal(r.replay?.id, 'r_s1');
+
+  const plain = await kernelRenderer('test', { replays: true, client: fake as never, connect }).render(doc(VIEWPORT, '<h1>No print CSS</h1>'));
+  assert.deepEqual(plain.print, { checked: false });
+  assert.equal(sessions.length, 3, 'no print session for a page without print CSS');
 });
 
 test('print: a page without print CSS is not print-checked; "@page" in the text alone does not count', { skip }, async () => {
