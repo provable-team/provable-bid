@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business Card: Maya Okafor, Product Designer</title>
+<style>
+  :root {
+    --ink: #0a0a0a;
+    --paper: #ffffff;
+    --accent: #ff4d1a;
+    --muted: #5a5a5a;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", system-ui, sans-serif;
+    background: #e9e7e3;
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .wrap {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
+  }
+  .note {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 18px 20px;
+    margin-bottom: 28px;
+  }
+  .note h1 {
+    margin: 0 0 6px;
+    font-size: clamp(1.4rem, 4vw, 2rem);
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+  }
+  .note p { margin: 0; font-size: 0.95rem; line-height: 1.5; color: #d9d9d9; }
+  .note strong { color: var(--accent); }
+
+  .sides {
+    display: grid;
+    gap: 32px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  @media (min-width: 900px) {
+    .sides { grid-template-columns: 1fr 1fr; align-items: start; }
+  }
+  .side { width: 100%; max-width: 560px; }
+  .side-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 0 0 10px;
+  }
+
+  /* The card: true 3.5 x 2 in ratio, fluid width */
+  .card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3.5 / 2;
+    container-type: inline-size;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+  }
+  .card-front {
+    background: var(--ink);
+    color: var(--paper);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 7cqw 8cqw;
+  }
+  .card-front .stripe {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 22cqw;
+    height: 100%;
+    background: var(--accent);
+  }
+  .card-front .name {
+    position: relative;
+    margin: 0;
+    font-size: 13.5cqw;
+    line-height: 0.92;
+    font-weight: 900;
+    letter-spacing: -0.035em;
+    text-transform: uppercase;
+    max-width: 80%;
+  }
+  .card-front .title {
+    position: relative;
+    margin: 0;
+    font-size: 5.2cqw;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .card-front .title.on-stripe { color: var(--ink); }
+
+  .card-back {
+    background: var(--paper);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 7cqw 8cqw 7cqw 9cqw;
+    border-left: 3cqw solid var(--accent);
+  }
+  .card-back .who {
+    margin: 0 0 6cqw;
+    font-size: 4.6cqw;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .card-back .contact {
+    display: block;
+    text-decoration: none;
+    color: var(--ink);
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    word-break: break-all;
+  }
+  .card-back .email { font-size: 7.4cqw; }
+  .card-back .site {
+    font-size: 6cqw;
+    margin-top: 3.5cqw;
+    color: var(--accent);
+  }
+  .card-back a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+  .card-front .name, .card-front .title { overflow-wrap: anywhere; }
+
+  /* Print: exactly two pages, one card per page, no notes */
+  @page {
+    size: 3.5in 2in;
+    margin: 0;
+  }
+  @media print {
+    html, body {
+      background: #fff;
+      width: 3.5in;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .screen-only, .note, .side-label { display: none !important; }
+    .wrap { max-width: none; padding: 0; margin: 0; }
+    .sides { display: block; gap: 0; }
+    .side { max-width: none; width: 3.5in; margin: 0; }
+    .card {
+      width: 3.5in;
+      height: 2in;
+      aspect-ratio: auto;
+      box-shadow: none;
+      break-inside: avoid;
+    }
+    .card-front { break-after: page; page-break-after: always; }
+    .card-back { break-after: auto; page-break-after: auto; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <section class="note screen-only" aria-label="Print information">
+    <h1>Maya Okafor, Product Designer</h1>
+    <p><strong>Trim size:</strong> 3.5 × 2 in (US standard business card). The front and back are shown below as two separate sides.</p>
+    <p style="margin-top:8px"><strong>To print:</strong> open the browser print dialog, set scale to 100% (or "Actual size"), turn off headers and footers, and use the paper size or custom size 3.5 × 2 in. Each side prints on its own page: page 1 is the front, page 2 is the back.</p>
+  </section>
+
+  <div class="sides">
+
+    <div class="side" id="front">
+      <span class="side-label screen-only">Front</span>
+      <article class="card card-front" aria-label="Business card front">
+        <div class="stripe" aria-hidden="true"></div>
+        <p class="name">Maya<br>Okafor</p>
+        <p class="title">Product Designer</p>
+      </article>
+    </div>
+
+    <div class="side" id="back">
+      <span class="side-label screen-only">Back</span>
+      <article class="card card-back" aria-label="Business card back">
+        <p class="who">Maya Okafor</p>
+        <a class="contact email" href="mailto:maya@example.com">maya@example.com</a>
+        <a class="contact site" href="https://example.com/maya">example.com/maya</a>
+      </article>
+    </div>
+
+  </div>
+</main>
+</body>
+</html>

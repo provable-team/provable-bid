@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Night Market: A3 Poster</title>
+<style>
+  :root {
+    --paper: #f4eee4;
+    --paper-deep: #ebe2d3;
+    --ink: #2a2320;
+    --muted: #6b5d52;
+    --accent: #9c4a2f;
+    --rule: #c9b9a4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #d9d0c2;
+    color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+    padding: 16px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    overflow-x: hidden;
+  }
+
+  /* The poster. Container units keep type proportional at any width. */
+  .sheet {
+    position: relative;
+    width: 100%;
+    max-width: 297mm;
+    aspect-ratio: 297 / 420;
+    background: var(--paper);
+    container-type: inline-size;
+    overflow: hidden;
+    box-shadow: 0 6px 30px rgba(42, 35, 32, 0.18);
+    display: flex;
+    flex-direction: column;
+    padding: 9cqi 9cqi 8cqi;
+  }
+
+  .sheet::before {
+    content: "";
+    position: absolute;
+    inset: 4cqi;
+    border: 0.25cqi solid var(--rule);
+    pointer-events: none;
+  }
+
+  .kicker {
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    font-size: 2.6cqi;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  .wave {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin: 6cqi 0 0;
+  }
+
+  h1 {
+    font-weight: 400;
+    font-size: 17cqi;
+    line-height: 0.92;
+    letter-spacing: -0.02em;
+    margin: 6cqi 0 0;
+  }
+  h1 span { display: block; }
+  h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  .when {
+    margin: 9cqi 0 0;
+    padding-top: 5cqi;
+    border-top: 0.3cqi solid var(--ink);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4cqi;
+  }
+  .when .label {
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    font-size: 2.3cqi;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1.4cqi;
+  }
+  .when .value {
+    font-size: 6.2cqi;
+    line-height: 1.1;
+    margin: 0;
+  }
+
+  .free {
+    margin: 8cqi 0 0;
+    display: flex;
+    align-items: baseline;
+    gap: 3cqi;
+    flex-wrap: wrap;
+  }
+  .free strong {
+    font-weight: 400;
+    font-style: italic;
+    font-size: 11cqi;
+    line-height: 1;
+    color: var(--accent);
+  }
+  .free span {
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    font-size: 2.6cqi;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .intro {
+    margin: 7cqi 0 0;
+    font-size: 4.2cqi;
+    line-height: 1.45;
+    max-width: 85%;
+    color: var(--ink);
+  }
+
+  .foot {
+    margin-top: auto;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 6cqi;
+    border-top: 0.25cqi solid var(--rule);
+    padding-top: 6cqi;
+  }
+  .foot p {
+    margin: 0;
+    font-size: 3.4cqi;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .foot p strong {
+    display: block;
+    font-weight: 400;
+    font-size: 4.6cqi;
+    color: var(--ink);
+    margin-bottom: 1cqi;
+  }
+
+  .qr {
+    width: 36cqi;
+    text-align: center;
+  }
+  .qr svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .qr .cap {
+    margin-top: 2cqi;
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    font-size: 2.6cqi;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  /* Print: exactly one A3 portrait page, artwork only. */
+  @page {
+    size: A3 portrait;
+    margin: 0;
+  }
+  @media print {
+    html, body {
+      width: 297mm;
+      height: 420mm;
+      background: var(--paper);
+      padding: 0;
+      margin: 0;
+      display: block;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .sheet {
+      width: 297mm;
+      height: 420mm;
+      max-width: none;
+      aspect-ratio: auto;
+      box-shadow: none;
+      break-after: avoid;
+      page-break-after: avoid;
+      break-inside: avoid;
+      page-break-inside: avoid;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
+</style>
+</head>
+<body>
+
+<main class="sheet" role="img" aria-label="Riverside Night Market poster: Fridays 6pm to 11pm in June. Free entry. Scan for vendors.">
+
+  <p class="kicker">Fridays in June &middot; Riverside</p>
+
+  <svg class="wave" viewBox="0 0 800 60" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 30 Q 50 8 100 30 T 200 30 T 300 30 T 400 30 T 500 30 T 600 30 T 700 30 T 800 30" fill="none" stroke="#9c4a2f" stroke-width="2"/>
+    <path d="M0 46 Q 50 24 100 46 T 200 46 T 300 46 T 400 46 T 500 46 T 600 46 T 700 46 T 800 46" fill="none" stroke="#c9b9a4" stroke-width="1.5"/>
+  </svg>
+
+  <h1>
+    <span>Riverside</span>
+    <span><em>Night</em></span>
+    <span>Market</span>
+  </h1>
+
+  <section class="when" aria-label="When">
+    <div>
+      <p class="label">Days</p>
+      <p class="value">Fridays</p>
+    </div>
+    <div>
+      <p class="label">Hours</p>
+      <p class="value">6pm to 11pm</p>
+    </div>
+  </section>
+
+  <div class="free">
+    <strong>Free entry</strong>
+    <span>Come as you are</span>
+  </div>
+
+  <p class="intro">An evening market on the water through June. Walk the riverside, browse what is on offer, and stay for the last of the light.</p>
+
+  <footer class="foot">
+    <p>
+      <strong>Riverside Night Market</strong>
+      Every Friday in June, 6pm to 11pm. Free entry.
+    </p>
+
+    <div class="qr">
+      <!-- Drawn placeholder. Not a scannable code. -->
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <rect x="2" y="2" width="116" height="116" fill="#fbf8f2" stroke="#2a2320" stroke-width="2"/>
+        <!-- corner finder placeholders, drawn as outlines only -->
+        <rect x="12" y="12" width="26" height="26" fill="none" stroke="#2a2320" stroke-width="2.5"/>
+        <rect x="19" y="19" width="12" height="12" fill="none" stroke="#9c4a2f" stroke-width="1.5"/>
+        <rect x="82" y="12" width="26" height="26" fill="none" stroke="#2a2320" stroke-width="2.5"/>
+        <rect x="89" y="19" width="12" height="12" fill="none" stroke="#9c4a2f" stroke-width="1.5"/>
+        <rect x="12" y="82" width="26" height="26" fill="none" stroke="#2a2320" stroke-width="2.5"/>
+        <rect x="19" y="89" width="12" height="12" fill="none" stroke="#9c4a2f" stroke-width="1.5"/>
+        <!-- dashed central field marking the placeholder area -->
+        <rect x="48" y="48" width="24" height="24" fill="none" stroke="#9c4a2f" stroke-width="1.2" stroke-dasharray="3 3"/>
+        <line x1="44" y1="60" x2="76" y2="60" stroke="#c9b9a4" stroke-width="1" stroke-dasharray="2 4"/>
+        <line x1="60" y1="44" x2="60" y2="76" stroke="#c9b9a4" stroke-width="1" stroke-dasharray="2 4"/>
+      </svg>
+      <div class="cap">Scan for vendors</div>
+    </div>
+  </footer>
+
+</main>
+
+</body>
+</html>

@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spoke & Chain Saturday Fix-It Clinic: A3 Poster</title>
+<style>
+  @page { size: A3 portrait; margin: 0; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    --paper: #f4ede2;
+    --ink: #2a211c;
+    --muted: #6b5c50;
+    --accent: #a4502f;
+    --rule: #cdbfae;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #e7ddcd;
+    color: var(--ink);
+    overflow-x: hidden;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+  }
+
+  .poster {
+    width: 100%;
+    max-width: 297mm;
+    aspect-ratio: 297 / 420;
+    background: var(--paper);
+    position: relative;
+    overflow: hidden;
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    padding: 7cqw 7cqw 6cqw;
+    box-shadow: 0 2px 18px rgba(42, 33, 28, 0.12);
+  }
+
+  .masthead {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 2.4cqw;
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    font-size: 2.6cqw;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .masthead strong { color: var(--ink); font-weight: 700; }
+
+  .kicker {
+    margin: 8cqw 0 2cqw;
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    font-size: 3.2cqw;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  h1 {
+    margin: 0;
+    font-weight: 400;
+    font-size: 15.5cqw;
+    line-height: 0.92;
+    letter-spacing: -0.02em;
+  }
+
+  h1 .amp { font-style: italic; color: var(--accent); }
+
+  .deck {
+    margin: 6cqw 0 0;
+    font-size: 5.2cqw;
+    line-height: 1.3;
+    font-style: italic;
+    color: var(--muted);
+    max-width: 30em;
+  }
+
+  .art {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 6cqw 0;
+  }
+
+  .art svg {
+    width: 62%;
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .slot {
+    border-top: 2px solid var(--ink);
+    border-bottom: 1px solid var(--rule);
+    padding: 4.5cqw 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4cqw;
+  }
+
+  .slot .label {
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    font-size: 2.6cqw;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 1.4cqw;
+  }
+
+  .slot .value {
+    font-size: 7cqw;
+    line-height: 1.05;
+  }
+
+  .body {
+    margin: 6cqw 0 0;
+    font-size: 4.4cqw;
+    line-height: 1.5;
+    max-width: 34em;
+  }
+
+  .cta {
+    display: inline-block;
+    margin-top: 6cqw;
+    padding: 3cqw 4.5cqw;
+    background: var(--ink);
+    color: var(--paper);
+    text-decoration: none;
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    font-size: 3.6cqw;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 700;
+    align-self: flex-start;
+  }
+
+  .cta:hover, .cta:focus-visible { background: var(--accent); outline: none; }
+
+  .visit {
+    margin-top: 7cqw;
+    padding-top: 4cqw;
+    border-top: 1px solid var(--rule);
+    scroll-margin-top: 4cqw;
+  }
+
+  .visit .addr {
+    font-size: 9cqw;
+    line-height: 1;
+    margin: 0 0 1.6cqw;
+  }
+
+  .visit .hours {
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    font-size: 3.4cqw;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  .visit:target { background: rgba(164, 80, 47, 0.06); }
+
+  @media (max-width: 480px) {
+    body { padding: 0; }
+    .poster { box-shadow: none; padding: 9cqw 8cqw 8cqw; }
+    .masthead { font-size: 3.2cqw; }
+    h1 { font-size: 17cqw; }
+    .deck { font-size: 6cqw; }
+    .slot { grid-template-columns: 1fr; gap: 4cqw; }
+    .slot .value { font-size: 9cqw; }
+    .body { font-size: 5.4cqw; }
+    .cta { font-size: 4.4cqw; }
+    .visit .addr { font-size: 11cqw; }
+    .visit .hours { font-size: 4cqw; }
+  }
+
+  @media print {
+    html, body {
+      background: var(--paper);
+      width: 297mm;
+      height: 420mm;
+      overflow: hidden;
+    }
+    body {
+      display: block;
+      padding: 0;
+      min-height: 0;
+    }
+    .poster {
+      width: 297mm;
+      height: 420mm;
+      max-width: none;
+      aspect-ratio: auto;
+      box-shadow: none;
+      padding: 22mm 21mm 19mm;
+      page-break-after: avoid;
+      break-after: avoid;
+      page-break-inside: avoid;
+    }
+    .visit:target { background: none; }
+    a { color: inherit; }
+    .cta { background: var(--ink); color: var(--paper); }
+  }
+</style>
+</head>
+<body>
+
+<main class="poster" aria-label="Spoke & Chain Saturday Fix-It Clinic poster">
+
+  <header class="masthead">
+    <span><strong>Spoke &amp; Chain</strong> &middot; Neighborhood bike repair</span>
+    <span>Free safety checks</span>
+  </header>
+
+  <p class="kicker">Spoke &amp; Chain presents</p>
+
+  <h1>Saturday<br>Fix-It <span class="amp">&amp;</span><br>Clinic</h1>
+
+  <p class="deck">Bring your bike in for a free safety check on Saturday.</p>
+
+  <div class="art" aria-hidden="true">
+    <svg viewBox="0 0 200 200" role="img" aria-label="Bicycle wheel illustration">
+      <g fill="none" stroke="#2a211c" stroke-width="2.2" stroke-linecap="round">
+        <circle cx="100" cy="100" r="88"/>
+        <circle cx="100" cy="100" r="78" stroke="#a4502f" stroke-width="1.2"/>
+        <circle cx="100" cy="100" r="8"/>
+        <line x1="100" y1="92" x2="100" y2="12"/>
+        <line x1="100" y1="108" x2="100" y2="188"/>
+        <line x1="92" y1="100" x2="12" y2="100"/>
+        <line x1="108" y1="100" x2="188" y2="100"/>
+        <line x1="100" y1="92" x2="31" y2="61"/>
+        <line x1="100" y1="92" x2="169" y2="61"/>
+        <line x1="100" y1="108" x2="31" y2="139"/>
+        <line x1="100" y1="108" x2="169" y2="139"/>
+        <line x1="108" y1="100" x2="139" y2="31"/>
+        <line x1="108" y1="100" x2="139" y2="169"/>
+        <line x1="92" y1="100" x2="61" y2="31"/>
+        <line x1="92" y1="100" x2="61" y2="169"/>
+      </g>
+      <circle cx="100" cy="100" r="3" fill="#a4502f"/>
+    </svg>
+  </div>
+
+  <section class="slot" aria-label="Clinic essentials">
+    <div>
+      <p class="label">What</p>
+      <p class="value">Free safety checks</p>
+    </div>
+    <div>
+      <p class="label">When</p>
+      <p class="value">Saturday, 10am to 2pm</p>
+    </div>
+  </section>
+
+  <p class="body">
+    The Spoke &amp; Chain Saturday Fix-It Clinic offers free safety checks for your bike.
+    Come by on Saturday between 10am and 2pm at 12 Mill Lane.
+  </p>
+
+  <a class="cta" href="#visit">Find us at 12 Mill Lane</a>
+
+  <footer class="visit" id="visit">
+    <p class="addr">12 Mill Lane</p>
+    <p class="hours">Spoke &amp; Chain &middot; Saturdays 10am to 2pm &middot; Free safety checks</p>
+  </footer>
+
+</main>
+
+</body>
+</html>
