@@ -41,7 +41,7 @@ export function LedgerGrid({
     field,
     headerName,
     // Amounts and statuses are short; give titles and IDs the spare width so they truncate less.
-    minWidth: valueType === "currency" ? 110 : valueType === "status" ? 120 : 150,
+    minWidth: valueType === "currency" ? 120 : valueType === "status" ? 125 : 150,
     flex: valueType === "currency" || valueType === "status" ? 1 : 1.5,
     // Amounts read down a column: right-aligned, tabular figures.
     ...(valueType === "currency" ? { type: "rightAligned", cellClass: ["ag-right-aligned-cell", "ledger-number"] } : {}),
@@ -73,7 +73,8 @@ export function LedgerGrid({
           theme={theme}
           rowData={rows}
           columnDefs={columnDefs}
-          defaultColDef={{ sortable: true, filter: true, resizable: true }}
+          // Narrow columns wrap their header onto two lines rather than truncating it.
+          defaultColDef={{ sortable: true, filter: true, resizable: true, wrapHeaderText: true, autoHeaderHeight: true }}
           domLayout="autoHeight"
           suppressColumnVirtualisation
           tooltipShowMode="whenTruncated"
