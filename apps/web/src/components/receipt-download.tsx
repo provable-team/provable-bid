@@ -5,7 +5,7 @@ import { fetchProtected } from "@/lib/api";
 import { useApi } from "./api-provider";
 import { Icon } from "./ui";
 
-/** Downloads the buyer's Ed25519-signed delivery receipt (GET /v1/purchases/{id}/receipt, outside the contract). */
+/** Downloads the buyer's signed purchase/artifact/evaluation snapshot (GET /v1/purchases/{id}/receipt, outside the contract). */
 export function ReceiptDownload({
   purchaseId,
   disabled = false,
@@ -42,7 +42,7 @@ export function ReceiptDownload({
       setError(
         cause instanceof Error
           ? cause.message
-          : "The delivery receipt is unavailable. Try again.",
+          : "The purchase receipt is unavailable. Try again.",
       );
     } finally {
       setBusy(false);
@@ -58,11 +58,11 @@ export function ReceiptDownload({
         onClick={() => void download()}
       >
         <Icon name="check" size={16} />
-        {busy ? "Signing receipt…" : "Download signed delivery receipt"}
+        {busy ? "Signing receipt…" : "Download signed purchase receipt"}
       </button>
       <p className="delivery-note">
-        Signed record of what you received: file fingerprints, the checks and
-        the PayPal capture reference. Verify it with the{" "}
+        Signed purchase snapshot of the checked files and payment reference. It records the checks, not design
+        quality or confirmation that you downloaded a file. Verify a file&apos;s fingerprint with the{" "}
         <a href={keyUrl}>public key</a> and{" "}
         <a href={`${settings.baseUrl}/verify-receipt.mjs`}>verify-receipt.mjs</a>.
       </p>

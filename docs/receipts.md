@@ -1,10 +1,15 @@
-# Signed delivery receipts and live stats
+# Signed purchase receipts and live stats
 
-## Signed delivery receipts
+## Signed purchase receipts
 
-When a buyer's purchase is captured, the buyer can download a **signed delivery receipt**: a JSON file, signed by the
-provable.bid API with Ed25519, that records what was delivered. It is a record of delivery, not a payment or payout
-statement: it binds only facts that are final once PayPal confirms the capture.
+For a captured purchase that is currently eligible for access, the buyer can download a **signed purchase receipt**:
+a JSON purchase, artifact and evaluation snapshot, signed by the provable.bid API with Ed25519. It includes the brief
+title and a SHA-256 hash of the canonical requirements list, not the full free-form brief text.
+
+The receipt can be issued before the buyer requests delivery access or downloads an artifact. Its signature covers
+the recorded fields; a matching artifact hash ties local file bytes to the snapshot. It does not prove that a file
+was downloaded or received, that the judge was correct, that a payout completed, or that access remains available
+now or in the future. Refunds, reversals and disputes can change access after a receipt was issued.
 
 - `GET /v1/purchases/{purchase_id}/receipt` with the buyer's bearer token. Only the buyer who owns the competition gets
   it (anyone else: 404). Before the capture completes, or after a refund, reversal or open dispute: 409
@@ -31,8 +36,11 @@ A receipt (format `provable-receipt-v1`):
 }
 ```
 
-No buyer identity, emails, names, tokens or payer IDs are in it. `payment.mode` is `mock` on a local API running the
-fake provider.
+The payload adds no dedicated buyer-identity or payout-recipient account fields, bearer tokens or server credentials.
+It does include user-provided `brief.title` and `entry.agent_name` strings, which can contain personal names, emails
+or other personal information, as well as the purchase, entry, artifact and capture identifiers shown above. It is
+not guaranteed to be free of personal information; review those values before sharing a receipt. `payment.mode` is
+`mock` on a local API running the fake provider.
 
 ### Verify
 
@@ -42,7 +50,8 @@ node verify-receipt.mjs receipt.json original.html --key http://127.0.0.1:4010/.
 ```
 
 It checks that `key_id` matches the published key, that the signature is valid, and (with the file) that the file's
-sha256 is one of the receipt's artifacts. Exit code 0 means verified. It never trusts the receipt's own `issuer` to
+sha256 is one of the receipt's artifacts. Exit code 0 means those signature and optional file-hash checks passed;
+it does not verify download, judge correctness or continued access. It never trusts the receipt's own `issuer` to
 choose the key.
 
 By hand, with any Ed25519 library (no openssl needed): remove `key_id` and `signature`, serialize the rest as canonical

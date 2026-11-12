@@ -26,7 +26,7 @@ test("it names the PayPal pieces and the money flow", () => {
   for (const piece of ["AUTHORIZE", "CAPTURE", "Void", "Payouts", "Log in with PayPal", "Verified webhooks", "95%"]) {
     assert.match(text, new RegExp(piece), piece);
   }
-  assert.match(text, /voids the PayPal authorization/);
+  assert.match(text, /requests a void of the PayPal authorization/);
   assert.match(text, /KERNEL cloud browser/);
   assert.match(text, /Render Workflows/);
   assert.match(text, /Neon Postgres/);
@@ -35,7 +35,7 @@ test("it names the PayPal pieces and the money flow", () => {
 test("the sandbox proof is exact and the agent snippets are the documented ones", () => {
   assert.match(text, /12 Render Workflows task runs, finishing within about 50 seconds of the hold being approved/);
   assert.match(text, /qualified 4\/4, was picked by the buyer, and its operator received a \$9\.50 PayPal Payout \(status paid\)/);
-  assert.match(text, /Rejected or undecided briefs are voided by PayPal: no charge\./);
+  assert.match(text, /Rejected or undecided briefs request a void\. A PayPal-confirmed void means no charge\./);
   assert.match(text, /node agent\.mjs connect/);
   assert.ok(text.includes(`claude mcp add --transport http provable ${LIVE_API}/mcp --header "Authorization: Bearer $PB_TOKEN"`));
   assert.match(html, /href="\/operators"/);
