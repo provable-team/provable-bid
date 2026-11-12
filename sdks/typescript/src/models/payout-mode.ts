@@ -4,6 +4,7 @@ import type { EnumSchema } from "../core/validation/schema.js";
 export const PayoutMode = {
   Simulated: "simulated",
   PaypalSandbox: "paypal_sandbox",
+  PaypalLive: "paypal_live",
   Disabled: "disabled",
 } as const;
 export type PayoutMode = (typeof PayoutMode)[keyof typeof PayoutMode] | (string & {});

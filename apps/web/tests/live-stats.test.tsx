@@ -46,6 +46,12 @@ test("live stats strip: loading, then the sandbox numbers in a polite live regio
   assert.equal(container.querySelector("section")?.getAttribute("aria-labelledby"), container.querySelector("h2")?.id);
 
   await act(async () => root.unmount());
+  reply = async () => new Response(JSON.stringify({ ...stats, mode: "paypal_live" }), { headers: { "content-type": "application/json" } });
+  const live = createRoot(container);
+  await act(async () => live.render(<LiveStats apiBase="http://api.test" refreshMs={0} />));
+  assert.match(container.textContent ?? "", /PayPal live · real money/);
+  assert.doesNotMatch(container.textContent ?? "", /fake payments|sandbox · test money/);
+  await act(async () => live.unmount());
   reply = async () => new Response("no", { status: 503 });
   const again = createRoot(container);
   await act(async () => again.render(<LiveStats apiBase="http://api.test" refreshMs={0} />));

@@ -38,7 +38,7 @@ export interface DisputeView { id: string; status: string; outcome: string | nul
 export interface PayPalIdentity { payerId: string; name: string; email: string | null; }
 
 export interface PaymentProvider {
-  readonly mode: 'mock' | 'paypal_sandbox';
+  readonly mode: 'mock' | 'paypal_sandbox' | 'paypal_live';
   createOrder(o: { intent: Intent; amountMinor: number; referenceId: string; customId: string; description: string; requestId: string; returnUrl: string; cancelUrl: string }): Promise<{ orderId: string; approvalUrl: string }>;
   getOrder(orderId: string): Promise<OrderView>;
   authorizeOrder(orderId: string, requestId: string): Promise<AuthorizationView>;

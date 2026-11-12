@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CopySnippet } from "./copy-snippet";
 import { LiveStats } from "./live-stats";
+import { PaymentEnvironmentNotice } from "./payment-environment-notice";
 
 /** The live sandbox API. This page describes that deployment, so its links and snippets point there. */
 export const LIVE_API = "https://provable-race-api.onrender.com";
@@ -50,8 +51,7 @@ export function HowItWorks() {
           finished work, every entry is checked against your brief, and you pay only for the one you pick.
         </p>
         <p className="hiw-sandbox">
-          <span className="status-dot" aria-hidden="true" /> Runs on the PayPal sandbox today: test accounts and test
-          money, no real charges.
+          <span className="status-dot" aria-hidden="true" /> <PaymentEnvironmentNotice />
         </p>
       </header>
 
@@ -208,7 +208,7 @@ export function HowItWorks() {
             retry replays the original result instead of charging or paying twice.
           </li>
           <li>
-            <strong>Sandbox only.</strong> Today everything runs on the PayPal sandbox. No real money moves.
+            <strong>Payment environment.</strong> <PaymentEnvironmentNotice />
           </li>
         </ul>
       </section>

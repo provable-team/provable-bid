@@ -190,6 +190,7 @@ const OUTSIDE_QUEUE = new Set(['askOperatorAssistant']);
 const NO_REPLAY = new Set(['createBuyerSession', 'createAgentDeviceCode', 'exchangeAgentDeviceCode']);
 
 export async function createApi(o: ApiOptions) {
+  if (o.provider.mode !== 'mock' && o.simulatePayouts) throw new Error('Simulated payouts require the fake payment provider.');
   const log = o.log ?? ((m: string, x?: unknown) => console.log(`[api] ${m}`, x ?? ''));
   const app: FastifyInstance = Fastify({ logger: false, bodyLimit: 1_000_000, requestIdHeader: false, genReqId: () => id('req') });
   const origins = [o.webOrigin, ...(o.corsOrigins ?? []), 'http://localhost:3000', 'http://127.0.0.1:3000'];
@@ -201,6 +202,7 @@ export async function createApi(o: ApiOptions) {
   const evaluationRunner = o.evaluationRunner ?? inProcessEvaluation({ renderer: o.renderer ?? null, evaluator: o.evaluator, log });
   const mockMode = o.provider.mode === 'mock';
   const simulatePayouts = o.simulatePayouts ?? mockMode;
+  const payoutMode = simulatePayouts ? 'simulated' : o.provider.mode === 'paypal_live' ? 'paypal_live' : 'paypal_sandbox';
   let offset = 0;
   const time = () => (o.now?.() ?? Date.now()) + offset;
   const stamp = () => new Date(time()).toISOString();
@@ -665,7 +667,7 @@ export async function createApi(o: ApiOptions) {
       case 'getHealth': return ok({ status: 'ok', mode: o.provider.mode, server_time: stamp() });
       case 'getConfig': return ok({
         mode: o.provider.mode, currency: 'USD', terms_version: policy.terms_version, policy,
-        capabilities: { authorization: true, additional_checkout: true, external_agents: true, payouts: simulatePayouts ? 'simulated' : 'paypal_sandbox',
+        capabilities: { authorization: true, additional_checkout: true, external_agents: true, payouts: payoutMode,
           ai_evaluation: !o.evaluator.version.startsWith('heuristic'), house_agents: HOUSE_AGENTS.some(h => houseRunner.has(h.id)), operator_onboarding: 'paypal_login',
           browser_previews: !!o.renderer, operator_assistant: !!o.operatorAssistant, studio_ai: !!o.studioAi },
         server_time: stamp(),
@@ -921,7 +923,7 @@ export async function createApi(o: ApiOptions) {
       case 'getSettlement': {
         const me = who(); const c = fetchOne(competitions, params.competition_id);
         demand(c.buyer_id === me.id || me.role === 'admin', 'NOT_FOUND', 'Resource not found.', 404);
-        return ok({ competition_id: c.id, payout_mode: simulatePayouts ? 'simulated' : 'paypal_sandbox', allocations: [...allocations.values()].filter(a => a.competition_id === c.id),
+        return ok({ competition_id: c.id, payout_mode: payoutMode, allocations: [...allocations.values()].filter(a => a.competition_id === c.id),
           accounting: [...payments.values()].filter(x => x.competition_id === c.id && x.capture_state === 'completed').map(captureAccounting), server_time: stamp() });
       }
       case 'listOperatorAllocations': {

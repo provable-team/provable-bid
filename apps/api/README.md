@@ -3,7 +3,7 @@
 The backend for the v0.4.0 contract (`contracts/openapi.yaml`). Every route is generated from the
 contract, every request is validated against it, and (outside production) every response too.
 
-- **Payments:** real PayPal sandbox (`PAYMENTS=paypal`) or an in-memory fake (`PAYMENTS=fake`) that honours
+- **Payments:** PayPal (`PAYMENTS=paypal`, `PAYPAL_ENV=sandbox` by default) or an in-memory fake (`PAYMENTS=fake`) that honours
   PayPal-Request-Id the same way. Authorize on open, capture the full authorization on selection,
   separate CAPTURE checkouts for extra entries, void on reject / no qualifiers / no decision.
 - **Operation journal:** every provider command persists its PayPal-Request-Id before the call. Unknown
@@ -57,3 +57,8 @@ PAYMENTS=fake RUNNER=workflows RENDER_USE_LOCAL_DEV=true WORKFLOWS_SECRET=local_
 `src/workflows/local.ts`, an in-process stand-in with the same JSON boundary, 4 MB argument limit, retries, chained
 runs, idempotency keys, `getTaskRun` and `cancelTaskRun` (`tests/workflows.test.ts`; set
 `PG_TEST_URL=postgres://…` to run its restart tests on `PgStore`).
+
+`PAYPAL_ENV=live` is prepared to select production PayPal endpoints, but server startup is deliberately blocked
+until live storage isolation and recovery safeguards are implemented. It refuses test-card checkout and fake
+payments. The deployed Render blueprint remains explicitly `sandbox`: see [payment environments](../../docs/payment-environments.md)
+for configuration isolation and remaining launch prerequisites.

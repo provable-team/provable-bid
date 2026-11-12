@@ -2343,6 +2343,7 @@ components:
                 enum:
                   - simulated
                   - paypal_sandbox
+                  - paypal_live
                   - disabled
               allocations:
                 type: array
@@ -2475,7 +2476,7 @@ components:
           const: ok
         mode:
           type: string
-          enum: [ mock, paypal_sandbox ]
+          enum: [ mock, paypal_sandbox, paypal_live ]
         server_time:
           $ref: '#/components/schemas/Timestamp'
     Policy:
@@ -2525,6 +2526,7 @@ components:
           enum:
             - mock
             - paypal_sandbox
+            - paypal_live
         currency:
           type: string
           const: USD
@@ -2558,8 +2560,9 @@ components:
               enum:
                 - simulated
                 - paypal_sandbox
+                - paypal_live
                 - disabled
-              description: simulated only with the fake provider.
+              description: simulated only with the fake provider; PayPal payout mode matches the configured environment.
             ai_evaluation:
               type: boolean
               description: False means requirements are judged by the deterministic fallback evaluator.

@@ -6,11 +6,11 @@ import { Icon } from "./ui";
 export function PaymentStatus({
   payment,
   purchase,
-  mock = null,
+  mode = null,
 }: {
   payment: Payment;
   purchase?: Purchase;
-  mock?: boolean | null;
+  mode?: components["schemas"]["Config"]["mode"] | null;
 }) {
   let title = "Awaiting authorization";
   let description =
@@ -44,7 +44,7 @@ export function PaymentStatus({
     tone = "pending";
   }
   if (payment.capture_state === "completed") {
-    title = `${mock === true ? "Simulated payment" : mock === false ? "Payment" : "Capture"} confirmed · ${money(payment.captured_minor)}`;
+    title = `${mode === "mock" ? "Simulated payment" : mode === "paypal_sandbox" ? "Test payment" : mode === "paypal_live" ? "Payment" : "Capture"} confirmed · ${money(payment.captured_minor)}`;
     description = purchase?.delivery_unlocked
       ? "The backend confirms delivery access for this purchase."
       : "Capture is confirmed. Delivery depends on the current backend entitlement.";
@@ -136,11 +136,11 @@ export function CheckoutActions({
   try {
     const url = new URL(checkout.approval_url, window.location.href);
     const paypal =
-      url.protocol === "https:" &&
-      ["www.sandbox.paypal.com", "sandbox.paypal.com"].includes(url.hostname);
+      (mode === "paypal_sandbox" && ["https://www.sandbox.paypal.com", "https://sandbox.paypal.com"].includes(url.origin)) ||
+      (mode === "paypal_live" && ["https://www.paypal.com", "https://paypal.com"].includes(url.origin));
     // Fake-provider mode approves on this app's own clearly labelled simulator page, never elsewhere.
     const simulator = mode === "mock" && url.origin === window.location.origin && url.pathname === "/checkout/fake";
-    if ((paypal || simulator) && !url.username && !url.password) approval = url.href;
+    if ((paypal || simulator) && !url.username && !url.password && !url.hash) approval = url.href;
   } catch {
     /* Invalid approval targets are never linked. */
   }
@@ -149,7 +149,9 @@ export function CheckoutActions({
       <p>
         {mode === "mock"
           ? "Demo mode: a simulated PayPal approval, no real payment."
-          : "You'll approve on PayPal and come straight back here; we verify with PayPal before anything changes."}
+          : mode === "paypal_sandbox"
+            ? "PayPal sandbox uses test money. We verify approval with PayPal before anything changes."
+            : "PayPal live uses real money. We verify approval with PayPal before anything changes."}
       </p>
       {approval && !expired && (
         <a href={approval} className="button primary">

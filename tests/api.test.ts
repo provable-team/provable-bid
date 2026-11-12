@@ -42,7 +42,7 @@ const brief = {
   accepted_terms_version: 'race-v1',
 };
 
-async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number; operatorAssistant?: (provider: ReturnType<typeof fakeProvider>['provider']) => OperatorAssistant; studioAi?: StudioAiRelay; studioAiLimits?: { windowMs: number; perWindow: number; perDay: number }; providerMode?: 'paypal_sandbox' } = {}) {
+async function fixture(t: any, opts: { dbPath?: string; evaluator?: EvaluatorAdapter; houseAgents?: Record<string, AgentAdapter>; simulatePayouts?: boolean; renderer?: PageRenderer; progressIntervalMs?: number; operatorAssistant?: (provider: ReturnType<typeof fakeProvider>['provider']) => OperatorAssistant; studioAi?: StudioAiRelay; studioAiLimits?: { windowMs: number; perWindow: number; perDay: number }; providerMode?: 'paypal_sandbox' | 'paypal_live' } = {}) {
   let now = T0;
   const store = new Store(opts.dbPath ?? ':memory:');
   const fake = fakeProvider({ webOrigin: WEB, now: () => now });
@@ -1713,4 +1713,29 @@ test('dashboard assistant maps Studio turns onto the Messages API and back', () 
   assert.deepEqual(turn.usage, { input_tokens: 1000, output_tokens: 20, cached_input_tokens: 900, cache_write_tokens: 0 });
   assert.equal(fromClaudeMessage({ id: 'm', model: 'x', stop_reason: 'refusal', usage, content: [{ type: 'text', text: 'partial' }] } as any).status, 'refused');
   assert.equal(fromClaudeMessage({ id: 'm', model: 'x', stop_reason: 'max_tokens', usage, content: [] } as any).status, 'incomplete');
+});
+
+test('stubbed live and sandbox APIs report the provider environment consistently without calling PayPal', async t => {
+  for (const mode of ['paypal_sandbox', 'paypal_live'] as const) {
+    const f = await fixture(t, { providerMode: mode });
+    const buyer = await f.buyer();
+    const competition = (await f.post('/v1/competitions', brief, buyer)).data;
+    assert.equal((await f.get('/health', null)).data.mode, mode);
+    const config = (await f.get('/v1/config', null)).data;
+    assert.equal(config.mode, mode);
+    assert.equal(config.capabilities.payouts, mode);
+    const settlement = (await f.get(`/v1/competitions/${competition.id}/settlement`, buyer)).data;
+    assert.equal(settlement.payout_mode, mode);
+    assert.deepEqual(settlement.allocations, []);
+  }
+});
+
+test('real PayPal modes cannot advertise simulated payouts', async t => {
+  const store = new Store(':memory:');
+  t.after(() => store.close());
+  const fake = fakeProvider({ webOrigin: WEB });
+  await assert.rejects(createApi({
+    store, provider: { ...fake.provider, mode: 'paypal_live' }, evaluator: heuristicEvaluator(),
+    webOrigin: WEB, apiOrigin: 'http://api.test', simulatePayouts: true,
+  }), /Simulated payouts require the fake/);
 });

@@ -106,12 +106,13 @@ export function LiveStats({
     <section className="live-stats" style={styles.strip} aria-labelledby={titleId}>
       <div style={styles.head}>
         <h2 id={titleId} style={styles.title}>
-          Live sandbox numbers
+          {stats?.mode === "paypal_sandbox" ? "Live sandbox numbers" : "Live marketplace numbers"}
         </h2>
         <span style={styles.badge}>
-          {stats && stats.mode !== "paypal_sandbox"
-            ? "Local test mode · fake payments"
-            : "PayPal sandbox · test money"}
+          {stats?.mode === "paypal_sandbox" ? "PayPal sandbox · test money"
+            : stats?.mode === "paypal_live" ? "PayPal live · real money"
+            : stats?.mode === "mock" ? "Local test mode · fake payments"
+            : "Payment environment unavailable"}
         </span>
       </div>
       <div role="status" aria-live="polite" aria-busy={!stats && !failed}>

@@ -149,7 +149,9 @@ export default function OperatorsPage() {
   const agentNames = useMemo(() => new Map(operator?.agents.map(({ agent }) => [agent.id, agent.name]) ?? []), [operator]);
   const agentOf = useMemo(() => (allocation: Allocation) =>
     allocation.agent_shares.map((share) => agentNames.get(share.agent_id) ?? share.agent_id).join(", "), [agentNames]);
-  const ledgerRows = useMemo(() => allocations.map((allocation) => operatorLedgerRow(allocation, agentOf(allocation))), [allocations, agentOf]);
+  const payoutEnvironment = config?.mode === "paypal_live" && config.capabilities.payouts === "paypal_live" ? "live"
+    : config?.mode === "mock" || config?.mode === "paypal_sandbox" ? "test" : "unknown";
+  const ledgerRows = useMemo(() => allocations.map((allocation) => operatorLedgerRow(allocation, agentOf(allocation), payoutEnvironment)), [allocations, agentOf, payoutEnvironment]);
   const studioRows = useMemo(() => allocations.map((allocation) => operatorStudioRow(allocation, agentOf(allocation))), [allocations, agentOf]);
   const assistant = useMemo(() => (token && config?.capabilities.studio_ai ? { baseUrl: settings.baseUrl, token } : null),
     [token, config?.capabilities.studio_ai, settings.baseUrl]);
@@ -193,7 +195,7 @@ export default function OperatorsPage() {
               <div>
                 <h2>{operator.name}</h2>
                 <p className="muted">
-                  {config?.mode === "mock" ? "Demo operator connected" : operator.paypal_account_verified ? "PayPal sandbox account connected" : "No PayPal account connected"}
+                  {config?.mode === "mock" ? "Demo operator connected" : operator.paypal_account_verified ? (config?.mode === "paypal_live" ? "Live PayPal account connected" : config?.mode === "paypal_sandbox" ? "PayPal sandbox account connected" : "PayPal account connected") : "No PayPal account connected"}
                 </p>
               </div>
               <button className="button secondary small" onClick={signOut}>Sign out</button>
@@ -231,7 +233,9 @@ export default function OperatorsPage() {
                       ? "Mock payouts use no real money."
                       : config?.capabilities.payouts === "paypal_sandbox"
                         ? "PayPal sandbox payouts use test money."
-                        : "Payout availability is determined by the API."} Allocation and payout statuses are separate.
+                        : config?.capabilities.payouts === "paypal_live"
+                          ? "PayPal live payouts transfer real money."
+                          : "Payout availability is determined by the API."} Allocation and payout statuses are separate.
                 </p>
               </div>
               <button className="button secondary small" onClick={() => setLedgerRevision((revision) => revision + 1)} disabled={ledgerLoading}>Refresh</button>

@@ -14,7 +14,7 @@ export const OPERATOR_LEDGER_COLUMNS = [
 ];
 
 /** One AG Grid ledger row; `agent` is the winning agent's display name. */
-export const operatorLedgerRow = (allocation: Allocation, agent: string) => ({
+export const operatorLedgerRow = (allocation: Allocation, agent: string, environment: "live" | "test" | "unknown" = "test") => ({
   id: allocation.id,
   created: allocation.created_at,
   agent,
@@ -22,7 +22,7 @@ export const operatorLedgerRow = (allocation: Allocation, agent: string) => ({
   payment: allocation.payment_id,
   amount: allocation.amount.amount_minor,
   ledger: allocation.ledger_state.replaceAll("_", " "),
-  payout: allocation.payout_state === "paid" ? "Paid (test)" : allocation.payout_state.replaceAll("_", " "),
+  payout: allocation.payout_state === "paid" ? environment === "live" ? "Paid" : environment === "test" ? "Paid (test)" : "Payout confirmed" : allocation.payout_state.replaceAll("_", " "),
 });
 
 /** One AG Studio dashboard row: no operator, recipient, payment or provider identifiers. */

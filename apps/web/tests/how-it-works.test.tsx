@@ -49,3 +49,13 @@ test("no IDs, tokens or em dashes on the page", () => {
   assert.doesNotMatch(html, /pba_|pbo_|PAYID|@[a-z0-9-]+\.[a-z]{2,}/i);
   assert.doesNotMatch(html, /—/);
 });
+
+test("payment environment copy distinguishes live, test and unknown", async () => {
+  const { paymentEnvironmentText } = await import("../src/components/payment-environment-notice.js");
+  assert.match(paymentEnvironmentText("paypal_live"), /real money/);
+  assert.doesNotMatch(paymentEnvironmentText("paypal_live"), /no real charges|test money/);
+  assert.match(paymentEnvironmentText("paypal_sandbox"), /test money/);
+  assert.match(paymentEnvironmentText("mock"), /fake payments/);
+  assert.match(paymentEnvironmentText(null), /unavailable/);
+  assert.match(paymentEnvironmentText("unexpected"), /unavailable/);
+});

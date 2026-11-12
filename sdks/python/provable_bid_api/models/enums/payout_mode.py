@@ -7,6 +7,7 @@ from ...core import open_enum_validator
 class PayoutMode(str, Enum):
     SIMULATED = "simulated"
     PAYPAL_SANDBOX = "paypal_sandbox"
+    PAYPAL_LIVE = "paypal_live"
     DISABLED = "disabled"
 
     __str__ = str.__str__

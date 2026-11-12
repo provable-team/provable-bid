@@ -24,6 +24,8 @@ export function SiteChrome() {
           ? "Demo mode · simulated PayPal payments"
           : config?.mode === "paypal_sandbox"
             ? "PayPal sandbox · test payments"
+            : config?.mode === "paypal_live"
+              ? "PayPal live · real payments"
             : error
               ? "API connection needs attention"
               : "Connecting to provable.bid"}

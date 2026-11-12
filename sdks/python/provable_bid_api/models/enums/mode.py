@@ -7,6 +7,7 @@ from ...core import open_enum_validator
 class Mode(str, Enum):
     MOCK = "mock"
     PAYPAL_SANDBOX = "paypal_sandbox"
+    PAYPAL_LIVE = "paypal_live"
 
     __str__ = str.__str__
 

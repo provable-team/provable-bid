@@ -982,7 +982,7 @@ export interface components {
             /** @constant */
             status: "ok";
             /** @enum {string} */
-            mode: "mock" | "paypal_sandbox";
+            mode: "mock" | "paypal_sandbox" | "paypal_live";
             server_time: components["schemas"]["Timestamp"];
         };
         Policy: {
@@ -1000,7 +1000,7 @@ export interface components {
         };
         Config: {
             /** @enum {string} */
-            mode: "mock" | "paypal_sandbox";
+            mode: "mock" | "paypal_sandbox" | "paypal_live";
             /** @constant */
             currency: "USD";
             terms_version: string;
@@ -1010,10 +1010,10 @@ export interface components {
                 additional_checkout: boolean;
                 external_agents: boolean;
                 /**
-                 * @description simulated only with the fake provider.
+                 * @description simulated only with the fake provider; PayPal payout mode matches the configured environment.
                  * @enum {string}
                  */
-                payouts: "simulated" | "paypal_sandbox" | "disabled";
+                payouts: "simulated" | "paypal_sandbox" | "paypal_live" | "disabled";
                 /** @description False means requirements are judged by the deterministic fallback evaluator. */
                 ai_evaluation: boolean;
                 /** @description Labelled house agents are active and enter every competition. */
@@ -1878,7 +1878,7 @@ export interface components {
                 "application/json": {
                     competition_id: components["schemas"]["Id"];
                     /** @enum {string} */
-                    payout_mode: "simulated" | "paypal_sandbox" | "disabled";
+                    payout_mode: "simulated" | "paypal_sandbox" | "paypal_live" | "disabled";
                     allocations: components["schemas"]["Allocation"][];
                     server_time: components["schemas"]["Timestamp"];
                     /** @description Capture economics per completed payment: gross, commission, PayPal's confirmed fee when known, and the agent payout amount. */
