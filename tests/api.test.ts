@@ -25,7 +25,7 @@ const page = (extra = '', hours = true) => `<!doctype html><html lang="en"><head
 <style>body{font-family:system-ui;margin:0}.cta{background:#b5522b;color:#fff;padding:12px 20px}</style></head><body>
 <h1>Crumb &amp; Co. — a family bakery since 1987</h1><p>Fresh sourdough, cardamom buns and croissants baked every morning in our corner shop.</p>
 ${hours ? '<section><h2>Opening hours</h2><p>Tuesday to Sunday, 7am to 3pm. Closed Mondays.</p></section>' : '<section><h2>Our story</h2><p>Three generations of bakers.</p></section>'}
-<a class="cta" href="#preorder">Pre-order now</a>${extra}</body></html>`;
+<a class="cta" href="#preorder">Pre-order now</a><p id="preorder">Choose your collection time at the bakery.</p>${extra}</body></html>`;
 const brief = {
   title: 'Landing page for a neighborhood bakery',
   brief: 'One page for Crumb & Co., a family bakery. Warm, handmade feel. Hero, story, opening hours, pre-order button. Mobile first.',
@@ -640,7 +640,7 @@ const streamedPage = `Here is the page.\n<!doctype html><html lang="en"><head><m
 <section id="story"><h2>Three generations of bakers</h2><p>Grandma Ilse opened the shop with one oven and a stubborn starter.</p>
 ${'<p>The rye loaves sell out by nine on Saturdays, so come early.</p>'.repeat(6)}</section>
 <section id="when"><h2>Opening hours</h2><p>Tuesday to Sunday, 7am to 3pm. Closed Mondays.</p></section>
-<a class="cta" href="#preorder">Pre-order now</a><footer><p>Corner of Elm and 4th.</p></footer></body></html>`;
+<a class="cta" href="#preorder">Pre-order now</a><footer id="preorder"><p>Pre-order at the shop, corner of Elm and 4th.</p></footer></body></html>`;
 const secrets = ['cardamom', 'Sourdough', 'Ilse', 'rye loaves', 'Georgia', 'font-family', '--brand', 'cta', 'max-width', 'Tuesday', 'Elm and 4th', '#ff00aa', '#c0ffee', '<', '>', ';', ':root'];
 // The only design information that may leave the server: the first 3 usable hex colours in colour declarations.
 const pageColors = ['#2f5d8a', '#b5522b', '#3a7d44'];
@@ -815,6 +815,29 @@ test('house agents revise a failed attempt from its checks: attempt 2 passes, th
   assert.deepEqual([p.state, p.attempt, p.max_attempts], ['qualified', 2, 3]);
   assert.deepEqual(p.missed_requirement_ids, ['req_hours'], 'the buyer can see which requirement attempt 1 missed (by ID)');
   assert.equal((await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items.length, 1);
+});
+
+test('house preflight repairs a broken CTA before the first upload or qualification attempt', async t => {
+  const calls: { revision?: any }[] = [];
+  const broken = page().replace('id="preorder"', 'id="collection"');
+  const atelier = streamingHouseAgent({ id: 'agent_house_atelier', name: 'Atelier', style: '.', description: '.' }, async (_ctx, _p, onText, revision) => {
+    calls.push({ revision });
+    const html = revision ? page() : broken;
+    onText(html);
+    return { text: html, stopReason: 'end_turn' };
+  });
+  const f = await fixture(t, { houseAgents: { agent_house_atelier: atelier }, progressIntervalMs: 0 });
+  const b = await f.buyer();
+  const { c } = await f.open(b);
+  await f.settle();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].revision.source, 'preflight');
+  assert.equal(calls[1].revision.html, broken, 'repair receives its full previous work');
+  assert.match(calls[1].revision.failed[0].reason, /#preorder has no matching/);
+  const gallery = (await f.get(`/v1/competitions/${c.id}/submissions`, b)).data.items;
+  assert.equal(gallery.length, 1);
+  const [progress] = (await f.get(`/v1/competitions/${c.id}`, b)).data.build_progress;
+  assert.deepEqual([progress.state, progress.attempt], ['qualified', 1], 'local repair does not spend a qualification attempt');
 });
 
 test('state survives a restart; an operation interrupted mid-call resumes with the same request ID', async t => {
