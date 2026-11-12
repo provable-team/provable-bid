@@ -63,9 +63,25 @@ function payoutStatus(state: Allocation["payout_state"]): string {
 
 /** What a house agent's placeholder card says. Only coarse step words from the API: never any of the page itself. */
 function buildStatus(p: BuildProgress): string {
-  if (p.state === "submitted") return "Submitted · being checked";
-  if (p.state === "not_qualified") return "Didn't qualify";
-  return p.label.charAt(0).toUpperCase() + p.label.slice(1);
+  const of = `attempt ${p.attempt} of ${p.max_attempts}`;
+  const step = p.label.charAt(0).toUpperCase() + p.label.slice(1);
+  if (p.state === "submitted") return p.attempt > 1 ? `Submitted · being checked (${of})` : "Submitted · being checked";
+  if (p.state === "not_qualified") return p.attempt > 1 ? `Didn't qualify (${p.attempt} attempts)` : "Didn't qualify";
+  if (p.state === "revising") return p.label === "revising" ? `Revising (${of})` : `Revising (${of}) · ${p.label}`;
+  return p.attempt > 1 ? `${step} (${of})` : step;
+}
+
+/** A short name for a requirement from the buyer's own wording, for the cursor badge ("revising: focus styles"). */
+function requirementShort(text: string): string {
+  const t = text.toLowerCase();
+  if (/focus|keyboard/.test(t)) return "focus styles";
+  if (/phone|mobile|390|375|viewport|horizontal scroll/.test(t)) return "phone layout";
+  if (/\bfaq\b|questions/.test(t)) return "the faq";
+  if (/svg|illustration/.test(t)) return "illustration";
+  if (/sandbox|disclosure/.test(t)) return "sandbox notice";
+  if (/start a brief|link|button|cta/.test(t)) return "call to action";
+  const words = t.replace(/[^a-z0-9 -]/g, " ").split(/\s+/).filter((w) => w.length > 3 && !["shows", "show", "page", "visible", "visibly", "include", "includes", "with", "that", "this", "have", "must"].includes(w));
+  return words.slice(0, 2).join(" ") || "a requirement";
 }
 
 function payoutText(allocation: Allocation): string {
@@ -292,7 +308,7 @@ export default function CompetitionPage({
   // While house agents build, refresh only their progress (one small request) so each card's cursor follows the block
   // being written within about a second, instead of waiting for the full 2.5 s reload.
   const buildingNow = !!snapshot?.owner && snapshot.competition.state === "open" &&
-    (snapshot.competition.build_progress ?? []).some((p) => p.state === "building");
+    (snapshot.competition.build_progress ?? []).some((p) => p.state === "building" || p.state === "revising");
   useEffect(() => {
     if (!buildingNow || !config) return;
     const controller = new AbortController();
@@ -482,6 +498,21 @@ export default function CompetitionPage({
       )
     : [];
   const agentName = (agentId: string) => agents.find((a) => a.id === agentId)?.name || "House agent";
+  const requirementText = (id: string) => comp.requirements.find((r) => r.id === id)?.description ?? id;
+  /** The cursor badge: the step, or for a failed attempt what is being fixed, in the buyer's own words. */
+  const badge = (p: BuildProgress) => {
+    const name = agentName(p.agent_id);
+    if (p.state === "revising") return `${name} · revising: ${p.missed_requirement_ids.length ? requirementShort(requirementText(p.missed_requirement_ids[0])) : "the checks"}`;
+    return `${name} · ${p.state === "submitted" ? "submitted" : p.label}`;
+  };
+  // Real per-agent states for the header: house agents from their build progress, outside agents from the gallery.
+  const runStates = new Map<string, string>();
+  for (const p of comp.build_progress ?? [])
+    runStates.set(p.agent_id, p.state === "submitted" ? "being checked" : p.state === "not_qualified" ? "didn't qualify" : p.state);
+  for (const s of gallery) runStates.set(s.agent_id, "qualified");
+  const stateCounts = ["qualified", "building", "revising", "being checked", "didn't qualify"]
+    .map((k) => [k, [...runStates.values()].filter((v) => v === k).length] as const)
+    .filter(([, n]) => n > 0);
   const blocked = stale || !config || !!connectionError;
   const first = purchases.find((p) => p.id === comp.first_purchase_id);
   const firstPayment = first ? payments[first.payment_id] : undefined;
@@ -544,8 +575,9 @@ export default function CompetitionPage({
             <AgentAvatar key={agent.id} agent={agent} size={44} />
           ))}
           <span>
-            {agents.filter((a) => a.status === "available").length}{" "}
-            {agents.filter((a) => a.status === "available").length === 1 ? "agent" : "agents"} notified
+            {runStates.size
+              ? [`${runStates.size} ${runStates.size === 1 ? "agent" : "agents"}`, ...stateCounts.map(([k, n]) => `${n} ${k}`)].join(" · ")
+              : `${agents.filter((a) => a.status === "available").length} ${agents.filter((a) => a.status === "available").length === 1 ? "agent" : "agents"} notified`}
           </span>
         </div>
       </div>
@@ -680,11 +712,13 @@ export default function CompetitionPage({
                       .map((p) => ({
                         id: p.agent_id,
                         step: p.step,
-                        label: `${agentName(p.agent_id)} · ${p.state === "submitted" ? "submitted" : p.label}`,
+                        label: badge(p),
                         announcement:
                           p.state === "submitted"
                             ? `${agentName(p.agent_id)} submitted its page. It is being checked against your ${comp.requirements.length} requirements.`
-                            : undefined,
+                            : p.state === "revising" && p.label === "revising"
+                              ? `${agentName(p.agent_id)}'s page missed ${p.missed_requirement_ids.length || "some"} of your requirements. It is revising: attempt ${p.attempt} of ${p.max_attempts}.`
+                              : undefined,
                       }))}
                   >
                   {(phase) => gallery.length || building.length ? (
@@ -869,10 +903,10 @@ export default function CompetitionPage({
                               <BuildCanvas
                                 progress={p}
                                 cursor={p.state !== "not_qualified"}
-                                label={`${agent?.name || "House agent"} · ${p.state === "submitted" ? "submitted" : p.label}`}
+                                label={badge(p)}
                               />
                               <span className="preview-badge">
-                                {p.state === "building" ? "Building · live" : p.state === "submitted" ? "Submitted" : "Not shown"}
+                                {p.state === "building" ? "Building · live" : p.state === "revising" ? "Revising · live" : p.state === "submitted" ? "Submitted" : "Not shown"}
                               </span>
                             </div>
                             <div className="submission-body">
@@ -887,10 +921,20 @@ export default function CompetitionPage({
                                 {p.state !== "not_qualified" && <i className="build-dot" aria-hidden="true" />}
                                 {status}
                               </p>
+                              {(p.state === "revising" || p.state === "not_qualified") && p.missed_requirement_ids.length > 0 && (
+                                <div className="missed">
+                                  <span>{p.state === "revising" ? `Attempt ${p.attempt - 1} missed` : "Missed"}</span>
+                                  <ul>
+                                    {p.missed_requirement_ids.map((rid) => <li key={rid}>{requirementText(rid)}</li>)}
+                                  </ul>
+                                </div>
+                              )}
                               <p className="agent-style">
                                 {p.state === "not_qualified"
                                   ? "It did not pass every requirement, so it will not appear in your gallery."
-                                  : `Its finished page appears here only if it passes all ${comp.requirements.length} requirements.`}
+                                  : p.state === "revising"
+                                    ? "It got the failed checks back and is building a revised page."
+                                    : `Its finished page appears here only if it passes all ${comp.requirements.length} requirements.`}
                               </p>
                             </div>
                           </article>
@@ -961,13 +1005,22 @@ export default function CompetitionPage({
                           {agent.internal ? "House agent run by provable.bid" : `Outside agent · ${agent.operator_name}`}
                         </small>
                       </div>
-                      <span className={`run-status ${gallery.some((s) => s.agent_id === agent.id) ? "submitted" : ""}`}>
-                        {gallery.some((s) => s.agent_id === agent.id)
-                          ? "Entered · qualified"
-                          : agent.status === "available"
-                            ? "Notified"
-                            : "Offline"}
-                      </span>
+                      {(() => {
+                        const p = (comp.build_progress ?? []).find((x) => x.agent_id === agent.id);
+                        const qualified = gallery.some((s) => s.agent_id === agent.id);
+                        const text = qualified
+                          ? p && p.attempt > 1 ? `Entered · qualified (attempt ${p.attempt})` : "Entered · qualified"
+                          : p ? buildStatus(p)
+                          : agent.status === "available" ? "Notified" : "Offline";
+                        return (
+                          <span className={`run-status ${qualified ? "submitted" : p ? `is-${p.state}` : ""}`}>
+                            {text}
+                            {p && !qualified && p.missed_requirement_ids.length > 0 && (
+                              <small className="run-missed">Missed: {p.missed_requirement_ids.map(requirementText).join("; ")}</small>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </div>
                   ))}
                   <p className="field-help">

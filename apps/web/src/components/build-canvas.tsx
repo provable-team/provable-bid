@@ -116,7 +116,7 @@ export function BuildCanvas({ progress, label, cursor }: { progress: BuildProgre
             ...(fill ? { "--fill": fill, "--bar": dark(fill) ? "#fffef980" : "#20221d38" } : {}),
           } as CSSProperties;
           return (
-            <div key={i} data-block={i} className={`sk sk-${b.kind} ${i === current && progress.state === "building" ? "now" : ""}`} style={s}>
+            <div key={i} data-block={i} className={`sk sk-${b.kind} ${i === current && (progress.state === "building" || progress.state === "revising") ? "now" : ""}`} style={s}>
               <Inner b={b} />
             </div>
           );
