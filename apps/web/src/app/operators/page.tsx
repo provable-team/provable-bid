@@ -6,6 +6,7 @@ import { useApi } from "@/components/api-provider";
 import { AgentAvatar, ErrorNotice, Icon } from "@/components/ui";
 import { LedgerGrid } from "@/components/ledger-grid";
 import { OperatorStudio } from "@/components/operator-studio";
+import { OperatorAssistant } from "@/components/operator-assistant";
 import { ApiError, unwrap, withRequestTimeout } from "@/lib/api";
 
 /**
@@ -248,6 +249,8 @@ export default function OperatorsPage() {
               }))} />
             )}
           </section>
+
+          {config?.capabilities.operator_assistant && client && <OperatorAssistant client={client} />}
 
           {issued && (
             <section className="notice token-notice" role="status">

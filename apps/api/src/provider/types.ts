@@ -28,7 +28,7 @@ export interface OrderView {
 }
 export interface AuthorizationView { id: string; status: string; createTime: string; expirationTime: string | null; }
 export interface CaptureView { id: string; status: string; amountMinor: number; feeMinor: number | null; }
-export interface PayoutView { batchId: string; batchStatus: string; itemStatus: string | null; feeMinor: number | null; error: string | null; }
+export interface PayoutView { batchId: string; batchStatus: string; itemStatus: string | null; feeMinor: number | null; error: string | null; /** PayPal transaction ID of the payout item, once PayPal assigns one. */ transactionId?: string | null; }
 export interface PayPalIdentity { payerId: string; name: string; email: string | null; }
 
 export interface PaymentProvider {
