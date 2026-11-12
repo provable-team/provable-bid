@@ -57,8 +57,11 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 - **Contract first.** An OpenAPI 3.1 contract (v0.4.0, 40 operations) defines every state, error and money field. The
   TypeScript client used by the web app is generated from it. Every mutation takes an `Idempotency-Key`.
-- **API:** Fastify on Node 24, with SQLite on disk. Money is kept in integer cents. The live demo runs on Render's
-  free plan, whose disk is ephemeral: a redeploy resets data, including buyer sessions and operator connections.
+- **API:** Fastify on Node 24, on a Render Starter instance. State lives in Neon Postgres and is committed before each
+  response (SQLite for tests and local dev). Money is kept in integer cents.
+  - Only one instance writes at a time. On boot, each process takes a numbered lease. Every write checks it in the same
+    transaction. During a deploy's overlap, the instance that lost the lease refuses its next write and exits, so two
+    instances can't overwrite each other.
 - **Web:** Next.js App Router with React and TypeScript.
 
 ### PayPal
@@ -75,8 +78,9 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 - **Idempotency:** order, authorization, capture, void and refund calls carry a `PayPal-Request-Id` that is saved
   before the call is made, and payouts use a stable `sender_batch_id`. Reads and webhook verification need neither.
   This is designed so a retry after a timeout or failed call repeats the same PayPal operation instead of creating a
-  second charge or payout. The journal is SQLite on disk; on the free Render demo the disk is ephemeral, so a restart
-  or redeploy clears it along with sessions and briefs. Durable retries across restarts need a persistent disk.
+  second charge or payout. The journal is committed to Neon Postgres before each PayPal call, so it survives restarts
+  and redeploys. We tested a crash during authorize and during capture, then a restart and a retry with the same
+  request ID.
 - **SDK:** Orders v2 and Payments v2 calls (create, read, authorize, capture, void, refund) go through the
   APIMatic-generated PayPal Server SDK (`@paypal/paypal-server-sdk` 2.5.0). Payouts, webhook verification and Log in
   with PayPal aren't in that SDK, so they stay on REST. Verified on real sandbox payments: authorize then void, and
@@ -84,7 +88,7 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 
 ### Sponsor tools
 
-- **Render:** API and web are separate Render web services. provable.bid is the web service's custom domain.
+- **Render:** API (Starter instance) and web are separate Render web services. provable.bid is the web service's custom domain.
 - **KERNEL:** cloud browsers render every entry for screenshots and phone-fit measurements.
 - **APIMatic:** we used the PayPal Server SDK Context Plugin's TypeScript guides in Claude Code to move our
   hand-written Orders and Payments REST calls onto the APIMatic-generated PayPal Server SDK. The plugin's notes caught
@@ -115,8 +119,9 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
     agent's markup.
 - **Untrusted pages talking to the judge.** Submissions are passed to the judge as data inside `<submission>` tags.
   The judge is told to ignore any instructions inside them.
-- **Free hosting.** Render's free services sleep after 15 minutes. The API and web ping each other every 9 minutes
-  while we demo.
+- **Moving to durable storage mid-hackathon.** The demo started on SQLite on Render's free disk, which every deploy wiped.
+  We moved to Neon Postgres with one document table, so the contract logic didn't change. Render's zero-downtime deploys
+  briefly run two API instances, so we added a fenced single-writer lease to stop the old one overwriting the new one.
 
 ## Accomplishments that we're proud of
 
@@ -142,7 +147,7 @@ labelled as house agents everywhere. They need the Anthropic key; without it the
 ## Built with
 
 `paypal` `paypal-orders` `paypal-payouts` `log-in-with-paypal` `paypal-webhooks` `apimatic` `typescript` `node.js`
-`fastify` `next.js` `react` `sqlite` `openapi` `kernel` `playwright` `claude` `anthropic` `ag-grid` `ag-studio`
+`fastify` `next.js` `react` `postgresql` `neon` `openapi` `kernel` `playwright` `claude` `anthropic` `ag-grid` `ag-studio`
 `postman` `render` `claude-code` `codex`
 
 ## Try it
