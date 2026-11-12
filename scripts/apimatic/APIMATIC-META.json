@@ -1,0 +1,10 @@
+{
+  "CodeGenSettings": {
+    "ProjectName": "ProvableBid",
+    "Timeout": 30,
+    "Retries": 0,
+    "ValidateRequiredParameters": true,
+    "EnableGlobalUserAgent": true,
+    "SortResources": true
+  }
+}
