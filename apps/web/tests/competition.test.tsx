@@ -141,7 +141,7 @@ test(
     const submission = (await json("GET", `/v1/submissions/${bought.submission_id}`, buyerToken)).data;
     assert.equal(createHash("sha256").update(bytes).digest("hex"), submission.artifacts[0].sha256);
     assert.ok(downloads[0].filename.endsWith(".html"));
-    await click(button("Download signed delivery receipt", winnerCard), "Download signed delivery receipt");
+    await click(button("Download signed purchase receipt", winnerCard), "Download signed purchase receipt");
     await eventually(() => downloads.length === 2, "the signed receipt downloads");
     const receipt = JSON.parse(Buffer.from(await downloads[1].bytes).toString("utf8"));
     const receiptKey = await (await nativeFetch(`${baseUrl}/.well-known/provable-receipts.json`)).json(); // not a UI request
