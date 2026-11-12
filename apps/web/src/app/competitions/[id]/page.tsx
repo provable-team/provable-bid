@@ -1350,6 +1350,8 @@ export default function CompetitionPage({
       <dialog
         ref={dialog}
         className="decision-dialog"
+        aria-labelledby="decision-title"
+        aria-describedby="decision-summary"
         onClose={() => setDecision(null)}
       >
         <div className="section-heading">
@@ -1368,14 +1370,14 @@ export default function CompetitionPage({
             <Icon name="close" />
           </button>
         </div>
-        <h2>
+        <h2 id="decision-title">
           {decision?.kind === "reject"
             ? "None of these work for you?"
             : decision?.kind === "additional"
               ? "Make this one yours, too."
               : "Found your favorite?"}
         </h2>
-        <p>
+        <p id="decision-summary">
           {decision?.kind === "reject"
             ? "This closes your brief and releases your PayPal hold. You pay nothing, and no originals are delivered."
             : decision?.kind === "additional"

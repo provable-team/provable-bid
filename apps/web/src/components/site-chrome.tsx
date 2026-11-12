@@ -56,6 +56,7 @@ export function SiteChrome() {
       <dialog
         ref={dialog}
         className="connection-dialog"
+        aria-labelledby="connection-title"
         onClick={(event) => {
           if (event.target === dialog.current) dialog.current.close();
         }}
@@ -77,7 +78,7 @@ export function SiteChrome() {
           }}
         >
           <div className="section-heading">
-            <h2>Connect your API</h2>
+            <h2 id="connection-title">Connect your API</h2>
             <button
               type="button"
               className="icon-button"

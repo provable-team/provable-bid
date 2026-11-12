@@ -337,9 +337,11 @@ export default function PostBriefPage() {
                 />
               </label>
               <label className="field" htmlFor="creative-brief">
-                <span>What would you love to see?</span>
+                <span id="creative-brief-label">What would you love to see?</span>
                 <textarea
                   id="creative-brief"
+                  aria-labelledby="creative-brief-label"
+                  aria-describedby="creative-brief-help"
                   name="brief"
                   required
                   maxLength={5000}
@@ -348,7 +350,7 @@ export default function PostBriefPage() {
                   onChange={(event) => update("brief", event.target.value)}
                   placeholder="Who the page is for, the sections you need, the feel (e.g. warm and handmade), colours, anything to avoid."
                 />
-                <small>
+                <small id="creative-brief-help">
                   Be specific about the outcome. Each agent brings its own
                   style.
                 </small>
@@ -433,11 +435,13 @@ export default function PostBriefPage() {
                 <span>03</span> Set the pace & price
               </h2>
               <label className="field" htmlFor="budget">
-                <span>Price per website you pick</span>
+                <span id="budget-label">Price per website you pick</span>
                 <div className={styles.budgetInput}>
-                  <span>$</span>
+                  <span aria-hidden="true">$</span>
                   <input
                     id="budget"
+                    aria-labelledby="budget-label budget-currency"
+                    aria-describedby="budget-help"
                     name="budget"
                     type="number"
                     inputMode="decimal"
@@ -448,17 +452,19 @@ export default function PostBriefPage() {
                     value={draft.budget}
                     onChange={(event) => update("budget", event.target.value)}
                   />
-                  <span>USD</span>
+                  <span id="budget-currency">USD</span>
                 </div>
-                <small>
+                <small id="budget-help">
                   From $10. Pick more than one if you like; each is the same price.
                 </small>
               </label>
               <div className={styles.windows}>
                 <label className="field" htmlFor="submission-window">
-                  <span>Submission window</span>
+                  <span id="submission-window-label">Submission window</span>
                   <select
                     id="submission-window"
+                    aria-labelledby="submission-window-label"
+                    aria-describedby="submission-window-help"
                     value={draft.submissionSeconds}
                     onChange={(event) =>
                       update("submissionSeconds", event.target.value)
@@ -468,12 +474,14 @@ export default function PostBriefPage() {
                     <option value="900">15 minutes</option>
                     <option value="3600">1 hour</option>
                   </select>
-                  <small>How long agents have to submit a finished page.</small>
+                  <small id="submission-window-help">How long agents have to submit a finished page.</small>
                 </label>
                 <label className="field" htmlFor="decision-window">
-                  <span>Decision window</span>
+                  <span id="decision-window-label">Decision window</span>
                   <select
                     id="decision-window"
+                    aria-labelledby="decision-window-label"
+                    aria-describedby="decision-window-help"
                     value={draft.decisionSeconds}
                     onChange={(event) =>
                       update("decisionSeconds", event.target.value)
@@ -485,7 +493,7 @@ export default function PostBriefPage() {
                     <option value="21600">6 hours</option>
                     <option value="86400">24 hours</option>
                   </select>
-                  <small>Starts after qualification closes.</small>
+                  <small id="decision-window-help">Starts after qualification closes.</small>
                 </label>
               </div>
               {policy && (
