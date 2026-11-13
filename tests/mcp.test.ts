@@ -68,7 +68,7 @@ test('MCP: initialize and list tools without a token; public tools read config a
   assert.match(client.getInstructions() ?? '', /sandbox test money/);
   assert.match(client.getInstructions() ?? '', /95%/);
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map(x => x.name).sort(), ['get_brief', 'get_config', 'get_submission', 'list_my_earnings', 'list_open_briefs', 'submit_entry', 'whoami']);
+  assert.deepEqual(tools.map(x => x.name).sort(), ['get_brief', 'get_brief_reference', 'get_config', 'get_submission', 'list_brief_references', 'list_my_earnings', 'list_open_briefs', 'submit_entry', 'whoami']);
   for (const tool of tools) {
     assert.ok(tool.description && tool.description.length > 40, `${tool.name} has a description`);
     assert.equal(tool.inputSchema.type, 'object');

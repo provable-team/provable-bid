@@ -17,6 +17,40 @@ export type Purchase = components['schemas']['Purchase'];
 export type Problem = components['schemas']['Problem'];
 export type AssistantAnswer = components['schemas']['AssistantAnswer'];
 export type AssistantLookup = components['schemas']['AssistantLookup'];
+export type ReferenceImage = components['schemas']['ReferenceImage'];
+export type ReferenceDerivative = components['schemas']['ReferenceDerivative'];
+export type ReferenceImageList = components['schemas']['ReferenceImageList'];
+export type UploadReferenceImage = components['schemas']['UploadReferenceImage'];
+
+/** Limits for buyer reference images, as enforced by the API (see uploadReferenceImage in the contract). */
+export const REFERENCE_IMAGE_LIMITS = {
+  maxBytes: 5 * 1024 * 1024,
+  maxSide: 4096,
+  maxPerBrief: 3,
+  mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] as const,
+} as const;
+
+/**
+ * Attach one image file (from an <input type="file"> or a drop) to the buyer's draft brief. Sends canonical base64 in
+ * JSON with the caller's Idempotency-Key (reuse it to retry). Resolves with the stored metadata, or throws with the
+ * API's problem detail (413 over 5 MiB, 400 wrong type/undecodable/over 4096 px, 409 frozen or 3 already attached).
+ */
+export async function uploadReferenceImage(client: ReturnType<typeof createApiClient>, competitionId: string, file: Blob,
+  options: { idempotencyKey: string; caption?: string | null; signal?: AbortSignal }): Promise<ReferenceImage> {
+  const mime = file.type as UploadReferenceImage['mime_type'];
+  if (!REFERENCE_IMAGE_LIMITS.mimeTypes.includes(mime)) throw new Error('Choose a PNG, JPEG or WebP image.');
+  if (file.size > REFERENCE_IMAGE_LIMITS.maxBytes) throw new Error('Images are limited to 5 MB.');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  const result = await client.POST('/v1/competitions/{competition_id}/references', {
+    params: { path: { competition_id: competitionId }, header: { 'Idempotency-Key': options.idempotencyKey } },
+    body: { mime_type: mime, content_base64: btoa(binary), caption: options.caption ?? null },
+    signal: options.signal,
+  });
+  if (!result.data) throw new Error(result.error?.detail ?? `Upload failed: ${result.response.status}`);
+  return result.data;
+}
 
 /** Generated path/operation/body/response types with the openapi-fetch typed transport.
  * Callers own logical Idempotency-Key creation and must reuse it across retries.

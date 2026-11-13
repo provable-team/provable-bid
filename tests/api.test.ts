@@ -1444,7 +1444,7 @@ test('judge receives factual-source limits and preserves independent checks when
   assert.equal(result.status, 'failed');
   assert.deepEqual(result.checks.map(check => [check.requirement_id, check.passed]), [['req_setup', false], ['req_phone', true]]);
   assert.equal(result.narrative, undefined);
-  assert.match(result.evaluator_version, /^claude-judge-v4:/);
+  assert.match(result.evaluator_version, /^claude-judge-v5:/);
 });
 
 test('judge narrative reaches the buyer on qualified entries only: never on failed ones, never to agents', async t => {

@@ -23,6 +23,7 @@ import { createDeviceFlow, type DeviceGrant } from './device-flow.js';
 import { registerMcp } from './mcp.js';
 import { canonicalJson, loadReceiptKey, RECEIPT_FORMAT, registerReceiptKey, sha256Hex, signReceipt, type ReceiptKey } from './receipts.js';
 import { liveStats, type LiveStats } from './stats.js';
+import { prepareReference, REFERENCE_LIMITS, referencePhoto, ReferenceRejected, type ReferenceForModel } from './reference-images.js';
 
 type S = components['schemas'];
 
@@ -124,6 +125,8 @@ export function payoutOutcome(status: string): { state: S['Allocation']['payout_
 export const STUDIO_DASHBOARD_MAX_BYTES = 200_000;
 /** One operator's saved AG Studio dashboard, with the key and body hash of its latest save (for a retried save). */
 type StudioDashboardRecord = { operator_id: string; state: S['StudioDashboardSave']['state']; version: number; updated_at: string; last_key: string; last_fingerprint: string };
+/** A buyer reference image: metadata as served, the original bytes exactly as uploaded, and the derivative JPEG. */
+type StoredReference = { metadata: S['ReferenceImage']; original_base64: string; derivative_base64: string };
 type StoredAsset = {
   metadata: S['Asset']; original_base64: string; preview: string;
   /** Real-browser render (KERNEL): JPEG screenshots (base64) and measurements. Once present, buyers only ever get images. */
@@ -186,6 +189,8 @@ export interface ApiOptions {
 
 /** Operations that only read and may take seconds (a model and PayPal round trips): they run outside the command queue. */
 const OUTSIDE_QUEUE = new Set(['askOperatorAssistant']);
+/** Request body limit for reference uploads (5 MiB of image as base64 in JSON); every other route keeps 1 MB. */
+const REFERENCE_BODY_LIMIT = 8 * 1024 * 1024;
 /** Never replayed from an Idempotency-Key: each call issues a fresh secret that must not be stored (only its hash is). */
 const NO_REPLAY = new Set(['createBuyerSession', 'createAgentDeviceCode', 'exchangeAgentDeviceCode']);
 
@@ -193,7 +198,7 @@ export async function createApi(o: ApiOptions) {
   const log = o.log ?? ((m: string, x?: unknown) => console.log(`[api] ${m}`, x ?? ''));
   const app: FastifyInstance = Fastify({ logger: false, bodyLimit: 1_000_000, requestIdHeader: false, genReqId: () => id('req') });
   const origins = [o.webOrigin, ...(o.corsOrigins ?? []), 'http://localhost:3000', 'http://127.0.0.1:3000'];
-  await app.register(cors, { origin: origins, methods: ['GET', 'HEAD', 'POST', 'PUT'], exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'MCP-Protocol-Version', 'Mcp-Session-Id'] }); // MCP headers: browser MCP clients call POST /mcp cross-origin
+  await app.register(cors, { origin: origins, methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'], exposedHeaders: ['X-Request-Id'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'MCP-Protocol-Version', 'Mcp-Session-Id'] }); // MCP headers: browser MCP clients call POST /mcp cross-origin
   registerAgentDocs(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin });
   registerMcp(app, { apiOrigin: o.apiOrigin, webOrigin: o.webOrigin, maxAttempts: MAX_ATTEMPTS }); // POST /mcp, over the routes below
 
@@ -213,6 +218,8 @@ export async function createApi(o: ApiOptions) {
   const submissions = st.collection<S['Submission']>('submission');
   const submissionAccounting = st.collection<{ operator_id: string; recipient_id: string }>('submission_accounting');
   const assets = st.collection<StoredAsset>('asset');
+  /** Buyer reference images (write-once; megabytes each, so never re-serialized to look for changes). */
+  const referenceImages = st.collection<StoredReference>('reference_image', { immutable: true });
   const payments = st.collection<S['Payment']>('payment');
   const purchases = st.collection<S['Purchase']>('purchase');
   const refunds = st.collection<S['Refund']>('refund');
@@ -260,6 +267,8 @@ export async function createApi(o: ApiOptions) {
       operator_id: HOUSE_OPERATOR_ID, webhook_url: null, webhook_secret: null, credential_hashes: [hashToken(token)], created_at: existing?.created_at ?? stamp(),
     });
   }
+  // Briefs created before reference images existed have none.
+  for (const c of competitions.values()) c.reference_images ??= [];
   // Anything left "running" when the process stopped has an unknown provider outcome: retry it with the same request ID.
   for (const op of ops.values()) if (op.state === 'running') { op.state = 'unknown'; op.next_at = 0; }
   await st.flush();
@@ -281,6 +290,26 @@ export async function createApi(o: ApiOptions) {
     const c = fetchOne(competitions, s.competition_id);
     return p.role === 'admin' || (p.role === 'agent' && s.agent_id === p.agent_id) || (p.role === 'buyer' && c.buyer_id === p.id && s.qualification_status === 'qualified');
   }
+  /**
+   * Reference images: the buyer (any state) and admins; once the brief is published, registered agents too. Drafts stay
+   * invisible (404) to everyone else; other roles on a published brief get 403.
+   */
+  function readReferences(c: S['Competition'], p: Principal) {
+    if (p.role === 'admin' || (p.role === 'buyer' && c.buyer_id === p.id)) return;
+    demand(c.opens_at, 'NOT_FOUND', 'Resource not found.', 404);
+    demand(p.role === 'agent', 'FORBIDDEN', 'Agent credential required.', 403);
+  }
+  const referenceList = (c: S['Competition']): S['ReferenceImageList'] => ({ competition_id: c.id, frozen: !!c.opens_at, max_items: REFERENCE_LIMITS.maxPerBrief,
+    items: structuredClone(c.reference_images ?? []), server_time: stamp() });
+  function referenceOf(c: S['Competition'], referenceId: string): StoredReference {
+    demand((c.reference_images ?? []).some(r => r.id === referenceId), 'NOT_FOUND', 'Resource not found.', 404);
+    return fetchOne(referenceImages, referenceId);
+  }
+  /** The frozen set as the builder and judge get it (derivatives only). */
+  const referencesForModel = (c: S['Competition']): ReferenceForModel[] => (c.reference_images ?? []).map(m => ({
+    id: m.id, sha256: m.sha256, derivative_sha256: m.derivative.sha256, width: m.derivative.width, height: m.derivative.height,
+    size_bytes: m.derivative.size_bytes, caption: m.caption, jpeg_base64: fetchOne(referenceImages, m.id).derivative_base64,
+  }));
   /**
    * Content-free summary of the real-browser check (counts and pixel widths only, never messages or URLs from the
    * page), for anyone who may read the submission. The replay link is offered only while KERNEL still keeps it.
@@ -777,6 +806,7 @@ export async function createApi(o: ApiOptions) {
           submission_window_seconds: body.submission_window_seconds, decision_window_seconds: body.decision_window_seconds,
           policy: { ...policy }, state: 'draft', outcome: 'undecided', initial_payment_id: null, first_purchase_id: null,
           created_at: stamp(), opens_at: null, submission_deadline: null, qualification_deadline: null, decision_deadline: null, version: 1, server_time: stamp(),
+          reference_images: [],
         };
         competitions.set(c.id, c); return ok(view(c), 201);
       }
@@ -787,6 +817,51 @@ export async function createApi(o: ApiOptions) {
         if (me.role === 'buyer' && me.id === c.buyer_id) body.build_progress = buildProgressFor(c.id); // the buyer only
         if (me.role === 'agent') outsideActivity(c, me.agent_id, OUTSIDE_STEP.read);
         return ok(body);
+      }
+      case 'listReferenceImages': {
+        const me = who(); const c = fetchOne(competitions, params.competition_id); readReferences(c, me);
+        return ok(referenceList(c));
+      }
+      case 'uploadReferenceImage': {
+        const c = fetchOne(competitions, params.competition_id); owner(c, who());
+        demand(!c.opens_at && ['draft', 'awaiting_authorization'].includes(c.state), 'INVALID_STATE', 'Reference images are frozen once the brief is authorized and open.');
+        const current = c.reference_images ??= [];
+        demand(current.length < REFERENCE_LIMITS.maxPerBrief, 'INVALID_STATE', `At most ${REFERENCE_LIMITS.maxPerBrief} reference images per brief.`);
+        let prepared;
+        try { prepared = await prepareReference(body.content_base64, body.mime_type); }
+        catch (e) {
+          if (e instanceof ReferenceRejected) throw e.kind === 'too_large' ? new Fault(413, 'PAYLOAD_TOO_LARGE', e.message) : new Fault(400, 'VALIDATION_ERROR', e.message);
+          throw e;
+        }
+        demand(!current.some(r => r.sha256 === prepared.sha256), 'INVALID_STATE', 'This image is already attached to the brief.');
+        const refId = id('ref');
+        const base = `${o.apiOrigin}/v1/competitions/${c.id}/references/${refId}`;
+        const metadata: S['ReferenceImage'] = {
+          id: refId, competition_id: c.id, mime_type: prepared.mime_type, size_bytes: prepared.size_bytes, sha256: prepared.sha256,
+          width: prepared.width, height: prepared.height, caption: body.caption ?? null, original_url: `${base}/original`,
+          derivative: { mime_type: 'image/jpeg', recipe: 'jpeg-q82-max1200-v1', source_sha256: prepared.sha256, sha256: prepared.derivative.sha256,
+            size_bytes: prepared.derivative.size_bytes, width: prepared.derivative.width, height: prepared.derivative.height, url: `${base}/derivative` },
+          created_at: stamp(),
+        };
+        referenceImages.set(refId, { metadata, original_base64: body.content_base64, derivative_base64: prepared.derivative.bytes.toString('base64') });
+        current.push(metadata); update(c);
+        return ok(structuredClone(metadata), 201);
+      }
+      case 'deleteReferenceImage': {
+        const c = fetchOne(competitions, params.competition_id); owner(c, who());
+        referenceOf(c, params.reference_id);
+        demand(!c.opens_at && ['draft', 'awaiting_authorization'].includes(c.state), 'INVALID_STATE', 'Reference images are frozen once the brief is authorized and open.');
+        c.reference_images = (c.reference_images ?? []).filter(r => r.id !== params.reference_id);
+        referenceImages.delete(params.reference_id); update(c);
+        return ok(referenceList(c));
+      }
+      case 'getReferenceImageDerivative':
+      case 'getReferenceImageOriginal': {
+        const me = who(); const c = fetchOne(competitions, params.competition_id); readReferences(c, me);
+        const r = referenceOf(c, params.reference_id);
+        const original = op === 'getReferenceImageOriginal';
+        return { status: 200, body: Buffer.from(original ? r.original_base64 : r.derivative_base64, 'base64'),
+          type: original ? r.metadata.mime_type : 'image/jpeg', cache: 'private, max-age=31536000, immutable' };
       }
       case 'createInitialCheckout': {
         const c = fetchOne(competitions, params.competition_id); owner(c, who());
@@ -1200,6 +1275,14 @@ export async function createApi(o: ApiOptions) {
       await houseRunner.run(agentId, {
         competition: c, signal: controller.signal,
         uploadAsset: (asset, key) => call('POST', '/v1/assets', asset, key),
+        references: async () => {
+          const list: S['ReferenceImageList'] = await call('GET', `/v1/competitions/${c.id}/references`, undefined, '');
+          return Promise.all(list.items.map(async m => {
+            const r = await app.inject({ method: 'GET', url: `/v1/competitions/${c.id}/references/${m.id}/derivative`, headers: { authorization: `Bearer ${token}` } });
+            if (r.statusCode !== 200) throw new Error(`reference ${m.id} → ${r.statusCode}`);
+            return referencePhoto(m, r.rawPayload);
+          }));
+        },
         submit: async (work, key) => {
           const s: S['Submission'] = await call('POST', `/v1/competitions/${c.id}/submissions`, work, key);
           houseSubmitted(c, agentId, s.id);
@@ -1298,7 +1381,7 @@ export async function createApi(o: ApiOptions) {
         const c = competitions.get(s.competition_id)!;
         const asset = assets.get(s.artifacts[0].asset_id)!;
         const job: EvaluationJob = { submission_id: s.id, competition_id: c.id, title: c.title, brief: c.brief, requirements: c.requirements, artifact: s.artifacts[0],
-          original_base64: asset.original_base64, preview_html: asset.preview };
+          original_base64: asset.original_base64, preview_html: asset.preview, references: referencesForModel(c) };
         let shotsStored = false;
         const storeShots = (r: RenderedPage) => exclusive(async () => { applyShots(asset.metadata.id, s.id, r); shotsStored = true; });
         let outcome;
@@ -1582,6 +1665,7 @@ export async function createApi(o: ApiOptions) {
 
   for (const op of operations) app.route({
     method: op.method.toUpperCase(), url: op.path.replace(/\{([^}]+)\}/g, ':$1'),
+    ...(op.operationId === 'uploadReferenceImage' ? { bodyLimit: REFERENCE_BODY_LIMIT } : {}),
     handler: async (req, reply) => {
       reply.header('X-Request-Id', req.id);
       const headers = req.headers;
@@ -1618,7 +1702,8 @@ export async function createApi(o: ApiOptions) {
         const key = headers['idempotency-key'];
         const subject = principal ? (principal.role === 'agent' ? `agent:${principal.agent_id}` : `${principal.role}:${principal.id}`) : 'public';
         const scope = op.method === 'post' && key && !NO_REPLAY.has(op.operationId) ? `${subject}|post|${req.url.split('?')[0]}|${key}` : null;
-        const fingerprint = canonical(req.body);
+        // Large uploads are remembered by digest, not by their whole canonical body.
+        const fingerprint = op.operationId === 'uploadReferenceImage' ? `sha256:${createHash('sha256').update(canonical(req.body)).digest('hex')}` : canonical(req.body);
         const cached = scope ? replays.get(scope) : undefined;
         if (cached) {
           demand(cached.fingerprint === fingerprint, 'IDEMPOTENCY_CONFLICT', 'Key was used with a different request body.');
@@ -1717,7 +1802,7 @@ export async function createApi(o: ApiOptions) {
     if (given.length !== want.length || !timingSafeEqual(given, want) || !s || s.qualification_status !== 'pending') return reply.status(404).send({ found: false });
     const c = competitions.get(s.competition_id)!;
     const asset = assets.get(s.artifacts[0].asset_id)!;
-    const job: EvaluationJob = { submission_id: s.id, competition_id: c.id, title: c.title, brief: c.brief, requirements: c.requirements, artifact: s.artifacts[0], original_base64: asset.original_base64, preview_html: asset.preview };
+    const job: EvaluationJob = { submission_id: s.id, competition_id: c.id, title: c.title, brief: c.brief, requirements: c.requirements, artifact: s.artifacts[0], original_base64: asset.original_base64, preview_html: asset.preview, references: referencesForModel(c) };
     return reply.header('Cache-Control', 'no-store').send(job);
   });
 

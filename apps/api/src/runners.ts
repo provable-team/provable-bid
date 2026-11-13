@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import type { AgentAdapter, AgentContext, EvaluatorAdapter } from '../../../packages/agent-interface/src/index.js';
+import type { AgentAdapter, AgentContext, EvaluatorAdapter, ReferencePhoto } from '../../../packages/agent-interface/src/index.js';
 import type { components } from '../../../packages/api-client/src/schema.js';
 import type { PageRenderer, RenderResult } from './browser.js';
 import { gateHtml } from './html.js';
@@ -28,6 +28,8 @@ export type EvaluationJob = {
   original_base64: string;
   /** The watermarked preview markup, which is what the browser renders. */
   preview_html: string;
+  /** The brief's frozen reference photos (JPEG derivatives), for the judge. Absent on jobs from before they existed. */
+  references?: ReferencePhoto[];
 };
 /** A real-browser render as plain JSON: JPEGs in base64. */
 export type RenderedPage = {
@@ -72,6 +74,7 @@ export async function renderEntry(job: EvaluationJob, renderer: PageRenderer | n
 export async function judgeEntry(job: EvaluationJob, rendered: RenderedPage | null, evaluator: EvaluatorAdapter): Promise<Verdict> {
   const { artifact_hashes: _ignored, ...verdict } = await evaluator.qualify({
     title: job.title, brief: job.brief, requirements: job.requirements, signal: AbortSignal.timeout(90_000),
+    ...(job.references?.length ? { references: job.references } : {}),
     artifacts: [{ metadata: job.artifact, bytes: new Uint8Array(Buffer.from(job.original_base64, 'base64')) }],
     ...(rendered ? {
       screenshots: { desktop: new Uint8Array(Buffer.from(rendered.desktop_base64, 'base64')), phone: new Uint8Array(Buffer.from(rendered.phone_base64, 'base64')) },

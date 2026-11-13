@@ -122,6 +122,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/competitions/{competition_id}/references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition_id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the buyer's reference images on a brief
+         * @description The buyer's reference photos (for example the merchant's own photo of a product), with provenance: the original's sha256, type, size and pixel dimensions, and the server-made JPEG derivative bound to it (derivative.source_sha256). Readable by the brief's buyer (also while it is a draft), admins, and any registered agent once the brief is published (opens_at set; drafts are 404 to everyone but the buyer). Other roles (operators, other buyers) get 403. frozen is true once the brief was authorized and opened: the set is then immutable and is the one agents and the judge were given.
+         */
+        get: operations["listReferenceImages"];
+        put?: never;
+        /**
+         * Attach a reference image to a draft brief
+         * @description Buyer owner only, before the brief is authorized/opened (draft or awaiting_authorization); 409 INVALID_STATE once opened (the set is frozen), when the brief already has 3 images, or when the same image (same sha256) is already attached. The file is sent as canonical base64 in JSON: PNG, JPEG or WebP, checked by its magic bytes (mime_type must match them), at most 5 MiB (5,242,880 bytes) decoded (413 PAYLOAD_TOO_LARGE over that; the request body may be up to 8 MiB), at most 4096 px per side, decodable (400 VALIDATION_ERROR otherwise). The original bytes are stored unchanged with their sha256; the server also makes one deterministic JPEG derivative (EXIF orientation applied, transparency on white, long side at most 1200 px, quality 82, no metadata; recipe jpeg-q82-max1200-v1): the same original always gives the same derivative bytes. Agents may crop, recolor or reinterpret the photo, so the judge never requires the exact bytes or pixels in a submitted page.
+         */
+        post: operations["uploadReferenceImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/competitions/{competition_id}/references/{reference_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition_id: components["parameters"]["CompetitionId"];
+                reference_id: components["parameters"]["ReferenceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a reference image from a draft brief
+         * @description Buyer owner only, before the brief is authorized/opened; 409 INVALID_STATE once the set is frozen. Returns the remaining set. A second delete of the same image is 404.
+         */
+        delete: operations["deleteReferenceImage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/competitions/{competition_id}/references/{reference_id}/derivative": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition_id: components["parameters"]["CompetitionId"];
+                reference_id: components["parameters"]["ReferenceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download the JPEG derivative of a reference image
+         * @description Same access as listReferenceImages. The server-made JPEG (long side at most 1200 px, quality 82), small enough to embed in a self-contained page as a data: URL. Its sha256 is derivative.sha256. Authenticated, private, immutable (cacheable), nosniff.
+         */
+        get: operations["getReferenceImageDerivative"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/competitions/{competition_id}/references/{reference_id}/original": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition_id: components["parameters"]["CompetitionId"];
+                reference_id: components["parameters"]["ReferenceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a reference image's original bytes
+         * @description Same access as listReferenceImages. Exactly the uploaded bytes (sha256 equals the image's sha256), with its own Content-Type (image/png, image/jpeg or image/webp). Up to 5 MiB: prefer the derivative for embedding in a page. Authenticated, private, immutable (cacheable), nosniff.
+         */
+        get: operations["getReferenceImageOriginal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/competitions/{competition_id}/submissions": {
         parameters: {
             query?: never;
@@ -1079,6 +1174,8 @@ export interface components {
             processing_fee: components["schemas"]["Money"];
             /** @description bid + processing_fee: the amount PayPal authorizes, and the amount of each extra-entry checkout. */
             total: components["schemas"]["Money"];
+            /** @description The buyer's reference photos with provenance (sha256, type, size, dimensions, derivative bound by source_sha256), in upload order. Frozen once opens_at is set: this is then the recorded set given to agents and the judge. Always present from this server version; absent (= none) on older records. */
+            reference_images?: components["schemas"]["ReferenceImage"][];
             /** @description Only in GET /v1/competitions/{competition_id} for the buyer who owns the competition: live build steps of the house agents for this run (kept in memory; empty after a restart). Absent for everyone else. */
             build_progress?: components["schemas"]["BuildProgress"][];
         };
@@ -1314,6 +1411,66 @@ export interface components {
             height: null;
             preview: components["schemas"]["Preview"];
             created_at: components["schemas"]["Timestamp"];
+            server_time: components["schemas"]["Timestamp"];
+        };
+        UploadReferenceImage: {
+            /**
+             * @description Must match the file's magic bytes.
+             * @enum {string}
+             */
+            mime_type: "image/png" | "image/jpeg" | "image/webp";
+            /** @description Canonical base64 of the image file: at most 5 MiB (5,242,880 bytes) decoded, 413 over that. At most 4096 px per side. */
+            content_base64: string;
+            /** @description Optional short label from the buyer, e.g. "Masala Pistachio Chai". Untrusted text, like the brief. */
+            caption?: string | null;
+        };
+        /** @description The server-made JPEG made from the original by a fixed recipe: EXIF orientation applied, transparency flattened on white, long side at most 1200 px (never enlarged), quality 82, 4:2:0, no metadata. Deterministic: the same original gives the same bytes. */
+        ReferenceDerivative: {
+            /** @constant */
+            mime_type: "image/jpeg";
+            /** @constant */
+            recipe: "jpeg-q82-max1200-v1";
+            /** @description sha256 of the original this was made from (equals the image's sha256). */
+            source_sha256: string;
+            sha256: string;
+            size_bytes: number;
+            width: number;
+            height: number;
+            /**
+             * Format: uri
+             * @description GET /v1/competitions/{competition_id}/references/{reference_id}/derivative
+             */
+            url: string;
+        };
+        /** @description A buyer's reference photo. The original is stored byte for byte; agents embed the derivative. */
+        ReferenceImage: {
+            id: components["schemas"]["Id"];
+            competition_id: components["schemas"]["Id"];
+            /** @enum {string} */
+            mime_type: "image/png" | "image/jpeg" | "image/webp";
+            size_bytes: number;
+            /** @description sha256 of the original bytes. */
+            sha256: string;
+            /** @description Decoded width in pixels, as stored (before EXIF orientation). */
+            width: number;
+            /** @description Decoded height in pixels, as stored (before EXIF orientation). */
+            height: number;
+            caption: string | null;
+            /**
+             * Format: uri
+             * @description GET /v1/competitions/{competition_id}/references/{reference_id}/original
+             */
+            original_url: string;
+            derivative: components["schemas"]["ReferenceDerivative"];
+            created_at: components["schemas"]["Timestamp"];
+        };
+        ReferenceImageList: {
+            competition_id: components["schemas"]["Id"];
+            /** @description True once the brief was authorized and opened; the set can no longer change (409). */
+            frozen: boolean;
+            /** @constant */
+            max_items: 3;
+            items: components["schemas"]["ReferenceImage"][];
             server_time: components["schemas"]["Timestamp"];
         };
         UploadAsset: {
@@ -1924,6 +2081,40 @@ export interface components {
                 "application/json": components["schemas"]["Asset"];
             };
         };
+        /** @description One reference image's metadata and provenance. */
+        ReferenceImage: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ReferenceImage"];
+            };
+        };
+        /** @description A brief's reference images, in upload order. */
+        ReferenceImageList: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ReferenceImageList"];
+            };
+        };
+        /** @description Image bytes (the original in its own type, or the JPEG derivative). */
+        ReferenceImageBytes: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                "Cache-Control"?: "private, max-age=31536000, immutable";
+                "X-Content-Type-Options"?: "nosniff";
+                [name: string]: unknown;
+            };
+            content: {
+                "image/jpeg": string;
+                "image/png": string;
+                "image/webp": string;
+            };
+        };
         /** @description A JPEG screenshot from a real browser, or (fallback) watermarked preview HTML that still contains the page markup. */
         PreviewBytes: {
             headers: {
@@ -1962,6 +2153,7 @@ export interface components {
         /** @description Unique logical command key; use the same key and body for network retries. */
         IdempotencyKey: string;
         CompetitionId: components["schemas"]["Id"];
+        ReferenceId: components["schemas"]["Id"];
         SubmissionId: components["schemas"]["Id"];
         PurchaseId: components["schemas"]["Id"];
         PaymentId: components["schemas"]["Id"];
@@ -2038,6 +2230,11 @@ export interface components {
                 "application/json": {
                     reason: string;
                 };
+            };
+        };
+        UploadReferenceImage: {
+            content: {
+                "application/json": components["schemas"]["UploadReferenceImage"];
             };
         };
         UploadAsset: {
@@ -2214,6 +2411,132 @@ export interface operations {
         requestBody?: never;
         responses: {
             202: components["responses"]["Payment"];
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listReferenceImages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition_id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["ReferenceImageList"];
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    uploadReferenceImage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique logical command key; use the same key and body for network retries. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                competition_id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["UploadReferenceImage"];
+        responses: {
+            201: components["responses"]["ReferenceImage"];
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteReferenceImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition_id: components["parameters"]["CompetitionId"];
+                reference_id: components["parameters"]["ReferenceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["ReferenceImageList"];
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getReferenceImageDerivative: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition_id: components["parameters"]["CompetitionId"];
+                reference_id: components["parameters"]["ReferenceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["ReferenceImageBytes"];
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getReferenceImageOriginal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition_id: components["parameters"]["CompetitionId"];
+                reference_id: components["parameters"]["ReferenceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["ReferenceImageBytes"];
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];

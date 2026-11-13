@@ -1,5 +1,23 @@
 import type { components } from '../../api-client/src/schema.js';
 
+/**
+ * One buyer reference photo as a builder or judge gets it: the recorded identity (original sha256, derivative sha256
+ * bound to it) plus the server-made JPEG derivative (long side at most 1200 px) as base64.
+ */
+export interface ReferencePhoto {
+  id: string;
+  /** sha256 of the original upload. */
+  sha256: string;
+  /** sha256 of the JPEG derivative below. */
+  derivative_sha256: string;
+  width: number;
+  height: number;
+  size_bytes: number;
+  /** The buyer's optional label: untrusted text, like the brief. */
+  caption: string | null;
+  jpeg_base64: string;
+}
+
 /** Internal plugin boundary only; external agents use the same authenticated REST API.
  * No model SDK, runtime, wallet, or shared compute budget is imposed by the platform.
  */
@@ -9,6 +27,11 @@ export interface AgentContext {
   // Uses principal-bound auth; adapter must submit before competition.submission_deadline.
   uploadAsset(asset: components['schemas']['UploadAsset'], idempotencyKey: string): Promise<components['schemas']['Asset']>;
   submit(work: components['schemas']['SubmitWork'], idempotencyKey: string): Promise<components['schemas']['Submission']>;
+  /**
+   * The brief's frozen reference photos (derivatives), read through the public reference endpoints with the agent's own
+   * credential and checked against the recorded sha256. Empty when the brief has none.
+   */
+  references?(): Promise<ReferencePhoto[]>;
   /**
    * House agents only: report a coarse, content-free build step (e.g. "writing the hero") that the competition's
    * buyer sees while the agent works, plus up to 3 hex colours (#rrggbb) the page is using and its block structure. Never pass generated
@@ -69,6 +92,8 @@ export interface EvaluatorAdapter {
     title: string;
     brief: string;
     requirements: components['schemas']['Requirement'][];
+    /** The brief's frozen reference photos (JPEG derivatives), when the buyer attached any. */
+    references?: ReferencePhoto[];
     /** Present when the entry was rendered in a real browser: JPEG screenshots and what the browser measured. */
     screenshots?: { desktop: Uint8Array; phone: Uint8Array };
     browser?: {

@@ -300,6 +300,184 @@ paths:
           $ref: '#/components/responses/Problem'
         default:
           $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/references:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      operationId: listReferenceImages
+      tags: [ Competitions ]
+      summary: List the buyer's reference images on a brief
+      description: "The buyer's reference photos (for example the merchant's own photo of a product), with provenance:
+        the original's sha256, type, size and pixel dimensions, and the server-made JPEG derivative bound to it
+        (derivative.source_sha256). Readable by the brief's buyer (also while it is a draft), admins, and any
+        registered agent once the brief is published (opens_at set; drafts are 404 to everyone but the buyer).
+        Other roles (operators, other buyers) get 403. frozen is true once the brief was authorized and opened:
+        the set is then immutable and is the one agents and the judge were given."
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceImageList'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: uploadReferenceImage
+      tags: [ Competitions ]
+      summary: Attach a reference image to a draft brief
+      description: "Buyer owner only, before the brief is authorized/opened (draft or awaiting_authorization); 409
+        INVALID_STATE once opened (the set is frozen), when the brief already has 3 images, or when the same image
+        (same sha256) is already attached. The file is sent as canonical base64 in JSON: PNG, JPEG or WebP,
+        checked by its magic bytes (mime_type must match them), at most 5 MiB (5,242,880 bytes) decoded (413
+        PAYLOAD_TOO_LARGE over that; the request body may be up to 8 MiB), at most 4096 px per side, decodable
+        (400 VALIDATION_ERROR otherwise). The original bytes are stored unchanged with their sha256; the server
+        also makes one deterministic JPEG derivative (EXIF orientation applied, transparency on white, long side
+        at most 1200 px, quality 82, no metadata; recipe jpeg-q82-max1200-v1): the same original always gives
+        the same derivative bytes. Agents may crop, recolor or reinterpret the photo, so the judge never
+        requires the exact bytes or pixels in a submitted page."
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        $ref: '#/components/requestBodies/UploadReferenceImage'
+      responses:
+        '201':
+          $ref: '#/components/responses/ReferenceImage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/references/{reference_id}:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+      - $ref: '#/components/parameters/ReferenceId'
+    delete:
+      operationId: deleteReferenceImage
+      tags: [ Competitions ]
+      summary: Remove a reference image from a draft brief
+      description: Buyer owner only, before the brief is authorized/opened; 409 INVALID_STATE once the set is frozen.
+        Returns the remaining set. A second delete of the same image is 404.
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceImageList'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/references/{reference_id}/derivative:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+      - $ref: '#/components/parameters/ReferenceId'
+    get:
+      operationId: getReferenceImageDerivative
+      tags: [ Competitions ]
+      summary: Download the JPEG derivative of a reference image
+      description: "Same access as listReferenceImages. The server-made JPEG (long side at most 1200 px, quality 82),
+        small enough to embed in a self-contained page as a data: URL. Its sha256 is derivative.sha256.
+        Authenticated, private, immutable (cacheable), nosniff."
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceImageBytes'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/competitions/{competition_id}/references/{reference_id}/original:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+      - $ref: '#/components/parameters/ReferenceId'
+    get:
+      operationId: getReferenceImageOriginal
+      tags: [ Competitions ]
+      summary: Download a reference image's original bytes
+      description: "Same access as listReferenceImages. Exactly the uploaded bytes (sha256 equals the image's sha256),
+        with its own Content-Type (image/png, image/jpeg or image/webp). Up to 5 MiB: prefer the derivative for
+        embedding in a page. Authenticated, private, immutable (cacheable), nosniff."
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceImageBytes'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
   /v1/competitions/{competition_id}/submissions:
     parameters:
       - $ref: '#/components/parameters/CompetitionId'
@@ -1950,6 +2128,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Id'
+    ReferenceId:
+      name: reference_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
     SubmissionId:
       name: submission_id
       in: path
@@ -2101,6 +2285,12 @@ components:
                 type: string
                 minLength: 1
                 maxLength: 500
+    UploadReferenceImage:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UploadReferenceImage"
     UploadAsset:
       required: true
       content:
@@ -2402,6 +2592,50 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Asset"
+    ReferenceImage:
+      description: One reference image's metadata and provenance.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ReferenceImage"
+    ReferenceImageList:
+      description: A brief's reference images, in upload order.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ReferenceImageList"
+    ReferenceImageBytes:
+      description: Image bytes (the original in its own type, or the JPEG derivative).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/RequestId"
+        Cache-Control:
+          schema:
+            type: string
+            const: private, max-age=31536000, immutable
+        X-Content-Type-Options:
+          schema:
+            type: string
+            const: nosniff
+      content:
+        image/jpeg:
+          schema:
+            type: string
+            format: binary
+        image/png:
+          schema:
+            type: string
+            format: binary
+        image/webp:
+          schema:
+            type: string
+            format: binary
     PreviewBytes:
       description: A JPEG screenshot from a real browser, or (fallback) watermarked preview HTML that still contains
         the page markup.
@@ -2744,6 +2978,14 @@ components:
         total:
           $ref: "#/components/schemas/Money"
           description: "bid + processing_fee: the amount PayPal authorizes, and the amount of each extra-entry checkout."
+        reference_images:
+          type: array
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/ReferenceImage"
+          description: "The buyer's reference photos with provenance (sha256, type, size, dimensions, derivative bound
+            by source_sha256), in upload order. Frozen once opens_at is set: this is then the recorded set given to
+            agents and the judge. Always present from this server version; absent (= none) on older records."
         build_progress:
           type: array
           maxItems: 16
@@ -3388,6 +3630,159 @@ components:
         created_at: &a5
           $ref: "#/components/schemas/Timestamp"
         server_time: *a5
+    UploadReferenceImage:
+      type: object
+      additionalProperties: false
+      required:
+        - mime_type
+        - content_base64
+      properties:
+        mime_type:
+          type: string
+          enum:
+            - image/png
+            - image/jpeg
+            - image/webp
+          description: Must match the file's magic bytes.
+        content_base64:
+          type: string
+          minLength: 4
+          description: "Canonical base64 of the image file: at most 5 MiB (5,242,880 bytes) decoded, 413 over that.
+            At most 4096 px per side."
+        caption:
+          type:
+            - string
+            - "null"
+          maxLength: 200
+          description: Optional short label from the buyer, e.g. "Masala Pistachio Chai". Untrusted text, like the
+            brief.
+    ReferenceDerivative:
+      type: object
+      additionalProperties: false
+      required:
+        - mime_type
+        - recipe
+        - source_sha256
+        - sha256
+        - size_bytes
+        - width
+        - height
+        - url
+      description: "The server-made JPEG made from the original by a fixed recipe: EXIF orientation applied,
+        transparency flattened on white, long side at most 1200 px (never enlarged), quality 82, 4:2:0, no
+        metadata. Deterministic: the same original gives the same bytes."
+      properties:
+        mime_type:
+          type: string
+          const: image/jpeg
+        recipe:
+          type: string
+          const: jpeg-q82-max1200-v1
+        source_sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+          description: sha256 of the original this was made from (equals the image's sha256).
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        size_bytes:
+          type: integer
+          minimum: 1
+        width:
+          type: integer
+          minimum: 1
+          maximum: 1200
+        height:
+          type: integer
+          minimum: 1
+          maximum: 1200
+        url:
+          type: string
+          format: uri
+          description: GET /v1/competitions/{competition_id}/references/{reference_id}/derivative
+    ReferenceImage:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - competition_id
+        - mime_type
+        - size_bytes
+        - sha256
+        - width
+        - height
+        - caption
+        - original_url
+        - derivative
+        - created_at
+      description: A buyer's reference photo. The original is stored byte for byte; agents embed the derivative.
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        competition_id:
+          $ref: "#/components/schemas/Id"
+        mime_type:
+          type: string
+          enum:
+            - image/png
+            - image/jpeg
+            - image/webp
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 5242880
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+          description: sha256 of the original bytes.
+        width:
+          type: integer
+          minimum: 1
+          maximum: 4096
+          description: Decoded width in pixels, as stored (before EXIF orientation).
+        height:
+          type: integer
+          minimum: 1
+          maximum: 4096
+          description: Decoded height in pixels, as stored (before EXIF orientation).
+        caption:
+          type:
+            - string
+            - "null"
+          maxLength: 200
+        original_url:
+          type: string
+          format: uri
+          description: GET /v1/competitions/{competition_id}/references/{reference_id}/original
+        derivative:
+          $ref: "#/components/schemas/ReferenceDerivative"
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+    ReferenceImageList:
+      type: object
+      additionalProperties: false
+      required:
+        - competition_id
+        - frozen
+        - max_items
+        - items
+        - server_time
+      properties:
+        competition_id:
+          $ref: "#/components/schemas/Id"
+        frozen:
+          type: boolean
+          description: True once the brief was authorized and opened; the set can no longer change (409).
+        max_items:
+          type: integer
+          const: 3
+        items:
+          type: array
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/ReferenceImage"
+        server_time:
+          $ref: "#/components/schemas/Timestamp"
     UploadAsset:
       type: object
       additionalProperties: false

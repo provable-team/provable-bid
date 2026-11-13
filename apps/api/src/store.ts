@@ -18,7 +18,11 @@ import pg from 'pg';
 export class Collection<V> extends Map<string, V> {
   saved = new Map<string, string>();
   removed = new Set<string>();
-  constructor(readonly kind: string) { super(); }
+  /**
+   * Immutable collections (large write-once blobs such as reference images) are written once when added and never
+   * re-serialized to look for changes; replacing a saved document's value is not persisted. `saved` holds a marker only.
+   */
+  constructor(readonly kind: string, readonly immutable = false) { super(); }
   override delete(key: string): boolean {
     if (this.saved.has(key)) this.removed.add(key);
     return super.delete(key);
@@ -26,12 +30,14 @@ export class Collection<V> extends Map<string, V> {
 }
 
 export interface DocStore {
-  collection<V>(kind: string): Collection<V>;
+  collection<V>(kind: string, options?: { immutable?: boolean }): Collection<V>;
   /** Persist every changed document in one transaction. Resolves once it is durable. */
   flush(): Promise<void>;
   close(): void | Promise<void>;
 }
 
+/** What an immutable collection remembers about a saved document (not its JSON, which may be megabytes). */
+const IMMUTABLE_SAVED = '\u0000saved';
 type Row = { kind: string; id: string; json: string };
 type Pending = { writes: Row[]; deletes: { kind: string; id: string }[] };
 
@@ -40,11 +46,11 @@ abstract class DocStoreBase implements DocStore {
   protected collections: Collection<any>[] = [];
   protected abstract load(kind: string): Row[];
 
-  collection<V>(kind: string): Collection<V> {
-    const c = new Collection<V>(kind);
+  collection<V>(kind: string, options: { immutable?: boolean } = {}): Collection<V> {
+    const c = new Collection<V>(kind, !!options.immutable);
     for (const row of this.load(kind)) {
       Map.prototype.set.call(c, row.id, JSON.parse(row.json));
-      c.saved.set(row.id, row.json);
+      c.saved.set(row.id, c.immutable ? IMMUTABLE_SAVED : row.json);
     }
     this.collections.push(c);
     return c;
@@ -56,6 +62,7 @@ abstract class DocStoreBase implements DocStore {
     const deletes: { kind: string; id: string }[] = [];
     for (const c of this.collections) {
       for (const [id, value] of c) {
+        if (c.immutable && c.saved.has(id)) continue;
         const json = JSON.stringify(value);
         if (c.saved.get(id) !== json) writes.push({ kind: c.kind, id, json });
       }
@@ -67,7 +74,7 @@ abstract class DocStoreBase implements DocStore {
   /** After a commit: record exactly what was written, so changes made during an async commit still count as dirty. */
   protected committed({ writes, deletes }: Pending) {
     const byKind = new Map(this.collections.map(c => [c.kind, c]));
-    for (const w of writes) byKind.get(w.kind)?.saved.set(w.id, w.json);
+    for (const w of writes) { const c = byKind.get(w.kind); c?.saved.set(w.id, c.immutable ? IMMUTABLE_SAVED : w.json); }
     for (const d of deletes) {
       const c = byKind.get(d.kind);
       if (!c) continue;

@@ -40,6 +40,8 @@ const bodies = {
   createAdditionalPurchase: { submission_id: '{{submission_id}}' },
   createRefund: { reason: 'Buyer asked for a refund of a duplicate purchase.' },
   uploadAsset: { competition_id: '{{competition_id}}', type: 'html', mime_type: 'text/html', content_base64: bakeryHtmlBase64 },
+  // A 1x1 PNG. Real reference photos: PNG, JPEG or WebP, at most 5 MiB and 4096 px per side.
+  uploadReferenceImage: { mime_type: 'image/png', content_base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', caption: 'Masala Pistachio Chai with cold brew foam' },
   receivePayPalWebhook: {
     id: 'WH-1AB23456CD789012E-3FG45678HJ901234K', event_type: 'PAYMENT.CAPTURE.COMPLETED',
     resource: { id: '8MC585209K746392H', status: 'COMPLETED' },

@@ -5,6 +5,7 @@ import {
   errorVerdict, evaluatorToken, gateVerdict, houseToken, judgeEntry, renderEntry, TASKS,
   type EvaluationJob, type EvaluationOutcome, type EvaluationRef, type HouseBuildInput, type RenderedPage, type Verdict,
 } from '../runners.js';
+import { referencePhoto } from '../reference-images.js';
 
 type S = components['schemas'];
 
@@ -68,6 +69,14 @@ export function httpAgentContext(input: HouseBuildInput, token: string, signal: 
   return {
     competition: c, signal,
     uploadAsset: (asset, key) => call('POST', '/v1/assets', asset, key),
+    async references() {
+      const list = await call<S['ReferenceImageList']>('GET', `/v1/competitions/${c.id}/references`);
+      return Promise.all(list.items.map(async m => {
+        const r = await f(`${api}/v1/competitions/${c.id}/references/${m.id}/derivative`, { signal, headers: { authorization: `Bearer ${token}` } });
+        if (r.status !== 200) throw new Error(`reference ${m.id} → ${r.status}`);
+        return referencePhoto(m, new Uint8Array(await r.arrayBuffer()));
+      }));
+    },
     submit: (work, key) => call('POST', `/v1/competitions/${c.id}/submissions`, work, key),
     timeLeftMs: () => Date.parse(c.submission_deadline!) - Date.now(),
     progress: (label, opts) => { queued = { competition_id: c.id, label, immediate: !!opts?.immediate, colors: opts?.colors, structure: opts?.structure }; void flush(); },
